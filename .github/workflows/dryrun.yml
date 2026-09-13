@@ -2,7 +2,7 @@ name: pionex-dryrun
 
 on:
   schedule:
-    - cron: "17 * * * *"     # UTC；每 2 小時的第 17 分執行（公開 repo 可改成 "17 * * * *" 每小時）
+    - cron: "17 * * * *"     # UTC；每小時的第 17 分執行
   workflow_dispatch:            # 可在 Actions 頁面手動執行
 
 permissions:
@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: pionex-dryrun
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   run:
