@@ -8,6 +8,8 @@
 
 ・進出場規則與 pionex_backtest.py 完全相同（直接呼叫它的函式），結果可直接和回測比較。
 ・START_FROM 可指定回補起算時間（受 API 上限約 20 天）；設 None 則從第一次執行當下開始。
+  回補只在整個 dry run 的首次執行（state/ 不存在時）生效；之後才出現的新交易對一律
+  從最新一根 K棒開始，不會被回補。
 ・中間漏跑幾次也沒關係：下次執行會把漏掉的K棒補處理（K棒上限 500 根 ≈ 20 天）。
 ・請勿在測試途中修改策略參數；要改的話請刪掉 state/ 重新開始，否則紀錄會混在一起。
 
@@ -30,6 +32,8 @@ import pionex_backtest as pb
 # ============================== 起算時間 ==============================
 # 第一次執行時，從這個時間開始回補統計（台北時間）。設 None = 只從執行當下開始。
 # 派網 1h K棒單次最多取 500 根（約 20.8 天），太舊的抓不到，請盡早開始跑。
+# 注意：這只影響 dry run 的首次執行（state/ 不存在時）；之後才進 universe 的新幣
+# 一律從最新一根 K棒開始，不會回補歷史。
 START_FROM = "2026-09-01 00:00"
 
 # ============================== 策略設定（固定，勿在測試途中修改） ==============================
@@ -146,7 +150,7 @@ def snapshot(row, d):
     }
 
 
-def step_symbol(bk, sym, df):
+def step_symbol(bk, sym, df, backfill_from=None):
     """處理此交易對自上次以來新收完的K棒。回傳 (新開倉數, 新平倉數)。"""
     cfg = pb.CONFIG
     st = bk["symbols"].setdefault(sym, {"last": None, "pos": None, "cool_until": 0, "last_close": None})
@@ -156,10 +160,10 @@ def step_symbol(bk, sym, df):
     o, h, l, c = (df[x].to_numpy() for x in ("open", "high", "low", "close"))
     sig, atrp = df["signal"].to_numpy(), df["atr_pct"].to_numpy()
     n = len(df)
-    # 第一次看到這個幣：從 START_FROM 回補，未設定則只從最新一根開始
+    # 第一次看到這個幣：只有整個 dry run 的首次執行才回補（backfill_from 由 main() 傳入）；
+    # 之後才出現的新幣（後上架、或原本被 classify() 濾掉才通過）一律從最新一根開始。
     if st["last"] is None:
-        s0 = start_ms()
-        start = int(np.searchsorted(t, s0)) if s0 else n - 1
+        start = int(np.searchsorted(t, backfill_from)) if backfill_from else n - 1
     else:
         start = int(np.searchsorted(t, st["last"], side="right"))
     opened = closed = 0
@@ -386,13 +390,15 @@ def main():
         except Exception as e:
             return sym, None, str(e)[:200]
 
-    s0 = start_ms()
-    if s0 and not state["books"]["main"]["symbols"]:
+    # 只有整個 dry run 的首次執行（state["runs"] 為空）才回補；之後才出現的新幣一律
+    # 從最新一根開始，不受 START_FROM 影響（見 step_symbol()）。
+    backfill_from = start_ms() if not state["runs"] else None
+    if backfill_from:
         earliest = int(b["time"].iloc[0]) if len(b) else None
-        print(f"首次執行：回補 {pb.to_dt(s0):%Y-%m-%d %H:%M} 起的K棒")
-        if earliest and earliest > s0:
+        print(f"首次執行：回補 {pb.to_dt(backfill_from):%Y-%m-%d %H:%M} 起的K棒")
+        if earliest and earliest > backfill_from:
             print(f"[警告] API 只能取到 {pb.to_dt(earliest):%Y-%m-%d %H:%M} 之後的K棒，"
-                  f"{pb.to_dt(s0):%m-%d} ~ {pb.to_dt(earliest):%m-%d} 這段無法回補")
+                  f"{pb.to_dt(backfill_from):%m-%d} ~ {pb.to_dt(earliest):%m-%d} 這段無法回補")
 
     errors, last_bar = [], None
     counts = {bk: {"opened": 0, "closed": 0} for bk in BOOKS}
@@ -405,7 +411,8 @@ def main():
             for book in BOOKS:
                 use_config(book)
                 try:
-                    o_, c_ = step_symbol(state["books"][book], sym, pb.add_indicators(df.copy(), btc))
+                    o_, c_ = step_symbol(state["books"][book], sym, pb.add_indicators(df.copy(), btc),
+                                          backfill_from=backfill_from)
                     counts[book]["opened"] += o_
                     counts[book]["closed"] += c_
                 except Exception:
