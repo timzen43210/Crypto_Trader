@@ -131,6 +131,9 @@ def is_stock_token(base: str) -> bool:
 
 # ============================== API ==============================
 BASE_URL = "https://api.pionex.com"
+# 其他策略可覆寫這兩個 hook：改寫「參數」頁內容 / 改寫交易明細的後段診斷欄位
+PARAM_ROWS_HOOK = None          # f(params:list) -> list（需保留前6列與「盈虧平衡勝率」在第16列）
+DIAG_COLUMNS_HOOK = None        # f() -> (欄名list, 欄寬list, 取值函式(tr)->list)
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": "pionex-backtest/1.0"})
 HOUR_MS = 3_600_000
@@ -462,6 +465,8 @@ def write_excel(trades, scan_rows, path, period_txt, extra=None):
         ("24h盤整排除", CONFIG["EXCLUDE_FLAT_24H"] if CONFIG["EXCLUDE_FLAT_24H"] is not None else "關閉", "|24h漲跌| 低於此值不進場"),
         ("BTC同向乖離上限", CONFIG["BTC_MAX_ALIGNED_DEV"] if CONFIG["BTC_MAX_ALIGNED_DEV"] is not None else "關閉", "BTC 已同向偏離MA20超過此值不進場"),
     ]
+    if PARAM_ROWS_HOOK is not None:
+        params = PARAM_ROWS_HOOK(params)
     ws_p.append(["項目", "數值", "說明"])
     style_header(ws_p, 1, 3)
     for r in params:
@@ -484,6 +489,8 @@ def write_excel(trades, scan_rows, path, period_txt, extra=None):
                "價格vsMA20", "OBV 20h變化", "24h成交額(USDT)", "最大有利(MFE)", "最大不利(MAE)",
                "量比", "收盤強度", "長週期趨勢(順勢)", "24h漲跌(順勢)", "BTC 1h漲跌(順勢)", "BTC vs MA20(順勢)",
                "止盈%", "止損%", "盈虧平衡勝率"]
+    diag_names, diag_widths, diag_values = DIAG_COLUMNS_HOOK() if DIAG_COLUMNS_HOOK else ([], [], None)
+    headers += diag_names
     ws_t.append(headers)
     style_header(ws_t, 1, len(headers))
     for k, tr in enumerate(trades, start=1):
@@ -498,6 +505,7 @@ def write_excel(trades, scan_rows, path, period_txt, extra=None):
             *[None if pd.isna(tr[k]) else float(tr[k])
               for k in ("vol_ratio", "close_str", "htf_al", "ret24_al", "btc1h_al", "btcma_al")],
             tr["tp_pct"], tr["sl_pct"], f"=(AB{r}+2*參數!$B$7)/(AA{r}+AB{r})",
+            *(diag_values(tr) if diag_values else []),
         ])
     last = max(len(trades), 1) + 1
     fmts = {"D": "yyyy-mm-dd hh:mm", "H": "yyyy-mm-dd hh:mm", "E": "0.00000000", "F": "0.00000000",
@@ -516,7 +524,7 @@ def write_excel(trades, scan_rows, path, period_txt, extra=None):
     ws_t.freeze_panes = "C2"
     ws_t.auto_filter.ref = f"A1:{get_column_letter(len(headers))}{last}"
     set_widths(ws_t, [7, 18, 7, 17, 13, 13, 13, 17, 13, 9, 9, 11, 30, 10, 9, 11, 16, 16, 12, 12,
-                     8, 9, 14, 12, 14, 15, 8, 8, 12])
+                     8, 9, 14, 12, 14, 15, 8, 8, 12] + diag_widths)
 
     # 參照範圍
     rng = lambda col: f"交易明細!${col}$2:${col}${last}"

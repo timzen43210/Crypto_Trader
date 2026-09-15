@@ -1,19 +1,46 @@
-# 派網動能策略 Dry Run
+# 派網策略 Dry Run
 
 不下單、持續統計的前瞻測試。每次執行會處理上次之後新收完的 1 小時 K 棒，
-進出場規則與 `pionex_backtest.py` 完全相同，結果可直接和回測比較。
+進出場規則與回測程式完全相同，結果可直接和回測比較。
+
+同時追蹤四個帳本：
+
+| 帳本 | 內容 | 回測表現（一年） |
+|---|---|---|
+| `main` | 策略1 延續，ATR 4–5% | 849 筆、勝率 68.4% |
+| `watch` | 策略1 觀察組，ATR ≥ 2% | 供 ATR 區間監控用，不是要拿來操作的 |
+| `rev` | 策略2 大戶提款 正式版 | 72 筆、勝率 70.8% |
+| `rev_wide` | 策略2 放寬版（啟動前漲幅不限） | 179 筆、勝率 68.7% |
+
+策略1 盈虧平衡勝率 63.75%（止盈3%/止損5%），策略2 相同。
+資金模擬槓桿：策略1、策略2 皆為 50 倍（改 `BASE_CONFIG` / `S2_CONFIG`）。
+
+## 開始前先確認起算時間
+
+`pionex_dryrun.py` 開頭的 `START_FROM` 決定從什麼時候開始統計（台北時間）：
+
+```python
+START_FROM = "2026-09-01 00:00"   # 設 None = 只從第一次執行當下開始
+```
+
+第一次執行時會回補這個時間之後的所有 K 棒。派網 1 小時 K 棒單次最多取 500 根
+（約 20.8 天），超過的抓不到，程式會顯示警告並從能取到的最早一根開始。
+第二次之後執行就不再看這個設定，改設它不會影響已經累積的紀錄。
 
 ## 檔案
 
 | 檔案 | 用途 |
 |---|---|
 | `pionex_dryrun.py` | 主程式（策略參數在檔案開頭 `BASE_CONFIG`） |
-| `pionex_backtest.py` | 回測程式，dry run 會直接使用裡面的指標與出場邏輯 |
+| `pionex_backtest.py` | 策略1 回測程式，dry run 直接使用裡面的指標與出場邏輯 |
+| `pionex_reversal.py` | 策略2 回測程式，同上 |
 | `.github/workflows/dryrun.yml` | GitHub Actions 排程設定 |
 | `run.sh` | 在 VPS / 自己主機上用 crontab 執行 |
 | `output/SUMMARY.md` | 自動產生的摘要（在 GitHub 網頁或手機 App 直接可看） |
-| `output/dryrun_main.xlsx` | 主策略完整報表（含 ATR 區間監控、運行紀錄） |
-| `output/dryrun_watch.xlsx` | 觀察組（ATR ≥ 2%）報表 |
+| `output/dryrun_main.xlsx` | 策略1 完整報表（含 ATR 區間監控、運行紀錄） |
+| `output/dryrun_watch.xlsx` | 策略1 觀察組報表 |
+| `output/dryrun_rev.xlsx` | 策略2 正式版報表 |
+| `output/dryrun_rev_wide.xlsx` | 策略2 放寬版報表 |
 | `state/dryrun_state.json` | 持倉與交易紀錄，**不要手動修改** |
 
 ## 方法 A：GitHub Actions（免費、免主機）
