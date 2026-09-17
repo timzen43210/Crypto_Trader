@@ -31,6 +31,7 @@ from openpyxl.utils import get_column_letter
 # ============================== 參數設定 ==============================
 CONFIG = {
     "MARKET_TYPE": "PERP",        # "PERP"=永續合約(可做空，建議) / "SPOT"=現貨
+    "INTERVAL": "60M",            # K棒週期：1M/5M/15M/30M/60M/4H。改了之後所有「根數」參數的實際時間也跟著改
     "LOOKBACK_DAYS": 90,          # 回測區間（天）
     "WARMUP_BARS": 120,           # 指標暖機用的額外K棒數
 
@@ -78,7 +79,7 @@ CONFIG = {
     "EQUITY_INITIAL": 100,        # 初始本金
     "EQUITY_ORDER_PCT": 0.02,     # 每筆下單金額 = 基準本金 × 此比例
     "EQUITY_STEP": 50,            # 本金達到此級距的倍數才上調下單金額（不回滾）
-    "EQUITY_LEVERAGE": 1,         # 槓桿倍數：部位大小 = 下單金額 × 槓桿
+    "EQUITY_LEVERAGE": 50,        # 槓桿倍數：部位大小 = 下單金額 × 槓桿
     "EQUITY_SIZING_MODE": 1,      # 1=不回滾(本金達級距才上調，不下調) / 2=即時本金(每筆 = 當下本金 × 比例)
     "EQUITY_STOP_BELOW": 0,       # 本金 ≤ 此值即停止開新倉（模擬爆倉或個人停損線）
 
@@ -137,6 +138,24 @@ DIAG_COLUMNS_HOOK = None        # f() -> (欄名list, 欄寬list, 取值函式(t
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": "pionex-backtest/1.0"})
 HOUR_MS = 3_600_000
+INTERVAL_MS = {"1M": 60_000, "5M": 300_000, "15M": 900_000, "30M": 1_800_000,
+               "60M": HOUR_MS, "4H": 4 * HOUR_MS, "8H": 8 * HOUR_MS,
+               "12H": 12 * HOUR_MS, "1D": 24 * HOUR_MS}
+
+
+def bar_ms():
+    """一根K棒的毫秒數。"""
+    return INTERVAL_MS[CONFIG["INTERVAL"]]
+
+
+def bars_per_hour():
+    return HOUR_MS / bar_ms()
+
+
+def interval_label():
+    iv = CONFIG["INTERVAL"]
+    return f"{int(iv[:-1])} 分鐘" if iv.endswith("M") and iv != "1M" else \
+           ("1 分鐘" if iv == "1M" else f"{iv[:-1]} 小時" if iv.endswith("H") else "1 天")
 TPE = timezone(timedelta(hours=8))
 
 
@@ -179,8 +198,15 @@ def fetch_klines_raw(symbol, interval, end_ms, stop_ms):
     """由 end_ms 往回翻頁，直到涵蓋 stop_ms。"""
     rows, cursor = [], end_ms
     while True:
-        js = api_get("/api/v1/market/klines",
-                     {"symbol": symbol, "interval": interval, "endTime": cursor, "limit": 500})
+        try:
+            js = api_get("/api/v1/market/klines",
+                         {"symbol": symbol, "interval": interval, "endTime": cursor, "limit": 500})
+        except ApiError as e:
+            # 派網每個週期只保留約 10,000 根，再往前要就會回 MARKET_INVALID_TIME；
+            # 這代表「沒有更早的資料」而不是錯誤，停止翻頁即可。
+            if "INVALID_TIME" in str(e).upper():
+                break
+            raise
         kl = js["data"]["klines"]
         if not kl:
             break
@@ -201,25 +227,29 @@ def fetch_klines_raw(symbol, interval, end_ms, stop_ms):
 
 
 def load_hourly(symbol, start_ms, now_ms):
-    """讀快取 + 增量下載 1h K棒，並補齊缺漏小時。"""
+    """讀快取 + 增量下載 K棒，並補齊缺漏的時段。"""
+    iv, BAR = CONFIG["INTERVAL"], bar_ms()
     os.makedirs(CONFIG["CACHE_DIR"], exist_ok=True)
-    path = os.path.join(CONFIG["CACHE_DIR"], f"{symbol}_60M.csv")
+    path = os.path.join(CONFIG["CACHE_DIR"], f"{symbol}_{iv}.csv")
     cached = pd.read_csv(path) if os.path.exists(path) else None
-    if cached is not None and len(cached) and cached["time"].min() <= start_ms:
-        new = fetch_klines_raw(symbol, "60M", now_ms, int(cached["time"].max()))
-        df = pd.concat([cached, new]).drop_duplicates("time", keep="last")
+    have = cached is not None and len(cached) > 0
+    # 派網每個週期只保留最近約 10,000 根，更早的抓不到；但快取可以一直累積下去，
+    # 所以永遠跟快取合併，不要用新抓的資料覆蓋掉已經存下來的歷史。
+    if have and int(cached["time"].max()) >= start_ms:
+        new = fetch_klines_raw(symbol, iv, now_ms, int(cached["time"].max()))
     else:
-        df = fetch_klines_raw(symbol, "60M", now_ms, start_ms)
+        new = fetch_klines_raw(symbol, iv, now_ms, start_ms)
+    df = pd.concat([cached, new]) if have else new
     if df.empty:
         return df
-    df = df.sort_values("time").reset_index(drop=True)
-    df = df[df["time"] + HOUR_MS <= now_ms]            # 丟掉尚未收完的K棒
-    df.to_csv(path, index=False)
+    df = df.drop_duplicates("time", keep="last").sort_values("time").reset_index(drop=True)
+    df = df[df["time"] + BAR <= now_ms]               # 丟掉尚未收完的K棒
+    df.to_csv(path, index=False)                      # 存回完整歷史（含快取累積的部分）
     df = df[df["time"] >= start_ms]
     if df.empty:
         return df
-    # 補齊缺漏的小時（無成交）→ 價格沿用前收、量=0
-    grid = pd.DataFrame({"time": np.arange(df["time"].min(), df["time"].max() + 1, HOUR_MS, dtype="int64")})
+    # 補齊缺漏的時段（無成交）→ 價格沿用前收、量=0
+    grid = pd.DataFrame({"time": np.arange(df["time"].min(), df["time"].max() + 1, BAR, dtype="int64")})
     df = grid.merge(df, on="time", how="left")
     df["close"] = df["close"].ffill()
     for c in ("open", "high", "low"):
@@ -245,7 +275,7 @@ def add_indicators(df, btc=None):
     df["obv_chg"] = obv - obv.shift(CONFIG["OBV_LOOKBACK"])
     # 成交額：優先用API的 amount（計價幣成交額），沒有則以 收盤×成交量 估算
     turnover = df["amount"] if "amount" in df.columns and df["amount"].sum() > 0 else c * v
-    df["liq24"] = turnover.rolling(24).sum()
+    df["liq24"] = turnover.rolling(max(1, round(24 * bars_per_hour()))).sum()
     liq_val = df["liq24"] if CONFIG["LIQ_MODE"] == "sum24" else df["liq24"] / 24
     mp = CONFIG["MAX_PRICE"]
     common = (df["atr_pct"] > CONFIG["ATR_MIN_PCT"]) & (liq_val > CONFIG["LIQ_MIN_USD"])
@@ -262,7 +292,7 @@ def add_indicators(df, btc=None):
     rngbar = (h - l).replace(0, np.nan)
     df["close_pos"] = (c - l) / rngbar                         # 1=收最高、0=收最低
     df["htf_dev"] = c / c.rolling(CONFIG["HTF_MA_PERIOD"]).mean() - 1
-    df["ret24"] = c / c.shift(24) - 1
+    df["ret24"] = c / c.shift(max(1, round(24 * bars_per_hour()))) - 1
     if btc is not None:
         df = df.merge(btc, on="time", how="left")
     else:
@@ -296,13 +326,17 @@ def add_indicators(df, btc=None):
 
 def resolve_with_5m(symbol, bar_open, d, tp, sl):
     """同一根1h同時碰到止盈與止損 → 依序用 5M/15M/30M K棒判斷誰先。回傳 (結果, 出場時間ms, 說明)。"""
-    bar_end = bar_open + HOUR_MS
+    BAR = bar_ms()
+    bar_end = bar_open + BAR
     for iv in CONFIG["RESOLVE_INTERVALS"]:
-        minutes = int(iv[:-1])
-        step = minutes * 60_000
+        step = INTERVAL_MS.get(iv, 0)
+        if not step or step >= BAR:
+            continue                        # 只用比主週期更小的K棒
+        minutes = step // 60_000
         try:
             js = api_get("/api/v1/market/klines",
-                         {"symbol": symbol, "interval": iv, "endTime": bar_end - 1, "limit": 60 // minutes})
+                         {"symbol": symbol, "interval": iv, "endTime": bar_end - 1,
+                          "limit": min(500, int(BAR // step))})
             kl = sorted((k for k in js["data"]["klines"] if bar_open <= int(k["time"]) < bar_end),
                         key=lambda k: int(k["time"]))
         except Exception:
@@ -328,6 +362,7 @@ def backtest(symbol, df, test_start_ms):
     o, h, l, c = (df[x].to_numpy() for x in ("open", "high", "low", "close"))
     sig = df["signal"].to_numpy()
     max_hold = CONFIG["MAX_HOLD_HOURS"]
+    BAR = bar_ms()
     atrp = df["atr_pct"].to_numpy()
     n, trades = len(df), []
     i = int(np.searchsorted(t, test_start_ms))
@@ -336,7 +371,7 @@ def backtest(symbol, df, test_start_ms):
             i += 1
             continue
         d, entry = int(sig[i]), c[i]
-        entry_ms = t[i] + HOUR_MS
+        entry_ms = t[i] + BAR
         if CONFIG["EXIT_MODE"] == "atr":
             tp_pct, sl_pct = CONFIG["TP_ATR_MULT"] * atrp[i], CONFIG["SL_ATR_MULT"] * atrp[i]
         else:
@@ -344,7 +379,7 @@ def backtest(symbol, df, test_start_ms):
         tp = entry * (1 + d * tp_pct)
         sl = entry * (1 - d * sl_pct)
         mfe = mae = 0.0
-        result, exit_px, exit_ms, note, j = "未平倉", c[-1], t[-1] + HOUR_MS, "", n - 1
+        result, exit_px, exit_ms, note, j = "未平倉", c[-1], t[-1] + BAR, "", n - 1
         for j in range(i + 1, n):
             fav = (h[j] / entry - 1) if d == 1 else (1 - l[j] / entry)
             adv = (1 - l[j] / entry) if d == 1 else (h[j] / entry - 1)
@@ -354,11 +389,11 @@ def backtest(symbol, df, test_start_ms):
                 if CONFIG["RESOLVE_SAME_BAR_WITH_5M"]:
                     result, exit_ms, note = resolve_with_5m(symbol, t[j], d, tp, sl)
                 else:
-                    result, exit_ms, note = "止損", t[j] + HOUR_MS, "同1h觸發→保守計止損"
+                    result, exit_ms, note = "止損", t[j] + BAR, "同一根同時觸發→保守計止損"
             elif hit_sl:
-                result, exit_ms = "止損", t[j] + HOUR_MS
+                result, exit_ms = "止損", t[j] + BAR
             elif hit_tp:
-                result, exit_ms = "止盈", t[j] + HOUR_MS
+                result, exit_ms = "止盈", t[j] + BAR
             if result == "止盈":
                 exit_px, mfe = tp, max(mfe, tp_pct)
                 break
@@ -371,8 +406,8 @@ def backtest(symbol, df, test_start_ms):
                 mae = max(mae, sl_pct)
                 break
             mfe, mae = max(mfe, fav), max(mae, adv)
-            if max_hold and (t[j] + HOUR_MS - entry_ms) >= max_hold * HOUR_MS:
-                result, exit_px, exit_ms, note = "時間出場", c[j], t[j] + HOUR_MS, f"持倉達{max_hold}h"
+            if max_hold and (t[j] + BAR - entry_ms) >= max_hold * HOUR_MS:
+                result, exit_px, exit_ms, note = "時間出場", c[j], t[j] + BAR, f"持倉達{max_hold}h"
                 break
         row = df.iloc[i]
         trades.append({
@@ -435,7 +470,7 @@ def write_excel(trades, scan_rows, path, period_txt, extra=None):
     params = [
         ("市場", CONFIG["MARKET_TYPE"], "PERP=永續合約 / SPOT=現貨"),
         ("回測區間", period_txt, "台北時間"),
-        ("K棒週期", "1小時", "訊號於K棒收盤判斷、以收盤價進場"),
+        ("K棒週期", interval_label(), "訊號於K棒收盤判斷、以收盤價進場"),
         ("止盈", CONFIG["TAKE_PROFIT"], "同方向" if CONFIG["EXIT_MODE"] == "fixed"
          else f"（未使用）改依ATR：止盈 {CONFIG['TP_ATR_MULT']}×ATR"),
         ("止損", CONFIG["STOP_LOSS"], "反方向" if CONFIG["EXIT_MODE"] == "fixed"
@@ -444,11 +479,11 @@ def write_excel(trades, scan_rows, path, period_txt, extra=None):
         ("流動性門檻 (USDT)", CONFIG["LIQ_MIN_USD"],
          "近24h成交額加總" if CONFIG["LIQ_MODE"] == "sum24" else "近24h平均每小時成交額"),
         ("動能門檻", CONFIG["MOM_THRESHOLD"] if CONFIG["MOM_MODE"] == "fixed" else f"{CONFIG['MOM_ATR_MULT']}×ATR",
-         "收盤 vs 1小時前收盤"),
+         "收盤 vs 前一根收盤"),
         ("ATR 門檻", CONFIG["ATR_MIN_PCT"], f"ATR({CONFIG['ATR_PERIOD']}) ÷ 收盤"
          + (f"，上限 {CONFIG['ATR_MAX_PCT']:.1%}" if CONFIG["ATR_MAX_PCT"] is not None else "")),
         ("均線", f"MA{CONFIG['MA_PERIOD']}", "做多站上 / 做空跌破"),
-        ("OBV 比較", f"{CONFIG['OBV_LOOKBACK']}小時前", "做多 OBV 上升 / 做空 OBV 下降"),
+        ("OBV 比較", f"{CONFIG['OBV_LOOKBACK']} 根前", "做多 OBV 上升 / 做空 OBV 下降"),
         ("價格上限", CONFIG["MAX_PRICE"] if CONFIG["MAX_PRICE"] is not None else "不限", "訊號當下收盤價須低於此值"),
         ("時間停損", CONFIG["MAX_HOLD_HOURS"] or "無", "小時"),
         ("同K棒雙觸發", "/".join(CONFIG["RESOLVE_INTERVALS"]) + " 依序判斷"
@@ -485,7 +520,7 @@ def write_excel(trades, scan_rows, path, period_txt, extra=None):
 
     # ---------- 交易明細 ----------
     headers = ["編號", "交易對", "方向", "進場時間", "進場價", "止盈價", "止損價", "出場時間",
-               "出場價", "結果", "持倉小時", "報酬率(含費)", "判定說明", "1h漲跌幅", "ATR%",
+               "出場價", "結果", "持倉小時", "報酬率(含費)", "判定說明", "前一根漲跌幅", "ATR%",
                "價格vsMA20", "OBV 20h變化", "24h成交額(USDT)", "最大有利(MFE)", "最大不利(MAE)",
                "量比", "收盤強度", "長週期趨勢(順勢)", "24h漲跌(順勢)", "BTC 1h漲跌(順勢)", "BTC vs MA20(順勢)",
                "止盈%", "止損%", "盈虧平衡勝率"]
@@ -579,7 +614,7 @@ def write_excel(trades, scan_rows, path, period_txt, extra=None):
     ws_ov["A9"] = "說明"
     ws_ov["A9"].font = Font(name="Arial", size=10, bold=True)
     notes = [
-        "・持倉時間以1小時K棒為精度（觸價當根收盤計），5分K判定的交易精度為5分鐘。",
+        "・持倉時間以主K棒為精度（觸價當根收盤計）；同根雙觸發時改用更小週期K棒判定。",
         "・止盈以止盈價成交；止損若遇開盤跳空穿越，以開盤價成交（較保守）。",
         "・同一根1h同時碰到止盈與止損時，依參數頁設定判斷（見交易明細『判定說明』）。",
         "・只含目前仍上架的交易對，已下架幣種不在內（存活者偏差，實際表現可能較差）。",
@@ -819,11 +854,12 @@ def classify(sym_info):
 
 
 def main():
-    now_ms = int(time.time() * 1000) // HOUR_MS * HOUR_MS
+    BAR = bar_ms()
+    now_ms = int(time.time() * 1000) // BAR * BAR
     test_start = now_ms - CONFIG["LOOKBACK_DAYS"] * 24 * HOUR_MS
-    fetch_start = test_start - CONFIG["WARMUP_BARS"] * HOUR_MS
+    fetch_start = test_start - CONFIG["WARMUP_BARS"] * BAR
     period_txt = f"{to_dt(test_start):%Y-%m-%d %H:%M} ~ {to_dt(now_ms):%Y-%m-%d %H:%M}"
-    print(f"回測區間：{period_txt}  市場：{CONFIG['MARKET_TYPE']}")
+    print(f"回測區間：{period_txt}  市場：{CONFIG['MARKET_TYPE']}  K棒：{interval_label()}")
 
     symbols = get_symbols()
     only = {s.upper() for s in CONFIG["ONLY_SYMBOLS"]}

@@ -3,7 +3,7 @@
 """
 派網策略 Dry Run（前瞻模擬，不下單）
 ===================================
-同時追蹤策略1（延續、做多做空）與策略2（大戶提款、只做空）
+同時追蹤策略1（延續）、策略2（大戶提款）與策略4（爆量竭盡，5分K）
 每次執行：抓最新的 1h K棒 → 依序處理「上次執行之後新收完的每一根K棒」
          → 先檢查持倉是否止盈/止損，再檢查新訊號 → 寫入狀態檔、Excel、SUMMARY.md
 
@@ -28,6 +28,7 @@ from openpyxl.styles import Font
 
 import pionex_backtest as pb
 import pionex_reversal as rv
+import pionex_strategy4 as s4
 
 # ============================== 起算時間 ==============================
 # 第一次執行時，從這個時間開始回補統計（台北時間）。設 None = 只從執行當下開始。
@@ -36,7 +37,7 @@ START_FROM = "2026-09-01 00:00"
 
 # ============================== 策略設定（固定，勿在測試途中修改） ==============================
 BASE_CONFIG = dict(
-    MARKET_TYPE="PERP",
+    MARKET_TYPE="PERP", INTERVAL="60M",
     TAKE_PROFIT=0.03, STOP_LOSS=0.05, FEE_RATE=0.0005, EXIT_MODE="fixed",
     LIQ_MIN_USD=50_000, LIQ_MODE="avg_hourly",
     MOM_MODE="fixed", MOM_THRESHOLD=0.02,
@@ -54,7 +55,7 @@ BASE_CONFIG = dict(
 
 # ---- 策略2：大戶提款（只做空低價幣）----
 S2_CONFIG = dict(
-    MARKET_TYPE="PERP",
+    MARKET_TYPE="PERP", INTERVAL="60M",
     TAKE_PROFIT=0.03, STOP_LOSS=0.05, FEE_RATE=0.0005, EXIT_MODE="fixed",
     TP_ATR_MULT=1.2, SL_ATR_MULT=0.8,
     LIQ_MIN_USD=50_000, LIQ_MODE="avg_hourly",
@@ -82,6 +83,15 @@ S2_REV = dict(
     ENTRY_TIMING="breakdown", BREAKDOWN_WINDOW=6, RECHECK_ATR_AT_ENTRY=True,
 )
 
+# ---- 策略4：爆量竭盡（5分K、只做空）----
+S4_CONFIG = dict(S2_CONFIG)
+S4_CONFIG.update(
+    INTERVAL="5M", MAX_PRICE=None, ATR_MIN_PCT=0, ATR_MAX_PCT=None,
+    LIQ_MIN_USD=0, LIQ_MODE="sum24", RESOLVE_INTERVALS=["1M"],
+    TAKE_PROFIT=0.03, STOP_LOSS=0.05, EXIT_MODE="fixed",
+)
+S4_RULE = dict(s4.S4)          # 條件沿用 pionex_strategy4.py 的 S4
+
 BOOKS = {
     "main": {"s": 1, "label": "策略1 延續（ATR 4–5%）", "overrides": {}},
     # 觀察組：只放寬 ATR 範圍，用來每月檢查哪個 ATR 區間最好（見 ATR 區間監控頁）
@@ -90,10 +100,13 @@ BOOKS = {
     "rev": {"s": 2, "label": "策略2 大戶提款 正式版（啟動前漲幅 ≤ 5%）", "overrides": {}, "rev": {}},
     "rev_wide": {"s": 2, "label": "策略2 大戶提款 放寬版（啟動前漲幅不限）",
                  "overrides": {}, "rev": {"MAX_PRIOR_RET": None}},
+    "s4": {"s": 4, "label": "策略4 爆量竭盡（5分K）", "overrides": {}},
 }
+BOOK_INTERVAL = {b: ("5M" if m["s"] == 4 else "60M") for b, m in BOOKS.items()}
 ATR_BANDS = [(0.02, 0.03), (0.03, 0.04), (0.04, 0.05), (0.05, 0.06), (0.06, 0.08), (0.08, None)]
 
 KLINE_LIMIT = 500
+WARMUP = {"60M": 150, "5M": 400}   # 指標暖機需要的根數（5M 要涵蓋 24 小時 = 288 根）
 WORKERS = 3
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATE_PATH = os.path.join(HERE, "state", "dryrun_state.json")
@@ -106,16 +119,23 @@ def use_config(book):
     if meta["s"] == 1:
         pb.CONFIG.update(BASE_CONFIG)
         pb.PARAM_ROWS_HOOK = pb.DIAG_COLUMNS_HOOK = None
-    else:
+    elif meta["s"] == 2:
         pb.CONFIG.update(S2_CONFIG)
         rv.REV.update(S2_REV)
         rv.REV.update(meta.get("rev", {}))
         pb.PARAM_ROWS_HOOK, pb.DIAG_COLUMNS_HOOK = rv.param_rows, s2_diag
+    else:
+        pb.CONFIG.update(S4_CONFIG)
+        s4.S4.update(S4_RULE)
+        pb.CONFIG["COOLDOWN_BARS"] = max(1, round(s4.S4["COOLDOWN_HOURS"] * s4.H()))
+        pb.PARAM_ROWS_HOOK, pb.DIAG_COLUMNS_HOOK = s4.param_rows, s4.diag_columns
     pb.CONFIG.update(meta["overrides"])
 
 
 def indicators(book, df, btc):
-    return (pb.add_indicators if BOOKS[book]["s"] == 1 else rv.add_indicators)(df, btc)
+    k = BOOKS[book]["s"]
+    return (pb.add_indicators if k == 1 else rv.add_indicators if k == 2
+            else s4.add_indicators)(df, btc)
 
 
 def s2_diag():
@@ -129,11 +149,12 @@ def s2_diag():
     return [n for n, *_ in rv.DIAG], [w for _, _, w, _ in rv.DIAG], vals
 
 
-def start_ms():
+def start_ms(bar=None):
     if not START_FROM:
         return None
     dt = datetime.strptime(START_FROM, "%Y-%m-%d %H:%M").replace(tzinfo=pb.TPE)
-    return int(dt.timestamp() * 1000) // HOUR * HOUR
+    bar = bar or HOUR
+    return int(dt.timestamp() * 1000) // bar * bar
 
 
 def now_ms():
@@ -171,14 +192,15 @@ def save_state(st):
 
 
 # ============================== 資料 ==============================
-def prepare(df, t_now):
-    """去掉未收完的K棒、補齊缺漏小時（與回測 load_hourly 相同處理）。"""
+def prepare(df, t_now, bar=None):
+    """去掉未收完的K棒、補齊缺漏時段（與回測 load_hourly 相同處理）。"""
+    bar = bar or HOUR
     if df.empty:
         return df
-    df = df[df["time"] + HOUR <= t_now].sort_values("time").reset_index(drop=True)
+    df = df[df["time"] + bar <= t_now].sort_values("time").reset_index(drop=True)
     if df.empty:
         return df
-    grid = pd.DataFrame({"time": np.arange(df["time"].min(), df["time"].max() + 1, HOUR, dtype="int64")})
+    grid = pd.DataFrame({"time": np.arange(df["time"].min(), df["time"].max() + 1, bar, dtype="int64")})
     df = grid.merge(df, on="time", how="left")
     df["close"] = df["close"].ffill()
     for c in ("open", "high", "low"):
@@ -189,9 +211,14 @@ def prepare(df, t_now):
     return df
 
 
-def fetch(symbol, t_now):
-    raw = pb.fetch_klines_raw(symbol, "60M", t_now, t_now - KLINE_LIMIT * HOUR)
-    return prepare(raw, t_now)
+def fetch(symbol, t_now, interval="60M", since=None):
+    """since = 最早需要的K棒時間（含暖機）。沒給就抓 KLINE_LIMIT 根。"""
+    bar = pb.INTERVAL_MS[interval]
+    stop = t_now - KLINE_LIMIT * bar
+    if since is not None:
+        stop = min(stop, since)
+    raw = pb.fetch_klines_raw(symbol, interval, t_now, stop)
+    return prepare(raw, t_now, bar)
 
 
 # ============================== 核心：逐根K棒推進 ==============================
@@ -218,8 +245,13 @@ def snapshot(row, d):
     }
 
 
-def step_symbol(bk, sym, df, strategy=1, backfill_from=None):
+def snapshot4(row):
+    return {k: f(row[k]) for k in s4.TRIG}
+
+
+def step_symbol(bk, sym, df, strategy=1, bar=None, backfill_from=None):
     """處理此交易對自上次以來新收完的K棒。回傳 (新開倉數, 新平倉數)。"""
+    BAR = bar or HOUR
     cfg = pb.CONFIG
     st = bk["symbols"].setdefault(sym, {"last": None, "pos": None, "cool_until": 0, "last_close": None})
     if df.empty:
@@ -241,7 +273,7 @@ def step_symbol(bk, sym, df, strategy=1, backfill_from=None):
             d, entry, tp, sl = pos["d"], pos["entry"], pos["tp"], pos["sl"]
             hit_tp = h[j] >= tp if d == 1 else l[j] <= tp
             hit_sl = l[j] <= sl if d == 1 else h[j] >= sl
-            result, exit_px, exit_ms, note = None, None, t[j] + HOUR, ""
+            result, exit_px, exit_ms, note = None, None, t[j] + BAR, ""
             if hit_tp and hit_sl:
                 if cfg["RESOLVE_SAME_BAR_WITH_5M"]:
                     result, exit_ms, note = pb.resolve_with_5m(sym, int(t[j]), d, tp, sl)
@@ -265,14 +297,14 @@ def step_symbol(bk, sym, df, strategy=1, backfill_from=None):
                 adv = (1 - l[j] / entry) if d == 1 else (h[j] / entry - 1)
                 pos["mfe"], pos["mae"] = max(pos["mfe"], float(fav)), max(pos["mae"], float(adv))
                 mh = cfg["MAX_HOLD_HOURS"]
-                if mh and (t[j] + HOUR - pos["entry_time"]) >= mh * HOUR:
+                if mh and (t[j] + BAR - pos["entry_time"]) >= mh * HOUR:
                     result, exit_px, note = "時間出場", float(c[j]), f"持倉達{mh}h"
             if result:
                 tr = {k: v for k, v in pos.items() if k not in ("d", "entry_bar")}
                 tr.update(exit_time=int(exit_ms), exit=float(exit_px), result=result, note=note)
                 bk["closed"].append(tr)
                 st["pos"] = None
-                st["cool_until"] = int(t[j] + cfg["COOLDOWN_BARS"] * HOUR)
+                st["cool_until"] = int(t[j] + cfg["COOLDOWN_BARS"] * BAR)
                 closed += 1
         if st["pos"] is None and sig[j] != 0 and t[j] >= st["cool_until"]:
             d = int(sig[j])
@@ -283,11 +315,12 @@ def step_symbol(bk, sym, df, strategy=1, backfill_from=None):
                 tp_pct, sl_pct = cfg["TAKE_PROFIT"], cfg["STOP_LOSS"]
             st["pos"] = {
                 "symbol": sym, "dir": "做多" if d == 1 else "做空", "d": d,
-                "entry_bar": int(t[j]), "entry_time": int(t[j] + HOUR), "entry": entry,
+                "entry_bar": int(t[j]), "entry_time": int(t[j] + BAR), "entry": entry,
                 "tp": entry * (1 + d * tp_pct), "sl": entry * (1 - d * sl_pct),
                 "tp_pct": float(tp_pct), "sl_pct": float(sl_pct), "mfe": 0.0, "mae": 0.0,
                 **snapshot(df.iloc[j], d),
                 **(snapshot2(df.iloc[j], int(t[j])) if strategy == 2 else {}),
+                **(snapshot4(df.iloc[j]) if strategy == 4 else {}),
             }
             opened += 1
     st["last"] = int(t[-1])
@@ -295,13 +328,14 @@ def step_symbol(bk, sym, df, strategy=1, backfill_from=None):
     return opened, closed
 
 
-def open_as_trades(bk):
+def open_as_trades(bk, bar=None):
+    bar = bar or HOUR
     out = []
     for sym, st in bk["symbols"].items():
         pos = st.get("pos")
         if pos:
             tr = {k: v for k, v in pos.items() if k not in ("d", "entry_bar")}
-            tr.update(exit_time=int(st["last"] + HOUR), exit=st["last_close"] or pos["entry"],
+            tr.update(exit_time=int(st["last"] + bar), exit=st["last_close"] or pos["entry"],
                       result="未平倉", note="持倉中（以最新收盤估值）")
             out.append(tr)
     return out
@@ -397,7 +431,8 @@ def write_outputs(state, t_now):
     for book, meta in BOOKS.items():
         use_config(book)
         bk = state["books"][book]
-        trades = sorted(bk["closed"] + open_as_trades(bk), key=lambda x: (x["entry_time"], x["symbol"]))
+        trades = sorted(bk["closed"] + open_as_trades(bk, pb.INTERVAL_MS[BOOK_INTERVAL[book]]),
+                        key=lambda x: (x["entry_time"], x["symbol"]))
         scan = [{"symbol": s, "status": "已掃描", "reason": "持倉中" if v.get("pos") else "",
                  "bars": None} for s, v in sorted(bk["symbols"].items())]
         period = f"{start_txt} ~ {pb.to_dt(t_now):%Y-%m-%d %H:%M}（Dry Run）"
@@ -406,7 +441,7 @@ def write_outputs(state, t_now):
         pb.PARAM_ROWS_HOOK = pb.DIAG_COLUMNS_HOOK = None
         # ---- SUMMARY.md ----
         df = closed_df(bk)
-        opens = open_as_trades(bk)
+        opens = open_as_trades(bk, pb.INTERVAL_MS[BOOK_INTERVAL[book]])
         lines += [f"## {meta['label']}", ""]
         if df.empty:
             lines += ["尚無已平倉交易。", ""]
@@ -432,6 +467,21 @@ def write_outputs(state, t_now):
         fh.write("\n".join(lines))
 
 
+def _step(state, books_iv, sym, df, err, interval, bar, need, btc, counts, errors, backfill_from):
+    if err or df is None or len(df) < need:
+        errors.append((sym, err or f"{interval} K棒不足"))
+        return
+    for book in books_iv:
+        use_config(book)
+        try:
+            ind = indicators(book, df.copy(), btc if BOOKS[book]["s"] != 4 else None)
+            o_, c_ = step_symbol(state["books"][book], sym, ind, BOOKS[book]["s"], bar, backfill_from[book])
+            counts[book]["opened"] += o_
+            counts[book]["closed"] += c_
+        except Exception:
+            errors.append((sym, traceback.format_exc(limit=1)[-200:]))
+
+
 # ============================== 主程式 ==============================
 def main():
     t0 = time.time()
@@ -450,45 +500,56 @@ def main():
     for bk in state["books"].values():                # 持倉中的幣即使下架也要繼續追蹤
         universe |= {sym for sym, st in bk["symbols"].items() if st.get("pos")}
     btc_sym = "BTC_USDT_PERP" if BASE_CONFIG["MARKET_TYPE"] == "PERP" else "BTC_USDT"
-    b = fetch(btc_sym, t_now)
+    b = fetch(btc_sym, t_now, "60M")
     btc = pd.DataFrame({"time": b["time"], "btc_ret1h": b["close"] / b["close"].shift(1) - 1,
                         "btc_ma_dev": b["close"] / b["close"].rolling(20).mean() - 1})
 
-    def job(sym):
-        try:
-            return sym, fetch(sym, t_now), None
-        except Exception as e:
-            return sym, None, str(e)[:200]
+    def job_for(interval, since_map):
+        def job(sym):
+            try:
+                return sym, fetch(sym, t_now, interval, since_map.get(sym)), None
+            except Exception as e:
+                return sym, None, str(e)[:200]
+        return job
 
     # 回補只在「這本帳本」的首次執行生效（state 內尚無任何交易對紀錄）；
     # 之後才進 universe 的新幣，即使是舊帳本也一律從最新一根開始（見 step_symbol()）。
     s0 = start_ms()
-    backfill_from = {bk: (s0 if s0 and not state["books"][bk]["symbols"] else None) for bk in BOOKS}
-    fresh_books = [bk for bk, v in backfill_from.items() if v]
+    fresh_books = [bk for bk in BOOKS if s0 and not state["books"][bk]["symbols"]]
     if fresh_books:
         earliest = int(b["time"].iloc[0]) if len(b) else None
         print(f"首次執行（{'/'.join(fresh_books)}）：回補 {pb.to_dt(s0):%Y-%m-%d %H:%M} 起的K棒")
         if earliest and earliest > s0:
-            print(f"[警告] API 只能取到 {pb.to_dt(earliest):%Y-%m-%d %H:%M} 之後的K棒，"
+            print(f"[警告] 60M K棒只能取到 {pb.to_dt(earliest):%Y-%m-%d %H:%M} 之後，"
                   f"{pb.to_dt(s0):%m-%d} ~ {pb.to_dt(earliest):%m-%d} 這段無法回補")
+        lim5 = t_now - 10000 * pb.INTERVAL_MS["5M"]
+        if lim5 > s0:
+            print(f"[警告] 5M K棒只保留到 {pb.to_dt(lim5):%Y-%m-%d %H:%M}，"
+                  f"策略4 只能從那時開始回補")
 
     errors, last_bar = [], None
     counts = {bk: {"opened": 0, "closed": 0} for bk in BOOKS}
-    with ThreadPoolExecutor(WORKERS) as ex:
-        for sym, df, err in ex.map(job, sorted(universe)):
-            if err or df is None or len(df) < 60:
-                errors.append((sym, err or "K棒不足"))
-                continue
-            last_bar = max(last_bar or 0, int(df["time"].iloc[-1]))
-            for book in BOOKS:
-                use_config(book)
-                try:
-                    o_, c_ = step_symbol(state["books"][book], sym, indicators(book, df.copy(), btc),
-                                         BOOKS[book]["s"], backfill_from[book])
-                    counts[book]["opened"] += o_
-                    counts[book]["closed"] += c_
-                except Exception:
-                    errors.append((sym, traceback.format_exc(limit=1)[-200:]))
+    for interval in sorted(set(BOOK_INTERVAL.values()), key=lambda x: -pb.INTERVAL_MS[x]):
+        books_iv = [b for b in BOOKS if BOOK_INTERVAL[b] == interval]
+        bar = pb.INTERVAL_MS[interval]
+        warm = WARMUP.get(interval, 150)
+        need = min(warm, 60 if interval == "60M" else 300)
+        s0i = start_ms(bar)
+        # 這本帳本是否首次執行（state 內尚無任何交易對紀錄），才允許回補新幣
+        backfill_from = {bk: (s0i if s0i and not state["books"][bk]["symbols"] else None) for bk in books_iv}
+        # 每個幣要抓多早：新的幣從 START_FROM 起算，已在追蹤的只要補到上次處理的位置
+        since_map = {}
+        for sym in universe:
+            lasts = [state["books"][b]["symbols"].get(sym, {}).get("last") for b in books_iv]
+            lasts = [x for x in lasts if x]
+            base_t = min(lasts) if len(lasts) == len(books_iv) else (s0i or t_now)
+            since_map[sym] = base_t - warm * bar
+        print(f"  抓取 {interval} K棒（{'、'.join(BOOKS[b]['label'] for b in books_iv)}）")
+        with ThreadPoolExecutor(WORKERS) as ex:
+            for sym, df, err in ex.map(job_for(interval, since_map), sorted(universe)):
+                _step(state, books_iv, sym, df, err, interval, bar, need, btc, counts, errors, backfill_from)
+                if df is not None and len(df):
+                    last_bar = max(last_bar or 0, int(df["time"].iloc[-1]))
     state["runs"].append({"time": t_now, "last_bar": last_bar, "symbols": len(universe),
                           "errors": len(errors), "seconds": round(time.time() - t0, 1), "books": counts})
     state["runs"] = state["runs"][-500:]

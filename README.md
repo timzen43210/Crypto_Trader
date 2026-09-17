@@ -3,7 +3,7 @@
 不下單、持續統計的前瞻測試。每次執行會處理上次之後新收完的 1 小時 K 棒，
 進出場規則與回測程式完全相同，結果可直接和回測比較。
 
-同時追蹤四個帳本：
+同時追蹤五個帳本：
 
 | 帳本 | 內容 | 回測表現（一年） |
 |---|---|---|
@@ -11,9 +11,14 @@
 | `watch` | 策略1 觀察組，ATR ≥ 2% | 供 ATR 區間監控用，不是要拿來操作的 |
 | `rev` | 策略2 大戶提款 正式版 | 72 筆、勝率 70.8% |
 | `rev_wide` | 策略2 放寬版（啟動前漲幅不限） | 179 筆、勝率 68.7% |
+| `s4` | 策略4 爆量竭盡（**5分K**，只做空） | 33 天 155 筆、勝率 71.0%；15分K 99 天 310 筆、67.7% |
 
-策略1 盈虧平衡勝率 63.75%（止盈3%/止損5%），策略2 相同。
-資金模擬槓桿：策略1、策略2 皆為 50 倍（改 `BASE_CONFIG` / `S2_CONFIG`）。
+所有策略的止盈3%/止損5%，盈虧平衡勝率都是 63.75%。
+資金模擬槓桿：策略1、2、4 皆為 50 倍（改 `BASE_CONFIG` / `S2_CONFIG` / `S4_CONFIG`）。
+
+策略4 用 5 分 K，其餘用 1 小時 K，程式會自動分開抓。
+**5 分 K 只保留最近約 34 天**，所以策略4 的回補起點最早只能到那時；
+`START_FROM` 設得更早時程式會印出提醒，不影響其他帳本。
 
 ## 開始前先確認起算時間
 
@@ -34,6 +39,7 @@ START_FROM = "2026-09-01 00:00"   # 設 None = 只從第一次執行當下開始
 | `pionex_dryrun.py` | 主程式（策略參數在檔案開頭 `BASE_CONFIG`） |
 | `pionex_backtest.py` | 策略1 回測程式，dry run 直接使用裡面的指標與出場邏輯 |
 | `pionex_reversal.py` | 策略2 回測程式，同上 |
+| `pionex_strategy4.py` | 策略4 回測程式，同上 |
 | `.github/workflows/dryrun.yml` | GitHub Actions 排程設定 |
 | `run.sh` | 在 VPS / 自己主機上用 crontab 執行 |
 | `output/SUMMARY.md` | 自動產生的摘要（在 GitHub 網頁或手機 App 直接可看） |
@@ -41,6 +47,7 @@ START_FROM = "2026-09-01 00:00"   # 設 None = 只從第一次執行當下開始
 | `output/dryrun_watch.xlsx` | 策略1 觀察組報表 |
 | `output/dryrun_rev.xlsx` | 策略2 正式版報表 |
 | `output/dryrun_rev_wide.xlsx` | 策略2 放寬版報表 |
+| `output/dryrun_s4.xlsx` | 策略4 報表 |
 | `state/dryrun_state.json` | 持倉與交易紀錄，**不要手動修改** |
 
 ## 方法 A：GitHub Actions（免費、免主機）
