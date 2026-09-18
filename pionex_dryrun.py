@@ -275,11 +275,13 @@ def excess_stats(df, B, n_boot=2000):
              24: 2.07, 25: 2.06, 26: 2.06, 27: 2.06, 28: 2.05, 29: 2.05,
              30: 2.05}.get(D, 2.04))
     sw, sx = bw.std(ddof=1), bx.std(ddof=1)
-    # 勝率是比例，區間不能跑到 0~1 之外（天數少時 t 分位很大，很容易算出 -41%~201%
-    # 這種明顯無意義的數字，印出來會誤導）。超額本身可以是負的，不夾。
+    # 勝率是比例，區間不能跑到 0~1 之外；超額是兩個比例相減，界限是 -1~+1。
+    # 天數少時 t 分位很大（D=2 時 12.71），不夾住會印出 -41%~201%、±263pt 這種
+    # 數學上不可能的數字。夾住之後看到 0%~100% 就知道「這段沒有資訊量」。
     return dict(n=int(m.sum()), wr=wr, base=bl, exc=wr - bl, days=D,
                 wr_lo=max(0.0, wr - tmul * sw), wr_hi=min(1.0, wr + tmul * sw),
-                ex_lo=(wr - bl) - tmul * sx, ex_hi=(wr - bl) + tmul * sx,
+                ex_lo=max(-1.0, (wr - bl) - tmul * sx),
+                ex_hi=min(1.0, (wr - bl) + tmul * sx),
                 p_exc=float((bx > 0).mean()))
 
 
