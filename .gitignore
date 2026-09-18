@@ -1,0 +1,7 @@
+# 跟單群組真實訊號（pionex_strategy4.py 用來比對，屬於他人資料，不公開）
+signals.csv
+
+# 回測快取（本機重跑用，不需要進版控）
+pionex_cache/
+__pycache__/
+*.pyc
