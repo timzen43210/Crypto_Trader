@@ -235,6 +235,11 @@ def baseline_rates(B, min_n=30):
     return out
 
 
+# 下判定所需的最低樣本。按日叢集自助法的有效樣本是「天數」，所以兩個門檻都要過。
+VERDICT_MIN_TRADES = 30
+VERDICT_MIN_DAYS = 8
+
+
 def excess_stats(df, B, n_boot=2000):
     """回傳 dict：同期基準、超額、以及按日叢集自助法的 95% 區間。
        按日重抽而非按筆重抽，因為同一天的單子高度相關，按筆會把區間算得太窄。"""
@@ -270,8 +275,10 @@ def excess_stats(df, B, n_boot=2000):
              24: 2.07, 25: 2.06, 26: 2.06, 27: 2.06, 28: 2.05, 29: 2.05,
              30: 2.05}.get(D, 2.04))
     sw, sx = bw.std(ddof=1), bx.std(ddof=1)
+    # 勝率是比例，區間不能跑到 0~1 之外（天數少時 t 分位很大，很容易算出 -41%~201%
+    # 這種明顯無意義的數字，印出來會誤導）。超額本身可以是負的，不夾。
     return dict(n=int(m.sum()), wr=wr, base=bl, exc=wr - bl, days=D,
-                wr_lo=wr - tmul * sw, wr_hi=wr + tmul * sw,
+                wr_lo=max(0.0, wr - tmul * sw), wr_hi=min(1.0, wr + tmul * sw),
                 ex_lo=(wr - bl) - tmul * sx, ex_hi=(wr - bl) + tmul * sx,
                 p_exc=float((bx > 0).mean()))
 
@@ -718,15 +725,25 @@ def write_outputs(state, t_now):
             bkey = baseline_key(BOOK_INTERVAL[book], pb.CONFIG["TAKE_PROFIT"], pb.CONFIG["STOP_LOSS"])
             es = excess_stats(df, state.get("baseline", {}).get(bkey, {}))
             if es:
-                verdict = ("賺錢且有真本事" if es["wr"] > be and es["p_exc"] > 0.9 else
-                           "賺錢，但主要是吃市場漂移" if es["wr"] > be else
-                           "有本事但仍在賠錢（勝率未過打平）" if es["p_exc"] > 0.9 else "兩邊都不成立")
+                # 按日叢集自助法的有效樣本數是「天數」，不是「筆數」。天數太少時
+                # t 分位會非常大（D=2 時 12.71），區間寬到沒有資訊量，而 P(超額>0)
+                # 也只是反映那兩天剛好都贏。這種情況只列數字、不下判定，
+                # 否則會印出「10 筆交易 → 賺錢且有真本事」這種誤導性結論。
+                enough = es["n"] >= VERDICT_MIN_TRADES and es["days"] >= VERDICT_MIN_DAYS
                 lines += ["| | 數值 | 95% 區間 |", "|---|---|---|",
                           f"| 勝率 | {es['wr']:.1%} | {es['wr_lo']:.1%} ~ {es['wr_hi']:.1%} |",
                           f"| 同期基準（同日同方向隨機進場） | {es['base']:.1%} | |",
-                          f"| 超額 | {es['exc']*100:+.1f}pt | {es['ex_lo']*100:+.1f} ~ {es['ex_hi']*100:+.1f} |",
-                          "", f"比對 {es['n']} 筆 / {es['days']} 天；P(超額>0) = {es['p_exc']:.0%}；"
-                              f"**判定：{verdict}**", ""]
+                          f"| 超額 | {es['exc']*100:+.1f}pt | {es['ex_lo']*100:+.1f} ~ {es['ex_hi']*100:+.1f} |", ""]
+                if enough:
+                    verdict = ("賺錢且有真本事" if es["wr"] > be and es["p_exc"] > 0.9 else
+                               "賺錢，但主要是吃市場漂移" if es["wr"] > be else
+                               "有本事但仍在賠錢（勝率未過打平）" if es["p_exc"] > 0.9 else "兩邊都不成立")
+                    lines += [f"比對 {es['n']} 筆 / {es['days']} 天；"
+                              f"P(超額>0) = {es['p_exc']:.0%}；**判定：{verdict}**", ""]
+                else:
+                    lines += [f"比對 {es['n']} 筆 / {es['days']} 天 —— "
+                              f"**未達判定門檻（需 {VERDICT_MIN_TRADES} 筆且 {VERDICT_MIN_DAYS} 天），"
+                              f"上表僅供參考，不下判定**。天數少時 95% 區間會寬到沒有意義。", ""]
             else:
                 lines += ["_同期基準樣本不足，超額待累積_", ""]
         if opens:
