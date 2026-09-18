@@ -285,7 +285,7 @@ def excess_stats(df, B, n_boot=2000):
 #     不具樣本外意義）；forward_from 之後才是真正的前進測試。SUMMARY 會分開統計。
 # 想一次性強制重置某本帳（例如手動改了不在指紋內的東西），把帳本名放進 RESET_BOOKS，
 # 跑完一次後再清空。
-RESET_BOOKS = ["s4"]      # 2026-09-17：策略4 改為 ret2h .14 / 收盤 .60 / TP 4% —— 跑過一次後請改回 []
+RESET_BOOKS = []      # 策略4已於2026-09-17重置過（ret2h .14 / 收盤 .60 / TP 4%）
 
 FP_KEYS = ["INTERVAL", "TAKE_PROFIT", "STOP_LOSS", "FEE_RATE", "EXIT_MODE",
            "TP_ATR_MULT", "SL_ATR_MULT", "LIQ_MIN_USD", "LIQ_MODE",
