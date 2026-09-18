@@ -3,17 +3,22 @@
 """
 派網策略 Dry Run（前瞻模擬，不下單）
 ===================================
-同時追蹤策略1（延續）、策略2（大戶提款）與策略4（爆量竭盡，5分K）
+同時追蹤 watch（策略1已退役，續作ATR區間監控）、策略2（大戶提款）與策略4（爆量竭盡，5分K）
 每次執行：抓最新的 1h K棒 → 依序處理「上次執行之後新收完的每一根K棒」
          → 先檢查持倉是否止盈/止損，再檢查新訊號 → 寫入狀態檔、Excel、SUMMARY.md
 
 ・進出場規則與 pionex_backtest.py 完全相同（直接呼叫它的函式），結果可直接和回測比較。
 ・START_FROM 可指定回補起算時間（受 API 上限約 20 天）；設 None 則從第一次執行當下開始。
 ・中間漏跑幾次也沒關係：下次執行會把漏掉的K棒補處理（K棒上限 500 根 ≈ 20 天）。
-・請勿在測試途中修改策略參數；要改的話請刪掉 state/ 重新開始，否則紀錄會混在一起。
+・測試途中要改策略參數直接改即可：`book_fingerprint()` 會偵測到參數指紋變動，自動把
+  該本帳清空重跑並記錄 forward_from，SUMMARY 會把「回填（回測）」與「前進測試」分開統計，
+  不會把新舊參數的紀錄混在一起。**不需要、也不建議**手動刪除 state/ 重來——那樣做會把
+  全部帳本的長期紀錄與 baseline（同期基準）樣本一次歸零，比讓版本控管機制自動處理更糟。
+  `START_FROM` 這個模組常數不列入指紋，改它不會觸發任何帳本重置（見 book_fingerprint()）。
 
 執行：python pionex_dryrun.py
 """
+import hashlib
 import json
 import os
 import sys
@@ -88,14 +93,17 @@ S4_CONFIG = dict(S2_CONFIG)
 S4_CONFIG.update(
     INTERVAL="5M", MAX_PRICE=None, ATR_MIN_PCT=0, ATR_MAX_PCT=None,
     LIQ_MIN_USD=0, LIQ_MODE="sum24", RESOLVE_INTERVALS=["1M"],
-    TAKE_PROFIT=0.03, STOP_LOSS=0.05, EXIT_MODE="fixed",
+    TAKE_PROFIT=0.04, STOP_LOSS=0.05, EXIT_MODE="fixed",   # 2026-09-17 定為 4%/5%，理由見 pionex_strategy4.py
 )
 S4_RULE = dict(s4.S4)          # 條件沿用 pionex_strategy4.py 的 S4
 
 BOOKS = {
-    "main": {"s": 1, "label": "策略1 延續（ATR 4–5%）", "overrides": {}},
-    # 觀察組：只放寬 ATR 範圍，用來每月檢查哪個 ATR 區間最好（見 ATR 區間監控頁）
-    "watch": {"s": 1, "label": "策略1 觀察組（ATR ≥ 2%，供區間監控）",
+    # 策略1「延續」已於 2026-09-17 退役。理由：用 22.6 萬筆標註資料測其核心假設，
+    # 做多 -0.1pt、做空 -0.0pt（相對同日同方向隨機進場），連反著做也是零 ——
+    # 1h動能 + MA20 + OBV 這組訊號對 3%/5% 的觸發順序不帶任何資訊。
+    # 先前看到的 62.6% 完全由市場漂移解釋。舊紀錄保留在 state 檔中不再更新。
+    # watch 續留：它是無差別進場的實況樣本，兼作 ATR 區間監控（見 ATR 區間監控頁）。
+    "watch": {"s": 1, "label": "策略1 觀察組（ATR ≥ 2%，已退役，續跑作 ATR 區間監控）",
               "overrides": {"ATR_MIN_PCT": 0.02, "ATR_MAX_PCT": None}},
     "rev": {"s": 2, "label": "策略2 大戶提款 正式版（啟動前漲幅 ≤ 5%）", "overrides": {}, "rev": {}},
     "rev_wide": {"s": 2, "label": "策略2 大戶提款 放寬版（啟動前漲幅不限）",
@@ -112,6 +120,238 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 STATE_PATH = os.path.join(HERE, "state", "dryrun_state.json")
 OUT_DIR = os.path.join(HERE, "output")
 HOUR = pb.HOUR_MS
+
+
+# ============================== 同期基準 ==============================
+# 為什麼要這個：實測「隨機進場」的當日勝率標準差高達 17pt（做多 30%~93%），
+# 也就是一筆單子會不會贏，當天行情就解釋掉絕大部分。只看絕對勝率無法分辨
+# 「策略有本事」和「那幾天剛好好做」。所以每次執行都抽樣隨機進場當對照，
+# 累積成每日基準，報告裡同時給 絕對勝率 / 同期基準 / 超額。
+#
+# 兩個指標都要看，缺一不可：
+#   絕對勝率 < 盈虧平衡勝率 → 賠錢（不管超額多漂亮）
+#   超額 ≈ 0                → 只是在吃市場漂移，環境一翻就死
+#
+# 基準必須按「簽章」（interval + TP + SL + 前視根數）分桶，不能全部帳本共用一份：
+# watch/rev/rev_wide 是 60M/3%/5%，s4 是 5M/4%/5%，兩組的K棒解析度、止盈止損門檻、
+# 持倉時間尺度完全不同，拿同一份基準相減算「超額」在方法論上不成立（BUG-004）。
+# watch/rev/rev_wide 簽章相同，共用一桶反而能互相加大樣本，不必分開抽三次。
+BASE_SAMPLES_PER_COIN = 4      # 每次執行每個幣抽幾根當基準樣本（會逐次累積）
+# 前視窗改用「根數」而非「小時」，因為不同帳本的 interval 不同，固定小時數換算成根數
+# 會讓 5M 帳本抽到離譜地長的前視窗。48 根是依 2026-09-17 對現有已平倉紀錄實測持倉時間
+# 選定（median/p75/p90/p95/max，單位小時）：
+#   watch     n= 256  median= 3.00  p75= 6.00  p90=12.00  p95=21.00  max=79.00
+#   rev       n=   4  median= 2.50  p75= 4.00  p90= 5.80  p95= 6.40  max= 7.00
+#   rev_wide  n=  13  median= 2.00  p75= 4.00  p90= 7.80  p95= 9.20  max=11.00
+#   s4        n=  69  median= 0.25  p75= 0.42  p90= 0.50  p95= 0.87  max= 1.92
+# 60M×48根=48小時，涵蓋 60M 系帳本的 p95=21h 綽綽有餘（與改動前的 BASE_FWD_HOURS=48 等價）；
+# 5M×48根=4小時，涵蓋 s4 實測 max=1.92h 全部。用「根數」讓同一個常數對不同 interval
+# 自動換算出合理的絕對時間長度，不必為每個 interval 各自維護一個小時數。
+BASE_FWD_BARS = 48
+_BASE_RNG = np.random.default_rng()
+
+
+def baseline_key(interval, tp, sl):
+    """基準的『簽章』：interval + TP + SL + 前視根數完全相同才可比、才共用同一桶樣本。
+       字串格式固定為 f"{interval}_tp{tp}_sl{sl}_fwd{BASE_FWD_BARS}"，
+       例如 "60M_tp0.03_sl0.05_fwd48"、"5M_tp0.04_sl0.05_fwd48"。"""
+    return f"{interval}_tp{tp:g}_sl{sl:g}_fwd{BASE_FWD_BARS}"
+
+
+def _baseline_title(key):
+    """把簽章字串還原成 SUMMARY 標題用的可讀文字，例如
+       "5 分 K／止盈4%／止損5%／前視 4 小時"。"""
+    iv, tp_s, sl_s, fwd_s = key.split("_")
+    tp, sl, fwd_bars = float(tp_s[2:]), float(sl_s[2:]), int(fwd_s[3:])
+    hours = fwd_bars * pb.INTERVAL_MS.get(iv, HOUR) / 3_600_000
+    h_txt = f"{hours:g} 小時" if hours >= 1 else f"{hours * 60:g} 分鐘"
+    iv_label = {"60M": "60 分 K", "5M": "5 分 K"}.get(iv, iv)
+    return f"{iv_label}／止盈{tp * 100:g}%／止損{sl * 100:g}%／前視 {h_txt}"
+
+
+LEGACY_BASELINE_KEY = baseline_key("60M", BASE_CONFIG["TAKE_PROFIT"], BASE_CONFIG["STOP_LOSS"])
+
+
+def _migrate_legacy_baseline(state):
+    """本次改動之前 baseline 是扁平格式（頂層鍵直接是日期字串，例如 "2026-09-17"），
+       全部樣本其實都是用 60M/TP3%/SL5%/前視48小時 抽出來的（當時唯一的抽樣邏輯）。
+       用「頂層鍵是否長得像日期」而非版本欄位判斷，因為舊格式從來沒有版本欄位；
+       偵測到就整份搬進對應的簽章桶，這是無損且正確的遷移，不能直接丟掉。"""
+    B = state.get("baseline")
+    if not B:
+        return
+    if all(_looks_like_date(k) for k in B):
+        state["baseline"] = {LEGACY_BASELINE_KEY: B}
+
+
+def _looks_like_date(s):
+    try:
+        datetime.strptime(s, "%Y-%m-%d")
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
+def _baseline_sample(state, sym, df, bar, key, tp, sl):
+    """從『前視已足夠』的區段隨機抽樣，累積每日的多空隨機進場勝率，存進 key 對應的那一桶。
+       同一根K棒的結果是固定的，所以重複執行只會讓樣本數變多、不會改變期望值。"""
+    if len(df) < 60:
+        return
+    t = df["time"].to_numpy()
+    hi, lo, cl = df["high"].to_numpy(), df["low"].to_numpy(), df["close"].to_numpy()
+    fwd = BASE_FWD_BARS
+    ok = np.flatnonzero(t <= t[-1] - fwd * bar)
+    if not len(ok):
+        return
+    B = state.setdefault("baseline", {}).setdefault(key, {})
+    for i in _BASE_RNG.choice(ok, min(BASE_SAMPLES_PER_COIN, len(ok)), replace=False):
+        i = int(i); e = float(cl[i])
+        ltp, lsl, stp, ssl = e * (1 + tp), e * (1 - sl), e * (1 - tp), e * (1 + sl)
+        lres = sres = None
+        for j in range(i + 1, min(i + 1 + fwd, len(hi))):
+            if lres is None:
+                a, b = hi[j] >= ltp, lo[j] <= lsl
+                lres = "x" if (a and b) else ("w" if a else ("l" if b else None))
+            if sres is None:
+                a, b = lo[j] <= stp, hi[j] >= ssl
+                sres = "x" if (a and b) else ("w" if a else ("l" if b else None))
+            if lres and sres:
+                break
+        d = B.setdefault(f"{pb.to_dt(int(t[i])):%Y-%m-%d}",
+                         {"lw": 0, "ll": 0, "sw": 0, "sl": 0})
+        if lres in ("w", "l"):
+            d["lw" if lres == "w" else "ll"] += 1
+        if sres in ("w", "l"):
+            d["sw" if sres == "w" else "sl"] += 1
+
+
+def baseline_rates(B, min_n=30):
+    """{日期: (做多基準, 做空基準, 樣本數)}；樣本太少的日子不給值。"""
+    out = {}
+    for day, d in B.items():
+        nl, ns = d["lw"] + d["ll"], d["sw"] + d["sl"]
+        out[day] = (d["lw"] / nl if nl >= min_n else None,
+                    d["sw"] / ns if ns >= min_n else None, min(nl, ns))
+    return out
+
+
+def excess_stats(df, B, n_boot=2000):
+    """回傳 dict：同期基準、超額、以及按日叢集自助法的 95% 區間。
+       按日重抽而非按筆重抽，因為同一天的單子高度相關，按筆會把區間算得太窄。"""
+    if df.empty or not B:
+        return None
+    rates = baseline_rates(B)
+    day = df["entry_time"].map(lambda ms: f"{pb.to_dt(int(ms)):%Y-%m-%d}")
+    islong = df["dir"].astype(str).str.contains("多")
+    base = pd.Series([(rates.get(d, (None, None, 0))[0] if L else rates.get(d, (None, None, 0))[1])
+                      for d, L in zip(day, islong)], index=df.index, dtype="float64")
+    m = base.notna()
+    if int(m.sum()) < 5:
+        return None
+    wv = df.loc[m, "win"].to_numpy(dtype=float)
+    bv = base[m].to_numpy(dtype=float)
+    dv = day[m].to_numpy()
+    wr, bl = wv.mean(), bv.mean()
+    days = np.unique(dv)
+    idx = {d: np.flatnonzero(dv == d) for d in days}
+    rng = np.random.default_rng(0)
+    bw = np.empty(n_boot); bx = np.empty(n_boot)
+    for k in range(n_boot):
+        pick = np.concatenate([idx[days[j]] for j in rng.integers(0, len(days), len(days))])
+        bw[k] = wv[pick].mean(); bx[k] = wv[pick].mean() - bv[pick].mean()
+    # 天數少時單純取自助法百分位會低估區間（實測 15 天時名目95%只涵蓋約88%），
+    # 改用自助標準差 × t 分位，把天數自由度算進去。
+    from statistics import NormalDist
+    D = len(days)
+    tmul = (NormalDist().inv_cdf(0.975) if D > 30 else
+            {2: 12.71, 3: 4.30, 4: 3.18, 5: 2.78, 6: 2.57, 7: 2.45, 8: 2.36, 9: 2.31,
+             10: 2.26, 11: 2.23, 12: 2.20, 13: 2.18, 14: 2.16, 15: 2.14, 16: 2.13,
+             17: 2.12, 18: 2.11, 19: 2.10, 20: 2.09, 21: 2.09, 22: 2.08, 23: 2.07,
+             24: 2.07, 25: 2.06, 26: 2.06, 27: 2.06, 28: 2.05, 29: 2.05,
+             30: 2.05}.get(D, 2.04))
+    sw, sx = bw.std(ddof=1), bx.std(ddof=1)
+    return dict(n=int(m.sum()), wr=wr, base=bl, exc=wr - bl, days=D,
+                wr_lo=wr - tmul * sw, wr_hi=wr + tmul * sw,
+                ex_lo=(wr - bl) - tmul * sx, ex_hi=(wr - bl) + tmul * sx,
+                p_exc=float((bx > 0).mean()))
+
+
+# ============================== 參數版本控管 ==============================
+# 問題：dry run 的紀錄一旦混入不同參數跑出來的交易，勝率就沒有意義了。
+# 做法：對每本帳算一個「參數指紋」（只涵蓋會影響訊號與出場的設定）。
+#   * 指紋沒變 → 照常累積。
+#   * 指紋變了 → 該本帳自動清空重跑，並把變更當下記為 forward_from。
+#     從 START_FROM 到 forward_from 之間是「回填」（等於回測，參數是照著這段調出來的，
+#     不具樣本外意義）；forward_from 之後才是真正的前進測試。SUMMARY 會分開統計。
+# 想一次性強制重置某本帳（例如手動改了不在指紋內的東西），把帳本名放進 RESET_BOOKS，
+# 跑完一次後再清空。
+RESET_BOOKS = ["s4"]      # 2026-09-17：策略4 改為 ret2h .14 / 收盤 .60 / TP 4% —— 跑過一次後請改回 []
+
+FP_KEYS = ["INTERVAL", "TAKE_PROFIT", "STOP_LOSS", "FEE_RATE", "EXIT_MODE",
+           "TP_ATR_MULT", "SL_ATR_MULT", "LIQ_MIN_USD", "LIQ_MODE",
+           "MOM_MODE", "MOM_THRESHOLD", "MOM_ATR_MULT",
+           "ATR_PERIOD", "ATR_MIN_PCT", "ATR_MAX_PCT", "MA_PERIOD", "OBV_LOOKBACK",
+           "HTF_MA_PERIOD", "MAX_PRICE", "MAX_MA_DEV", "MAX_MOM", "COOLDOWN_BARS",
+           "MIN_VOL_RATIO", "MIN_CLOSE_POS", "EXCLUDE_FLAT_24H", "BTC_MAX_ALIGNED_DEV",
+           "REQUIRE_HTF_TREND", "BTC_TREND_FILTER", "MAX_HOLD_HOURS",
+           "RESOLVE_SAME_BAR_WITH_5M", "RESOLVE_INTERVALS"]
+
+
+def book_fingerprint(book):
+    """回傳這本帳當前參數的指紋。只涵蓋影響訊號與出場的設定；
+       資金模擬、抓取速度那類不影響交易結果的不算在內。
+
+       注意：各 *_CONFIG 沒有定義的鍵會殘留前一本帳的值（pb.CONFIG 是全域字典），
+       所以這裡只取「當前模式下真正生效」的參數，否則指紋會隨帳本處理順序而變。
+       那些殘留值不影響交易（例如 EXIT_MODE="fixed" 時不會用到 *_ATR_MULT）。"""
+    use_config(book)
+    keys = list(FP_KEYS)
+    if pb.CONFIG.get("EXIT_MODE") == "atr":
+        keys = [k for k in keys if k not in ("TAKE_PROFIT", "STOP_LOSS")]
+    else:
+        keys = [k for k in keys if k not in ("TP_ATR_MULT", "SL_ATR_MULT")]
+    if pb.CONFIG.get("MOM_MODE") == "atr":
+        keys = [k for k in keys if k != "MOM_THRESHOLD"]
+    else:
+        keys = [k for k in keys if k != "MOM_ATR_MULT"]
+    payload = {k: pb.CONFIG.get(k) for k in keys}
+    # START_FROM 不列入指紋。它只決定「帳本第一次執行要回補多早」：帳本一旦有紀錄，
+    # step_symbol() 走的是 st["last"]、backfill_from 也只對 symbols 為空的帳本設值，
+    # 所以改 START_FROM 對運行中的帳本本來就沒有任何作用。把它算進指紋只會把一個
+    # 無害的修改變成「全部帳本一次清空」，弊大於利。
+    k = BOOKS[book]["s"]
+    if k == 2:
+        payload["REV"] = {kk: rv.REV.get(kk) for kk in sorted(rv.REV)}
+    elif k == 4:
+        payload["S4"] = {kk: s4.S4.get(kk) for kk in sorted(s4.S4)}
+    return hashlib.sha1(json.dumps(payload, sort_keys=True, default=str)
+                        .encode("utf-8")).hexdigest()[:12]
+
+
+def apply_param_versioning(state, t_now):
+    """比對指紋；有變更就清空該本帳並標記前進測試起點。回傳被重置的帳本名單。"""
+    reset = []
+    for book in BOOKS:
+        bk = state["books"][book]
+        fp = book_fingerprint(book)
+        old = bk.get("fp")
+        # RESET_BOOKS 只在「同一個指紋下」生效一次：忘了把名字改回 [] 時，不會變成
+        # 每小時清空一次、每次都對全部交易對重做歷史回補。之後若真的又改了參數，
+        # 指紋會變，屆時本來就會重置（也會再被記成新指紋下的一次強制重置）。
+        forced = book in RESET_BOOKS and bk.get("forced_fp") != fp
+        if (old is not None and old != fp) or forced:
+            why = "手動指定重置" if forced and old == fp else f"參數變更（{old} → {fp}）"
+            n_old = len(bk.get("closed", []))
+            bk["hist"] = bk.get("hist", []) + [
+                {"fp": old, "until": t_now, "closed": n_old, "why": why}]
+            bk["symbols"], bk["closed"] = {}, []
+            bk["forward_from"] = t_now
+            reset.append((book, why, n_old))
+        bk["fp"] = fp
+        bk.setdefault("forward_from", None)
+        if book in RESET_BOOKS:
+            bk["forced_fp"] = fp        # 標記這個指紋下已強制重置過
+    return reset
 
 
 def use_config(book):
@@ -180,6 +420,7 @@ def load_state():
         st = {"created": start_ms() or now_ms(), "books": {}, "runs": []}
     for b in BOOKS:
         st["books"].setdefault(b, {"symbols": {}, "closed": []})
+    _migrate_legacy_baseline(st)
     return st
 
 
@@ -437,7 +678,7 @@ def write_outputs(state, t_now):
                  "bars": None} for s, v in sorted(bk["symbols"].items())]
         period = f"{start_txt} ~ {pb.to_dt(t_now):%Y-%m-%d %H:%M}（Dry Run）"
         pb.write_excel(trades, scan, os.path.join(OUT_DIR, f"dryrun_{book}.xlsx"), period,
-                       extra=make_extra(state, book, monitor if book == "main" else None))
+                       extra=make_extra(state, book, monitor if book == "watch" else None))
         pb.PARAM_ROWS_HOOK = pb.DIAG_COLUMNS_HOOK = None
         # ---- SUMMARY.md ----
         df = closed_df(bk)
@@ -454,6 +695,40 @@ def write_outputs(state, t_now):
             lines += ["| 月份 | 筆數 | 勝率 | 每筆報酬 |", "|---|---|---|---|"]
             lines += [f"| {m} | {int(r.n)} | {r.wr:.1%} | {r.ev:+.2%} |" for m, r in by_m.iterrows()]
             lines += [""]
+            ff = bk.get("forward_from")
+            if ff:
+                bf, fw = df[df.entry_time < ff], df[df.entry_time >= ff]
+                lines += [f"參數自 {pb.to_dt(ff):%Y-%m-%d %H:%M} 起生效。之前為回填"
+                          f"（等同回測，參數是照著那段資料調出來的，不具樣本外意義），"
+                          f"之後才是前進測試。", "",
+                          "| 區段 | 已平倉 | 止盈 | 止損 | 勝率 | 每筆平均報酬 |",
+                          "|---|---|---|---|---|---|"]
+                for nm2, seg in (("回填（回測）", bf), ("前進測試", fw)):
+                    if seg.empty:
+                        lines.append(f"| {nm2} | 0 | — | — | — | — |")
+                    else:
+                        lines.append(
+                            f"| {nm2} | {len(seg)} | {(seg['result'] == '止盈').sum()} "
+                            f"| {(seg['result'] == '止損').sum()} | {seg['win'].mean():.1%} "
+                            f"| {seg['ret'].mean():+.2%} |")
+                lines += [""]
+                if len(fw) < 30:
+                    lines += [f"_前進測試僅 {len(fw)} 筆，還不足以判斷；"
+                              f"以下超額統計含回填段，僅供參考。_", ""]
+            bkey = baseline_key(BOOK_INTERVAL[book], pb.CONFIG["TAKE_PROFIT"], pb.CONFIG["STOP_LOSS"])
+            es = excess_stats(df, state.get("baseline", {}).get(bkey, {}))
+            if es:
+                verdict = ("賺錢且有真本事" if es["wr"] > be and es["p_exc"] > 0.9 else
+                           "賺錢，但主要是吃市場漂移" if es["wr"] > be else
+                           "有本事但仍在賠錢（勝率未過打平）" if es["p_exc"] > 0.9 else "兩邊都不成立")
+                lines += ["| | 數值 | 95% 區間 |", "|---|---|---|",
+                          f"| 勝率 | {es['wr']:.1%} | {es['wr_lo']:.1%} ~ {es['wr_hi']:.1%} |",
+                          f"| 同期基準（同日同方向隨機進場） | {es['base']:.1%} | |",
+                          f"| 超額 | {es['exc']*100:+.1f}pt | {es['ex_lo']*100:+.1f} ~ {es['ex_hi']*100:+.1f} |",
+                          "", f"比對 {es['n']} 筆 / {es['days']} 天；P(超額>0) = {es['p_exc']:.0%}；"
+                              f"**判定：{verdict}**", ""]
+            else:
+                lines += ["_同期基準樣本不足，超額待累積_", ""]
         if opens:
             lines += [f"持倉中 {len(opens)} 筆：", "", "| 交易對 | 方向 | 進場時間 | 進場價 | 止盈價 | 止損價 | 最新價 |",
                       "|---|---|---|---|---|---|---|"]
@@ -461,16 +736,59 @@ def write_outputs(state, t_now):
                 lines.append(f"| {p['symbol']} | {p['dir']} | {pb.to_dt(p['entry_time']):%m-%d %H:%M} | "
                              f"{p['entry']:.6g} | {p['tp']:.6g} | {p['sl']:.6g} | {p['exit']:.6g} |")
             lines += [""]
-        if book == "main":
+        if book == "watch":
             lines += [f"**{monitor[1]}**", ""]
+    # 每個簽章（interval/TP/SL/前視根數）各印一段，不能混在一起——s4 的 5M/4%/5% 跟
+    # watch/rev/rev_wide 的 60M/3%/5% 是不同東西（見 baseline_key() 註解）。
+    # 注意：以下 sv.mean()/.std()/.min()/.max() 沿用改動前既有寫法，未對空陣列防呆
+    # （BUG-011/F8，本次不處理，範圍見 code.md）；拆成多個簽章桶後，任何一桶只要「當天
+    # 做多基準達門檻、做空基準未達門檻」都可能各自觸發同一個既有例外，行為與改動前相同，
+    # 沒有刻意修補也沒有刻意繞開。
+    for bkey2 in sorted(state.get("baseline", {})):
+        B = state["baseline"][bkey2]
+        rates = baseline_rates(B)
+        rows = [(d, l, sh, n) for d, (l, sh, n) in sorted(rates.items()) if l is not None]
+        if not rows:
+            continue
+        # 做多與做空的 min_n 是分開判定的，所以某一桶可能只有做多達門檻、做空一天都沒達到，
+        # 此時 sv 會是空陣列，.min()/.max() 會丟 ValueError 讓整份報告產不出來。
+        # 分桶之後每桶樣本變少（5M 桶前視 4 小時，只有約一成樣本會解析），更容易踩到，
+        # 所以這裡補上防呆：沒有可用資料就顯示「—」。
+        def _stat(arr):
+            if len(arr) == 0:
+                return "— | — | — | —"
+            return (f"{arr.mean():.1%} | {arr.std() * 100:.1f}pt | "
+                    f"{arr.min():.1%} | {arr.max():.1%}")
+        lv = np.array([r[1] for r in rows if r[1] is not None])
+        sv = np.array([r[2] for r in rows if r[2] is not None])
+        lines += [f"## 市場基準（隨機進場對照組）—— {_baseline_title(bkey2)}", "",
+                  f"每次執行從每個幣隨機抽 {BASE_SAMPLES_PER_COIN} 根K棒，"
+                  f"用同一組止盈止損往後模擬，累積成每日的「隨便進場會怎樣」。", "",
+                  "| | 平均 | 標準差 | 最低 | 最高 |", "|---|---|---|---|---|",
+                  f"| 做多基準 | {_stat(lv)} |",
+                  f"| 做空基準 | {_stat(sv)} |",
+                  "", "<details><summary>逐日基準</summary>", "",
+                  "| 日期 | 做多 | 做空 | 樣本 |", "|---|---|---|---|"]
+        lines += [f"| {d} | {l:.1%} | {f'{sh:.1%}' if sh is not None else '—'} | {n} |"
+                  for d, l, sh, n in rows[-40:]]
+        lines += ["", "</details>", ""]
     with open(os.path.join(OUT_DIR, "SUMMARY.md"), "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines))
 
 
-def _step(state, books_iv, sym, df, err, interval, bar, need, btc, counts, errors, backfill_from):
+def _step(state, books_iv, sym, df, err, interval, bar, need, btc, counts, errors, backfill_from, baseline_sigs):
     if err or df is None or len(df) < need:
         errors.append((sym, err or f"{interval} K棒不足"))
         return
+    # 每一輪都對這輪出現過的簽章各抽一次（baseline_sigs 由呼叫端依 books_iv 算好、已去重），
+    # 而不是只在 60M 那一輪抽——5M 的 s4 帳本本次改動之前完全沒有自己的基準（BUG-004）。
+    # 同一簽章若被多本帳共用（例如 watch/rev/rev_wide 三本帳簽章相同），這裡只會抽一次，
+    # 不會因為帳本數重複計數。
+    for key, (tp, sl) in baseline_sigs.items():
+        try:
+            _baseline_sample(state, sym, df, bar, key, tp, sl)
+        except Exception:
+            pass
     for book in books_iv:
         use_config(book)
         try:
@@ -486,8 +804,11 @@ def _step(state, books_iv, sym, df, err, interval, bar, need, btc, counts, error
 def main():
     t0 = time.time()
     t_now = now_ms()
-    use_config("main")
+    use_config(next(iter(BOOKS)))
     state = load_state()
+    for book, why, n_old in apply_param_versioning(state, t_now):
+        print(f"[{BOOKS[book]['label']}] {why} → 清空 {n_old} 筆舊紀錄，"
+              f"從 {START_FROM} 重新回填；{pb.to_dt(t_now):%m-%d %H:%M} 之後才算前進測試")
     try:
         symbols = pb.get_symbols()
     except Exception as e:
@@ -544,10 +865,21 @@ def main():
             lasts = [x for x in lasts if x]
             base_t = min(lasts) if len(lasts) == len(books_iv) else (s0i or t_now)
             since_map[sym] = base_t - warm * bar
+        # 這一輪（同一個 interval）裡各帳本各自的基準簽章，去重後才不會重複抽樣；
+        # 用 setdefault 而非硬性要求每本帳都一樣，是為了容許未來同 interval 下
+        # 出現不同 TP/SL 的帳本（目前 60M 三本帳、5M 一本帳，剛好都各自只有一種簽章）。
+        # 只收 EXIT_MODE=="fixed" 的帳本：baseline 抽樣模擬的是固定 TP/SL 的隨機進場，
+        # 對 ATR 動態出場的帳本沒有對應的固定門檻可比（目前沒有帳本用 atr，先留這條防線）。
+        sigs = {}
+        for bk_ in books_iv:
+            use_config(bk_)
+            if pb.CONFIG.get("EXIT_MODE") == "fixed":
+                tp_, sl_ = pb.CONFIG["TAKE_PROFIT"], pb.CONFIG["STOP_LOSS"]
+                sigs.setdefault(baseline_key(interval, tp_, sl_), (tp_, sl_))
         print(f"  抓取 {interval} K棒（{'、'.join(BOOKS[b]['label'] for b in books_iv)}）")
         with ThreadPoolExecutor(WORKERS) as ex:
             for sym, df, err in ex.map(job_for(interval, since_map), sorted(universe)):
-                _step(state, books_iv, sym, df, err, interval, bar, need, btc, counts, errors, backfill_from)
+                _step(state, books_iv, sym, df, err, interval, bar, need, btc, counts, errors, backfill_from, sigs)
                 if df is not None and len(df):
                     last_bar = max(last_bar or 0, int(df["time"].iloc[-1]))
     state["runs"].append({"time": t_now, "last_bar": last_bar, "symbols": len(universe),
