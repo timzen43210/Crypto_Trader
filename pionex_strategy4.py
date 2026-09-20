@@ -18,6 +18,10 @@
 
 同時會讀 signals.csv 比對跟單群組的真實訊號（有的話），輸出「訊號比對」分頁。
 用法：與 pionex_backtest.py 放同一資料夾，python pionex_strategy4.py
+
+訊號邏輯已抽到 strategy/s4_signal.py（零相依，實盤端也 import 它），本檔只負責回測用的
+診斷欄位與 Excel 輸出；ret2h / volr / cpos / turn / signal 五欄一律由 s4_signal 產生，
+這裡不可以再抄一份公式。6 個生效參數的值與選定依據也在 s4_signal.DEFAULT_PARAMS。
 """
 import os
 import time
@@ -28,34 +32,23 @@ import pandas as pd
 from openpyxl.styles import Font
 
 import pionex_backtest as pb
+from strategy import s4_signal
 
 # ============================== 進場條件 ==============================
+# 6 個生效參數（MIN_RET_2H / MIN_VOL_RATIO / MAX_CLOSE_POS / MAX_TURN24H / MIN_TURN24H /
+# COOLDOWN_HOURS）的值與選定依據都在 strategy/s4_signal.py 的 DEFAULT_PARAMS，這裡不另抄數字。
+# 實驗鍵仍留在 S4 裡（pionex_dryrun 的帳本指紋把整個 S4 算進去，拿掉鍵會讓前瞻紀錄歸零），
+# 但 G1 抽離後已不再實作：任一實驗鍵設成非 None，add_indicators 會直接拋 ValueError。
 S4 = {
-    # 近2小時漲幅下限（最關鍵的條件）。2026-09-17 由 0.16 降為 0.14：
-    #   訊號量 4.1 → 5.4 筆/天（+32%），品質幾乎不變。94天 15M 資料實測風險標準化
-    #   報酬在 0.14 與 0.16 幾乎相同（3%/5% 下 0.16/0.19、10%/2% 下 0.72/0.71），
-    #   0.12 以下才開始明顯變差。此結論在改用其他 TP/SL 後同樣成立。
-    "MIN_RET_2H": 0.14,
-    "MIN_VOL_RATIO": 2.0,        # 本根量 ÷ 前24h每根均量
-    # 收盤位置上限：衝高後被壓回才算竭盡。
-    # 2026-09-17 由 0.70 改為 0.60。依據（94天 15M 標註資料，24.5 萬列）：
-    #   收盤≤0.85 → 69.2% ／ ≤0.70 → 71.9% ／ ≤0.60 → 75.4% ／ ≤0.50 → 72.0%
-    #   單調改善到 0.60 後進入平台，是區域不是尖峰；6 塊分塊驗證全數超額為正（原本 5/6）。
-    #   六塊各自獨立選參數時，六次全部選到 ≤0.6 或 ≤0.5。
-    #   34天 5M 資料（不同K棒建構）獨立確認同一方向：0.70→77.0%、0.60→78.8%。
-    #   代價：訊號量 5.2 → 4.1 筆/天，但每筆 EV 由 +0.65% 升到 +0.93%，每日期望仍上升。
-    #   想換回訊號量：搭配 MIN_RET_2H 降到 0.14，可得 5.4 筆/天 / 73.4% / 6 塊全正。
-    "MAX_CLOSE_POS": 0.60,
-    "MAX_TURN24H": 500_000,      # 近24h成交額上限（None=不限）
-    "MIN_TURN24H": 20_000,       # 下限，避免流動性太差
-    # ---- 以下預設關閉，實驗用 ----
+    **s4_signal.DEFAULT_PARAMS,
+    # ---- 以下預設關閉，實驗用（已停用，只能是 None）----
     "MIN_VOL_VS_MAX24": None,    # 本根量 ÷ 近24h最大量，例 0.5
     "MIN_SPIKES_1H": None,       # 近1小時爆量次數，例 4
     "MIN_ATR": None,             # ATR(1h換算) 下限，例 0.04
     "MIN_RSI": None,
     "MAX_PRICE": None,
-    "COOLDOWN_HOURS": 1.0,       # 出場後冷卻幾小時（換 K 棒週期時自動換算根數）
 }
+EXPERIMENTAL_KEYS = ("MIN_VOL_VS_MAX24", "MIN_SPIKES_1H", "MIN_ATR", "MIN_RSI", "MAX_PRICE")
 
 CONFIG = {
     "MARKET_TYPE": "PERP",
@@ -136,6 +129,11 @@ def between(series, rng):
 
 
 def add_indicators(df, btc=None):
+    """算回測 / Excel 要用的診斷欄位，並由 strategy/s4_signal 取得訊號特徵與 signal 欄。
+       參數用呼叫當下的 S4（dryrun 會 S4.update()，要吃得到）。"""
+    for k in EXPERIMENTAL_KEYS:
+        if S4.get(k) is not None:
+            raise ValueError(f"策略4 實驗參數 {k} 已停用（G1 抽離後不再實作），請設回 None")
     C = pb.CONFIG
     c, h, l, v = df["close"], df["high"], df["low"], df["volume"]
     df["ret1h"] = c / c.shift(1) - 1              # pb.backtest 用的「前一根漲跌幅」
@@ -153,41 +151,26 @@ def add_indicators(df, btc=None):
     df["ret1h_"] = c / c.shift(H()) - 1
     df["ret4h"] = c / c.shift(4 * H()) - 1
     df["ret24"] = c / c.shift(24 * H()) - 1
-    df["volr"] = v / v.shift(1).rolling(24 * H()).mean()
-    df["vol_ratio"] = df["volr"]
     df["pull"] = c / h.shift(1).rolling(H()).max() - 1
-    rngbar = (h - l).replace(0, np.nan)
-    df["cpos"] = df["close_pos"] = (c - l) / rngbar
     df["rsi"] = rsi(c.iloc[::H()], 14).reindex(c.index).ffill()
-    turnover = df["amount"] if "amount" in df.columns and df["amount"].sum() > 0 else c * v
-    df["turn"] = df["liq24"] = turnover.rolling(24 * H()).sum()
     df["htf_dev"] = c / c.rolling(C["HTF_MA_PERIOD"]).mean() - 1
+
+    # ---- 訊號特徵與訊號：唯一來源 strategy/s4_signal.py，在 btc merge 之前算，避免對齊差異 ----
+    feats = s4_signal.features(df, H())
+    df["ret2h"] = feats["ret2h"]
+    df["volr"] = df["vol_ratio"] = feats["volr"]
+    df["cpos"] = df["close_pos"] = feats["cpos"]
+    df["turn"] = df["liq24"] = feats["turn"]
+    df["signal"] = s4_signal.signal_from_features(feats, S4)
+    # 實驗用診斷欄（不影響訊號）
+    df["vmax24"] = v / v.rolling(24 * H()).max()
+    df["spikes1h"] = (df["volr"] >= 3).rolling(H()).sum()
+
     if btc is not None:
         df = df.merge(btc, on="time", how="left")
     else:
         df["btc_ret1h"] = np.nan
         df["btc_ma_dev"] = np.nan
-
-    df["ret2h"] = c / c.shift(2 * H()) - 1
-    df["vmax24"] = v / v.rolling(24 * H()).max()
-    df["spikes1h"] = (df["volr"] >= 3).rolling(H()).sum()
-
-    cond = (df["ret2h"] >= S4["MIN_RET_2H"]) & (df["volr"] >= S4["MIN_VOL_RATIO"])
-    cond &= df["cpos"] <= S4["MAX_CLOSE_POS"]
-    cond &= df["turn"] >= S4["MIN_TURN24H"]
-    if S4["MAX_TURN24H"] is not None:
-        cond &= df["turn"] <= S4["MAX_TURN24H"]
-    if S4["MIN_VOL_VS_MAX24"] is not None:
-        cond &= df["vmax24"] >= S4["MIN_VOL_VS_MAX24"]
-    if S4["MIN_SPIKES_1H"] is not None:
-        cond &= df["spikes1h"] >= S4["MIN_SPIKES_1H"]
-    if S4["MIN_ATR"] is not None:
-        cond &= df["atr1h"] >= S4["MIN_ATR"]
-    if S4["MIN_RSI"] is not None:
-        cond &= df["rsi"] >= S4["MIN_RSI"]
-    if S4["MAX_PRICE"] is not None:
-        cond &= c < S4["MAX_PRICE"]
-    df["signal"] = np.where(cond.fillna(False), -1, 0)
     return df
 
 
@@ -294,7 +277,7 @@ def load_real():
 
 def main():
     pb.CONFIG.update(CONFIG)
-    pb.CONFIG["COOLDOWN_BARS"] = max(1, round(S4["COOLDOWN_HOURS"] * H()))
+    pb.CONFIG["COOLDOWN_BARS"] = s4_signal.cooldown_bars(H(), S4)
     pb.PARAM_ROWS_HOOK, pb.DIAG_COLUMNS_HOOK = param_rows, diag_columns
     C = pb.CONFIG
     BAR = pb.bar_ms()
