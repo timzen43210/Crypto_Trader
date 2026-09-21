@@ -216,7 +216,12 @@ def fetch_klines_raw(symbol, interval, end_ms, stop_ms):
             break
         cursor = oldest - 1
     if not rows:
-        return pd.DataFrame(columns=["time", "open", "high", "low", "close", "volume"])
+        # 明確指定 dtype，避免 pandas 3.0 起 concat 空表時把 cached 的數值欄位一併退化成 object
+        # （見 load_hourly() 的 pd.concat([cached, new])）。
+        return pd.DataFrame(columns=["time", "open", "high", "low", "close", "volume"]).astype(
+            {"time": "int64", "open": "float64", "high": "float64",
+             "low": "float64", "close": "float64", "volume": "float64"}
+        )
     df = pd.DataFrame(rows)
     keep = [c for c in ["time", "open", "high", "low", "close", "volume", "amount"] if c in df.columns]
     df = df[keep].copy()
