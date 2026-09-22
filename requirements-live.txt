@@ -1,0 +1,17 @@
+# 實盤 / paper trading 堆疊（live/ 套件）專用的相依。
+#
+# 這個 repo 有兩個 requirements 檔，服務的對象不同，不要合併：
+#   requirements.txt       回測與 dry run 用。GitHub Actions 每小時 pip install 的
+#                          就是它，run.sh 在 VPS 上裝的也是它。實盤的相依不要加進去，
+#                          否則 Actions 每小時要多裝一堆用不到的東西，而且會看不出
+#                          「dry run 到底需要什麼」。
+#   requirements-live.txt  這一份。只裝在實際跑實盤 / paper trading 的主機上。
+#
+# 目前只列 live/ 現在就確定要用的。live/ 唯一允許的跨套件相依方向是 live/ -> strategy/，
+# 而 strategy/s4_signal.py import 了 numpy 與 pandas，所以這兩個是硬需求，不是預留。
+# 之後各自的任務需要什麼（推播、資料庫周邊等）由那個任務自己加，這裡不預先猜。
+#
+# 跟 requirements.txt 一樣不鎖版本。
+
+pandas
+numpy

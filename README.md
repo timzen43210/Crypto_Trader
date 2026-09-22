@@ -81,6 +81,17 @@ START_FROM = "2026-09-01 00:00"   # 設 None = 只從第一次執行當下開始
 | `output/dryrun_s4.xlsx` | 策略4 報表 |
 | `state/dryrun_state.json` | 持倉與交易紀錄，**不要手動修改** |
 
+### 實盤 / paper trading 骨架（`live/`，建置中）
+
+`live/` 是實盤端的套件，與上面這套回測 / dry run 互不相干（不會 import 根目錄那幾支
+`pionex_*.py`），目前只有一個環境冒煙檢查：在 repo 根目錄執行 `python -m live`，會印出
+Python 版本、套件版本、路徑與目前 commit，用來確認一台新主機裝對了沒。
+
+它的相依另外列在 **`requirements-live.txt`**，和 dry run 用的 `requirements.txt` 分開：
+GitHub Actions 與 `run.sh` 只裝後者，實盤主機才裝前者，兩份不要合併。實盤執行期產生的
+檔案（資料庫、日誌）一律寫在 `runtime/`（已列入 `.gitignore`），**不可以寫進 `state/` 或
+`output/`** —— 那兩個目錄每小時會被 dry run 自動 commit 進版控。
+
 ## 方法 A：GitHub Actions（免費、免主機）
 
 1. 在 GitHub 建立一個新的 repo（建議 Private），把這個資料夾的所有檔案上傳，
