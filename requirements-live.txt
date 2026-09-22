@@ -9,9 +9,11 @@
 #
 # 目前只列 live/ 現在就確定要用的。live/ 唯一允許的跨套件相依方向是 live/ -> strategy/，
 # 而 strategy/s4_signal.py import 了 numpy 與 pandas，所以這兩個是硬需求，不是預留。
+# requests 是 live/http.py 打派網公開端點用的（B5 market_static）。
 # 之後各自的任務需要什麼（推播、資料庫周邊等）由那個任務自己加，這裡不預先猜。
 #
 # 跟 requirements.txt 一樣不鎖版本。
 
 pandas
 numpy
+requests

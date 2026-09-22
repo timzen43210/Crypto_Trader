@@ -92,6 +92,14 @@ GitHub Actions 與 `run.sh` 只裝後者，實盤主機才裝前者，兩份不�
 檔案（資料庫、日誌）一律寫在 `runtime/`（已列入 `.gitignore`），**不可以寫進 `state/` 或
 `output/`** —— 那兩個目錄每小時會被 dry run 自動 commit 進版控。
 
+`live/market_static.py` 是全市場交易對規格 + 槓桿上限的記憶體快取（`/common/symbols` 與
+`/common/riskTable` 兩個公開端點，每次刷新共 2 個請求，只取 tier1 `maxLeverage`）。刷新由呼叫者
+觸發（`refresh()` / `refresh_if_stale()`），沒有背景執行緒；刷新失敗保留舊資料、記 `last_error`。
+`python -m live.market_static` 會真實連線印出兩端點的結構、槓桿分布與抽樣，離線測試在
+`tests/test_market_static.py`（不需要 pytest，直接 `python tests/test_market_static.py`）。
+HTTP 取數在 `live/http.py`，程式不內建任何 CA 憑證路徑；網路有 SSL inspection 的機器請設環境變數
+`REQUESTS_CA_BUNDLE`。
+
 ## 方法 A：GitHub Actions（免費、免主機）
 
 1. 在 GitHub 建立一個新的 repo（建議 Private），把這個資料夾的所有檔案上傳，
