@@ -1,0 +1,3193 @@
+{
+  "task": "V2 滑價敏感度分析（TP/SL 訊號價 vs 成交價）",
+  "script": "research/v2_slippage_scan.py",
+  "script_version": "2.0.0",
+  "stage": "check",
+  "run_time_tpe": "2026-09-21T15:11:49+08:00",
+  "run_time_utc": "2026-09-21T07:11:49+00:00",
+  "machine": "AUG090DPEJPG7",
+  "os": "Windows-11-10.0.26200-SP0",
+  "python": "3.14.7",
+  "pandas": "3.0.5",
+  "numpy": "2.5.3",
+  "repo_head": {
+    "ref": "refs/heads/stage",
+    "commit": "f7a2975929c51d743433c93c7020c2488128b51a"
+  },
+  "offline": true,
+  "resolve_disabled": true,
+  "api_requests": 0,
+  "cache_snapshot_used": false,
+  "config": {
+    "MARKET_TYPE": "PERP",
+    "INTERVAL": "5M",
+    "LOOKBACK_DAYS": 33,
+    "WARMUP_BARS": 300,
+    "EXIT_MODE": "fixed",
+    "TAKE_PROFIT": 0.04,
+    "STOP_LOSS": 0.05,
+    "FEE_RATE": 0.0005,
+    "COOLDOWN_BARS": 12,
+    "MAX_HOLD_HOURS": null,
+    "RESOLVE_SAME_BAR_WITH_5M": false,
+    "RESOLVE_INTERVALS": [
+      "1M"
+    ]
+  },
+  "s4_params": {
+    "MIN_RET_2H": 0.14,
+    "MIN_VOL_RATIO": 2.0,
+    "MAX_CLOSE_POS": 0.6,
+    "MAX_TURN24H": 500000,
+    "MIN_TURN24H": 20000,
+    "COOLDOWN_HOURS": 1.0
+  },
+  "s4_experimental": {
+    "MIN_VOL_VS_MAX24": null,
+    "MIN_SPIKES_1H": null,
+    "MIN_ATR": null,
+    "MIN_RSI": null,
+    "MAX_PRICE": null
+  },
+  "bars_per_hour": 12,
+  "min_bars_required": 300,
+  "cache": {
+    "dir": "pionex_cache",
+    "interval": "5M",
+    "files": 442,
+    "files_readable": 442,
+    "t_min": 1786521900000,
+    "t_min_tpe": "2026-08-12 16:05",
+    "t_max": 1789632600000,
+    "t_max_tpe": "2026-09-17 16:10",
+    "rows_min": 2322,
+    "rows_median": 10310.0,
+    "rows_max": 10370
+  },
+  "freeze_end": 1789632900000,
+  "freeze_end_tpe": "2026-09-17 16:15",
+  "test_start": 1786781700000,
+  "test_start_tpe": "2026-08-15 16:15",
+  "fetch_start": 1786691700000,
+  "fetch_start_tpe": "2026-08-14 15:15",
+  "symbols_source": "快取檔名（無法得知交易對是否已下架）",
+  "symbols": {
+    "scanned": 440,
+    "excluded": 2,
+    "skipped": 0,
+    "failed": 0,
+    "ignored": 0,
+    "todo": [
+      "0G_USDT_PERP",
+      "1INCH_USDT_PERP",
+      "2Z_USDT_PERP",
+      "4_USDT_PERP",
+      "AAVE_USDT_PERP",
+      "AAX_USDT_PERP",
+      "ACE_USDT_PERP",
+      "ACH_USDT_PERP",
+      "ACT_USDT_PERP",
+      "ADA_USDT_PERP",
+      "AERO_USDT_PERP",
+      "AEVO_USDT_PERP",
+      "AGLD_USDT_PERP",
+      "AGT_USDT_PERP",
+      "AIA_USDT_PERP",
+      "AIGENSYN_USDT_PERP",
+      "AIN_USDT_PERP",
+      "AIO_USDT_PERP",
+      "AIXBT_USDT_PERP",
+      "AKE_USDT_PERP",
+      "AKT_USDT_PERP",
+      "ALCH_USDT_PERP",
+      "ALGO_USDT_PERP",
+      "ALLO_USDT_PERP",
+      "ALL_USDT_PERP",
+      "ALT_USDT_PERP",
+      "ANIME_USDT_PERP",
+      "ANTHROPIC_USDT_PERP",
+      "APE_USDT_PERP",
+      "API3_USDT_PERP",
+      "APR_USDT_PERP",
+      "APT_USDT_PERP",
+      "ARB_USDT_PERP",
+      "ARC_USDT_PERP",
+      "ARIA_USDT_PERP",
+      "ARKM_USDT_PERP",
+      "ARPA_USDT_PERP",
+      "ARX_USDT_PERP",
+      "AR_USDT_PERP",
+      "ASTER_USDT_PERP",
+      "ASTR_USDT_PERP",
+      "ATH_USDT_PERP",
+      "ATOM_USDT_PERP",
+      "AT_USDT_PERP",
+      "AUCTION_USDT_PERP",
+      "AVAX_USDT_PERP",
+      "AVNT_USDT_PERP",
+      "AWE_USDT_PERP",
+      "AXL_USDT_PERP",
+      "AXS_USDT_PERP",
+      "A_USDT_PERP",
+      "BABY_USDT_PERP",
+      "BANANAS31_USDT_PERP",
+      "BANANA_USDT_PERP",
+      "BAND_USDT_PERP",
+      "BANK_USDT_PERP",
+      "BAN_USDT_PERP",
+      "BARD_USDT_PERP",
+      "BASED_USDT_PERP",
+      "BAS_USDT_PERP",
+      "BAT_USDT_PERP",
+      "BB_USDT_PERP",
+      "BCH_USDT_PERP",
+      "BEAMX_USDT_PERP",
+      "BEAT_USDT_PERP",
+      "BEL_USDT_PERP",
+      "BERA_USDT_PERP",
+      "BEX_USDT_PERP",
+      "BICO_USDT_PERP",
+      "BILL_USDT_PERP",
+      "BIO_USDT_PERP",
+      "BIRB_USDT_PERP",
+      "BLEND_USDT_PERP",
+      "BLESS_USDT_PERP",
+      "BLUAI_USDT_PERP",
+      "BLUR_USDT_PERP",
+      "BNB_USDT_PERP",
+      "BOME_USDT_PERP",
+      "BONK_USDT_PERP",
+      "BRENTOIL_USDT_PERP",
+      "BRETT_USDT_PERP",
+      "BREV_USDT_PERP",
+      "BROCCOLI_USDT_PERP",
+      "BR_USDT_PERP",
+      "BSB_USDT_PERP",
+      "BSV_USDT_PERP",
+      "BTC_USDT_PERP",
+      "BTR_USDT_PERP",
+      "BTW_USDT_PERP",
+      "BULLA_USDT_PERP",
+      "B_USDT_PERP",
+      "CAKE_USDT_PERP",
+      "CAP_USDT_PERP",
+      "CASHCAT_USDT_PERP",
+      "CATI_USDT_PERP",
+      "CBRS_USDT_PERP",
+      "CC_USDT_PERP",
+      "CETUS_USDT_PERP",
+      "CFG_USDT_PERP",
+      "CFX_USDT_PERP",
+      "CF_USDT_PERP",
+      "CHIP_USDT_PERP",
+      "CHZ_USDT_PERP",
+      "CKB_USDT_PERP",
+      "CLANKER_USDT_PERP",
+      "CLO_USDT_PERP",
+      "COAI_USDT_PERP",
+      "COLLECT_USDT_PERP",
+      "COMP_USDT_PERP",
+      "COOKIE_USDT_PERP",
+      "COTI_USDT_PERP",
+      "CROSS_USDT_PERP",
+      "CRO_USDT_PERP",
+      "CRV_USDT_PERP",
+      "CTR_USDT_PERP",
+      "CVX_USDT_PERP",
+      "CYS_USDT_PERP",
+      "DASH_USDT_PERP",
+      "DATA_USDT_PERP",
+      "DODO_USDT_PERP",
+      "DOGE_USDT_PERP",
+      "DOGS_USDT_PERP",
+      "DOLO_USDT_PERP",
+      "DOS_USDT_PERP",
+      "DOT_USDT_PERP",
+      "DRIFT_USDT_PERP",
+      "DUSK_USDT_PERP",
+      "DYM_USDT_PERP",
+      "EDEN_USDT_PERP",
+      "EDGE_USDT_PERP",
+      "EDU_USDT_PERP",
+      "EGLD_USDT_PERP",
+      "EIGEN_USDT_PERP",
+      "ELSA_USDT_PERP",
+      "ENA_USDT_PERP",
+      "ENJ_USDT_PERP",
+      "ENSO_USDT_PERP",
+      "ENS_USDT_PERP",
+      "ESP_USDT_PERP",
+      "ETC_USDT_PERP",
+      "ETHFI_USDT_PERP",
+      "ETH_USDT_PERP",
+      "EUL_USDT_PERP",
+      "EVAA_USDT_PERP",
+      "FARTCOIN_USDT_PERP",
+      "FET_USDT_PERP",
+      "FF_USDT_PERP",
+      "FHE_USDT_PERP",
+      "FIGHT_USDT_PERP",
+      "FIL_USDT_PERP",
+      "FLOKI_USDT_PERP",
+      "FLUID_USDT_PERP",
+      "FOGO_USDT_PERP",
+      "FOLKS_USDT_PERP",
+      "GALA_USDT_PERP",
+      "GAS_USDT_PERP",
+      "GENIUS_USDT_PERP",
+      "GIGGLE_USDT_PERP",
+      "GMT_USDT_PERP",
+      "GMX_USDT_PERP",
+      "GOAT_USDT_PERP",
+      "GPS_USDT_PERP",
+      "GRAM_USDT_PERP",
+      "GRASS_USDT_PERP",
+      "GRIFFAIN_USDT_PERP",
+      "GRT_USDT_PERP",
+      "GRVT_USDT_PERP",
+      "GUA_USDT_PERP",
+      "GUN_USDT_PERP",
+      "GWEI_USDT_PERP",
+      "HAEDAL_USDT_PERP",
+      "HANA_USDT_PERP",
+      "HBAR_USDT_PERP",
+      "HEMI_USDT_PERP",
+      "HMSTR_USDT_PERP",
+      "HOLO_USDT_PERP",
+      "HOME_USDT_PERP",
+      "HUMA_USDT_PERP",
+      "HYPE_USDT_PERP",
+      "HYUNDAI_USDT_PERP",
+      "H_USDT_PERP",
+      "ICNT_USDT_PERP",
+      "ICP_USDT_PERP",
+      "IDOL_USDT_PERP",
+      "IMX_USDT_PERP",
+      "INIT_USDT_PERP",
+      "INJ_USDT_PERP",
+      "INX_USDT_PERP",
+      "IN_USDT_PERP",
+      "IOST_USDT_PERP",
+      "IOTA_USDT_PERP",
+      "IO_USDT_PERP",
+      "IRYS_USDT_PERP",
+      "JASMY_USDT_PERP",
+      "JELLYJELLY_USDT_PERP",
+      "JTO_USDT_PERP",
+      "JUP_USDT_PERP",
+      "KAIA_USDT_PERP",
+      "KAITO_USDT_PERP",
+      "KAS_USDT_PERP",
+      "KAT_USDT_PERP",
+      "KAVA_USDT_PERP",
+      "KERNEL_USDT_PERP",
+      "KGEN_USDT_PERP",
+      "KIOXIA_USDT_PERP",
+      "KITE_USDT_PERP",
+      "KMNO_USDT_PERP",
+      "KNC_USDT_PERP",
+      "LAB_USDT_PERP",
+      "LAYER_USDT_PERP",
+      "LA_USDT_PERP",
+      "LDO_USDT_PERP",
+      "LIGHT_USDT_PERP",
+      "LINEA_USDT_PERP",
+      "LINK_USDT_PERP",
+      "LISTA_USDT_PERP",
+      "LIT_USDT_PERP",
+      "LPT_USDT_PERP",
+      "LRC_USDT_PERP",
+      "LSK_USDT_PERP",
+      "LTC_USDT_PERP",
+      "LUNA2_USDT_PERP",
+      "LUNC_USDT_PERP",
+      "LYN_USDT_PERP",
+      "MAGIC_USDT_PERP",
+      "MAGMA_USDT_PERP",
+      "MANA_USDT_PERP",
+      "MANTA_USDT_PERP",
+      "MANTRA_USDT_PERP",
+      "MARSCOIN_USDT_PERP",
+      "MASK_USDT_PERP",
+      "MAV_USDT_PERP",
+      "MEGA_USDT_PERP",
+      "MELANIA_USDT_PERP",
+      "MEME_USDT_PERP",
+      "MERL_USDT_PERP",
+      "METIS_USDT_PERP",
+      "MET_USDT_PERP",
+      "MEW_USDT_PERP",
+      "ME_USDT_PERP",
+      "MITO_USDT_PERP",
+      "MMT_USDT_PERP",
+      "MNT_USDT_PERP",
+      "MON_USDT_PERP",
+      "MOODENG_USDT_PERP",
+      "MOVE_USDT_PERP",
+      "MOVR_USDT_PERP",
+      "MPX_USDT_PERP",
+      "MUBARAK_USDT_PERP",
+      "MUX_USDT_PERP",
+      "MYX_USDT_PERP",
+      "NAORIS_USDT_PERP",
+      "NEAR_USDT_PERP",
+      "NEIRO_USDT_PERP",
+      "NEO_USDT_PERP",
+      "NIGHT_USDT_PERP",
+      "NIL_USDT_PERP",
+      "NMR_USDT_PERP",
+      "NOM_USDT_PERP",
+      "NOT_USDT_PERP",
+      "NXPC_USDT_PERP",
+      "OFC_USDT_PERP",
+      "OGN_USDT_PERP",
+      "OG_USDT_PERP",
+      "OKB_USDT_PERP",
+      "ONDO_USDT_PERP",
+      "ONG_USDT_PERP",
+      "ONT_USDT_PERP",
+      "ONX_USDT_PERP",
+      "ON_USDT_PERP",
+      "OPENAI_USDT_PERP",
+      "OPEN_USDT_PERP",
+      "OPG_USDT_PERP",
+      "OPN_USDT_PERP",
+      "OP_USDT_PERP",
+      "ORCA_USDT_PERP",
+      "ORDER_USDT_PERP",
+      "ORDI_USDT_PERP",
+      "O_USDT_PERP",
+      "PARTI_USDT_PERP",
+      "PENDLE_USDT_PERP",
+      "PENGU_USDT_PERP",
+      "PEOPLE_USDT_PERP",
+      "PEPE_USDT_PERP",
+      "PHA_USDT_PERP",
+      "PIEVERSE_USDT_PERP",
+      "PIPPIN_USDT_PERP",
+      "PIXEL_USDT_PERP",
+      "PI_USDT_PERP",
+      "PLAY_USDT_PERP",
+      "PLUME_USDT_PERP",
+      "PNUT_USDT_PERP",
+      "POLYX_USDT_PERP",
+      "POL_USDT_PERP",
+      "PONS_USDT_PERP",
+      "POPCAT_USDT_PERP",
+      "PORTAL_USDT_PERP",
+      "POWER_USDT_PERP",
+      "POWR_USDT_PERP",
+      "PRL_USDT_PERP",
+      "PROMPT_USDT_PERP",
+      "PROS_USDT_PERP",
+      "PROVE_USDT_PERP",
+      "PTB_USDT_PERP",
+      "PUMP_USDT_PERP",
+      "PYTH_USDT_PERP",
+      "QNT_USDT_PERP",
+      "QTUM_USDT_PERP",
+      "Q_USDT_PERP",
+      "RARE_USDT_PERP",
+      "RATS_USDT_PERP",
+      "RAVE_USDT_PERP",
+      "RAY_USDT_PERP",
+      "RECALL_USDT_PERP",
+      "RENDER_USDT_PERP",
+      "RESOLV_USDT_PERP",
+      "REZ_USDT_PERP",
+      "RE_USDT_PERP",
+      "RIF_USDT_PERP",
+      "RIVER_USDT_PERP",
+      "ROBO_USDT_PERP",
+      "ROSE_USDT_PERP",
+      "RSR_USDT_PERP",
+      "RUNE_USDT_PERP",
+      "SAGA_USDT_PERP",
+      "SAHARA_USDT_PERP",
+      "SAND_USDT_PERP",
+      "SAPIEN_USDT_PERP",
+      "SEI_USDT_PERP",
+      "SENT_USDT_PERP",
+      "SFP_USDT_PERP",
+      "SHELL_USDT_PERP",
+      "SHIB_USDT_PERP",
+      "SIREN_USDT_PERP",
+      "SKL_USDT_PERP",
+      "SKR_USDT_PERP",
+      "SKYAI_USDT_PERP",
+      "SKY_USDT_PERP",
+      "SLP_USDT_PERP",
+      "SLX_USDT_PERP",
+      "SNX_USDT_PERP",
+      "SOLV_USDT_PERP",
+      "SOL_USDT_PERP",
+      "SOMI_USDT_PERP",
+      "SOON_USDT_PERP",
+      "SPACE_USDT_PERP",
+      "SPELL_USDT_PERP",
+      "SPK_USDT_PERP",
+      "SPORTFUN_USDT_PERP",
+      "SPX_USDT_PERP",
+      "SQD_USDT_PERP",
+      "SSV_USDT_PERP",
+      "STABLE_USDT_PERP",
+      "STAR_USDT_PERP",
+      "STBL_USDT_PERP",
+      "STG_USDT_PERP",
+      "STO_USDT_PERP",
+      "STRK_USDT_PERP",
+      "STX_USDT_PERP",
+      "SUI_USDT_PERP",
+      "SUN_USDT_PERP",
+      "SUPER_USDT_PERP",
+      "SUSHI_USDT_PERP",
+      "SXT_USDT_PERP",
+      "SYRUP_USDT_PERP",
+      "S_USDT_PERP",
+      "TAC_USDT_PERP",
+      "TAKE_USDT_PERP",
+      "TAO_USDT_PERP",
+      "TA_USDT_PERP",
+      "THETA_USDT_PERP",
+      "THE_USDT_PERP",
+      "TIA_USDT_PERP",
+      "TLM_USDT_PERP",
+      "TNSR_USDT_PERP",
+      "TOSHI_USDT_PERP",
+      "TOWNS_USDT_PERP",
+      "TRADOOR_USDT_PERP",
+      "TRB_USDT_PERP",
+      "TREE_USDT_PERP",
+      "TRIA_USDT_PERP",
+      "TRUMP_USDT_PERP",
+      "TRUST_USDT_PERP",
+      "TRUTH_USDT_PERP",
+      "TRX_USDT_PERP",
+      "TST_USDT_PERP",
+      "TURBO_USDT_PERP",
+      "TURTLE_USDT_PERP",
+      "TUT_USDT_PERP",
+      "TWT_USDT_PERP",
+      "UAI_USDT_PERP",
+      "UB_USDT_PERP",
+      "UNI_USDT_PERP",
+      "UP_USDT_PERP",
+      "USELESS_USDT_PERP",
+      "USTC_USDT_PERP",
+      "USUAL_USDT_PERP",
+      "US_USDT_PERP",
+      "VELODROME_USDT_PERP",
+      "VET_USDT_PERP",
+      "VIRTUAL_USDT_PERP",
+      "VVV_USDT_PERP",
+      "WAL_USDT_PERP",
+      "WCT_USDT_PERP",
+      "WIF_USDT_PERP",
+      "WLD_USDT_PERP",
+      "WLFI_USDT_PERP",
+      "W_USDT_PERP",
+      "XAI_USDT_PERP",
+      "XAN_USDT_PERP",
+      "XEC_USDT_PERP",
+      "XLM_USDT_PERP",
+      "XMR_USDT_PERP",
+      "XNY_USDT_PERP",
+      "XPIN_USDT_PERP",
+      "XPL_USDT_PERP",
+      "XRP_USDT_PERP",
+      "XTZ_USDT_PERP",
+      "XVG_USDT_PERP",
+      "YB_USDT_PERP",
+      "YFI_USDT_PERP",
+      "YGG_USDT_PERP",
+      "ZAMA_USDT_PERP",
+      "ZBT_USDT_PERP",
+      "ZEC_USDT_PERP",
+      "ZEN_USDT_PERP",
+      "ZEREBRO_USDT_PERP",
+      "ZEST_USDT_PERP",
+      "ZETA_USDT_PERP",
+      "ZIL_USDT_PERP",
+      "ZKC_USDT_PERP",
+      "ZKP_USDT_PERP",
+      "ZKSYNC_USDT_PERP",
+      "ZORA_USDT_PERP",
+      "ZRO_USDT_PERP",
+      "ZRX_USDT_PERP",
+      "哈基米_USDT_PERP",
+      "币安人生_USDT_PERP",
+      "我踏马来了_USDT_PERP",
+      "牛来_USDT_PERP"
+    ],
+    "rows": [
+      {
+        "symbol": "WTI_USDT_PERP",
+        "status": "排除",
+        "reason": "股票/ETF/商品代幣（依名稱推定，可調整 CRYPTO_X_WHITELIST）"
+      },
+      {
+        "symbol": "XYZX_USDT_PERP",
+        "status": "排除",
+        "reason": "股票/ETF/商品代幣（依名稱推定，可調整 CRYPTO_X_WHITELIST）"
+      }
+    ]
+  },
+  "cache_files": [
+    {
+      "symbol": "0G_USDT_PERP",
+      "rows": 10317,
+      "t_min": 1786537800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "1INCH_USDT_PERP",
+      "rows": 10317,
+      "t_min": 1786537800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "2Z_USDT_PERP",
+      "rows": 10317,
+      "t_min": 1786537800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "4_USDT_PERP",
+      "rows": 10317,
+      "t_min": 1786537800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "AAVE_USDT_PERP",
+      "rows": 10317,
+      "t_min": 1786537800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "AAX_USDT_PERP",
+      "rows": 10317,
+      "t_min": 1786537800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ACE_USDT_PERP",
+      "rows": 10317,
+      "t_min": 1786537800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ACH_USDT_PERP",
+      "rows": 10317,
+      "t_min": 1786537800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ACT_USDT_PERP",
+      "rows": 10317,
+      "t_min": 1786537800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ADA_USDT_PERP",
+      "rows": 10317,
+      "t_min": 1786537800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "AERO_USDT_PERP",
+      "rows": 10317,
+      "t_min": 1786537800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "AEVO_USDT_PERP",
+      "rows": 10317,
+      "t_min": 1786537800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "AGLD_USDT_PERP",
+      "rows": 10000,
+      "t_min": 1786526400000,
+      "t_max": 1789526100000
+    },
+    {
+      "symbol": "AGT_USDT_PERP",
+      "rows": 10317,
+      "t_min": 1786537800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "AIA_USDT_PERP",
+      "rows": 10317,
+      "t_min": 1786537800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "AIGENSYN_USDT_PERP",
+      "rows": 10317,
+      "t_min": 1786537800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "AIN_USDT_PERP",
+      "rows": 10317,
+      "t_min": 1786537800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "AIO_USDT_PERP",
+      "rows": 10317,
+      "t_min": 1786537800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "AIXBT_USDT_PERP",
+      "rows": 10317,
+      "t_min": 1786537800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "AKE_USDT_PERP",
+      "rows": 10317,
+      "t_min": 1786537800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "AKT_USDT_PERP",
+      "rows": 10355,
+      "t_min": 1786526400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ALCH_USDT_PERP",
+      "rows": 10355,
+      "t_min": 1786526400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ALGO_USDT_PERP",
+      "rows": 10355,
+      "t_min": 1786526400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ALLO_USDT_PERP",
+      "rows": 10355,
+      "t_min": 1786526400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ALL_USDT_PERP",
+      "rows": 10355,
+      "t_min": 1786526400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ALT_USDT_PERP",
+      "rows": 10355,
+      "t_min": 1786526400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ANIME_USDT_PERP",
+      "rows": 10355,
+      "t_min": 1786526400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ANTHROPIC_USDT_PERP",
+      "rows": 10355,
+      "t_min": 1786526400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "APE_USDT_PERP",
+      "rows": 10355,
+      "t_min": 1786526400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "API3_USDT_PERP",
+      "rows": 10355,
+      "t_min": 1786526400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "APR_USDT_PERP",
+      "rows": 10355,
+      "t_min": 1786526400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "APT_USDT_PERP",
+      "rows": 10355,
+      "t_min": 1786526400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ARB_USDT_PERP",
+      "rows": 10355,
+      "t_min": 1786526400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ARC_USDT_PERP",
+      "rows": 10285,
+      "t_min": 1786547400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ARIA_USDT_PERP",
+      "rows": 10285,
+      "t_min": 1786547400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ARKM_USDT_PERP",
+      "rows": 10285,
+      "t_min": 1786547400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ARPA_USDT_PERP",
+      "rows": 10285,
+      "t_min": 1786547400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ARX_USDT_PERP",
+      "rows": 10285,
+      "t_min": 1786547400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "AR_USDT_PERP",
+      "rows": 10285,
+      "t_min": 1786547400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ASTER_USDT_PERP",
+      "rows": 10285,
+      "t_min": 1786547400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ASTR_USDT_PERP",
+      "rows": 10285,
+      "t_min": 1786547400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ATH_USDT_PERP",
+      "rows": 10285,
+      "t_min": 1786547400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ATOM_USDT_PERP",
+      "rows": 10285,
+      "t_min": 1786547400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "AT_USDT_PERP",
+      "rows": 10285,
+      "t_min": 1786547400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "AUCTION_USDT_PERP",
+      "rows": 10285,
+      "t_min": 1786547400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "AVAX_USDT_PERP",
+      "rows": 10285,
+      "t_min": 1786547400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "AVNT_USDT_PERP",
+      "rows": 10285,
+      "t_min": 1786547400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "AWE_USDT_PERP",
+      "rows": 10285,
+      "t_min": 1786547400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "AXL_USDT_PERP",
+      "rows": 10370,
+      "t_min": 1786521900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "AXS_USDT_PERP",
+      "rows": 10370,
+      "t_min": 1786521900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "A_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BABY_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BANANAS31_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BANANA_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BAND_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BANK_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BAN_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BARD_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BASED_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BAS_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BAT_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BB_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BCH_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BEAMX_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BEAT_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BEL_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BERA_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BEX_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BICO_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BILL_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BIO_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BIRB_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BLEND_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BLESS_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BLUAI_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BLUR_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BNB_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BOME_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BONK_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BRENTOIL_USDT_PERP",
+      "rows": 10315,
+      "t_min": 1786538400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BRETT_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BREV_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BROCCOLI_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BR_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BSB_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BSV_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BTC_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BTR_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BTW_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "BULLA_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "B_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "CAKE_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "CAP_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "CASHCAT_USDT_PERP",
+      "rows": 4041,
+      "t_min": 1788420600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "CATI_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "CBRS_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "CC_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "CETUS_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "CFG_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "CFX_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "CF_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "CHIP_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "CHZ_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "CKB_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "CLANKER_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "CLO_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "COAI_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "COLLECT_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "COMP_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "COOKIE_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "COTI_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "CROSS_USDT_PERP",
+      "rows": 10314,
+      "t_min": 1786538700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "CRO_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "CRV_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "CTR_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "CVX_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "CYS_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "DASH_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "DATA_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "DODO_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "DOGE_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "DOGS_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "DOLO_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "DOS_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "DOT_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "DRIFT_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "DUSK_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "DYM_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "EDEN_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "EDGE_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "EDU_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "EGLD_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "EIGEN_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ELSA_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ENA_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ENJ_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ENSO_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ENS_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ESP_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ETC_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ETHFI_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ETH_USDT_PERP",
+      "rows": 10313,
+      "t_min": 1786539000000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "EUL_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "EVAA_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "FARTCOIN_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "FET_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "FF_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "FHE_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "FIGHT_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "FIL_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "FLOKI_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "FLUID_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "FOGO_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "FOLKS_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "GALA_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "GAS_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "GENIUS_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "GIGGLE_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "GMT_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "GMX_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "GOAT_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "GPS_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "GRAM_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "GRASS_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "GRIFFAIN_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "GRT_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "GRVT_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "GUA_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "GUN_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "GWEI_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "HAEDAL_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "HANA_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "HBAR_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "HEMI_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "HMSTR_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "HOLO_USDT_PERP",
+      "rows": 10312,
+      "t_min": 1786539300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "HOME_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "HUMA_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "HYPE_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "HYUNDAI_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "H_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ICNT_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ICP_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "IDOL_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "IMX_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "INIT_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "INJ_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "INX_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "IN_USDT_PERP",
+      "rows": 9995,
+      "t_min": 1786527900000,
+      "t_max": 1789526100000
+    },
+    {
+      "symbol": "IOST_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "IOTA_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "IO_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "IRYS_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "JASMY_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "JELLYJELLY_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "JTO_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "JUP_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "KAIA_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "KAITO_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "KAS_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "KAT_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "KAVA_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "KERNEL_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "KGEN_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "KIOXIA_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "KITE_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "KMNO_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "KNC_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "LAB_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "LAYER_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "LA_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "LDO_USDT_PERP",
+      "rows": 10311,
+      "t_min": 1786539600000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "LIGHT_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "LINEA_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "LINK_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "LISTA_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "LIT_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "LPT_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "LRC_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "LSK_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "LTC_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "LUNA2_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "LUNC_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "LYN_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "MAGIC_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "MAGMA_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "MANA_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "MANTA_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "MANTRA_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "MARSCOIN_USDT_PERP",
+      "rows": 4558,
+      "t_min": 1788265500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "MASK_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "MAV_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "MEGA_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "MELANIA_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "MEME_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "MERL_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "METIS_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "MET_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "MEW_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ME_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "MITO_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "MMT_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "MNT_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "MON_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "MOODENG_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "MOVE_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "MOVR_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "MPX_USDT_PERP",
+      "rows": 10310,
+      "t_min": 1786539900000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "MUBARAK_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "MUX_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "MYX_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "NAORIS_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "NEAR_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "NEIRO_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "NEO_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "NIGHT_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "NIL_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "NMR_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "NOM_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "NOT_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "NXPC_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "OFC_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "OGN_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "OG_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "OKB_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ONDO_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ONG_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ONT_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ONX_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ON_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "OPENAI_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "OPEN_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "OPG_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "OPN_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "OP_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ORCA_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ORDER_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ORDI_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "O_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "PARTI_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "PENDLE_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "PENGU_USDT_PERP",
+      "rows": 10309,
+      "t_min": 1786540200000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "PEOPLE_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "PEPE_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "PHA_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "PIEVERSE_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "PIPPIN_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "PIXEL_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "PI_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "PLAY_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "PLUME_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "PNUT_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "POLYX_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "POL_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "PONS_USDT_PERP",
+      "rows": 4624,
+      "t_min": 1788245700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "POPCAT_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "PORTAL_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "POWER_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "POWR_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "PRL_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "PROMPT_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "PROS_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "PROVE_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "PTB_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "PUMP_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "PYTH_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "QNT_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "QTUM_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "Q_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "RARE_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "RATS_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "RAVE_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "RAY_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "RECALL_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "RENDER_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "RESOLV_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "REZ_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "RE_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "RIF_USDT_PERP",
+      "rows": 10308,
+      "t_min": 1786540500000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "RIVER_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ROBO_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ROSE_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "RSR_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "RUNE_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SAGA_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SAHARA_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SAND_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SAPIEN_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SEI_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SENT_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SFP_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SHELL_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SHIB_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SIREN_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SKL_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SKR_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SKYAI_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SKY_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SLP_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SLX_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SNX_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SOLV_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SOL_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SOMI_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SOON_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SPACE_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SPELL_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SPK_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SPORTFUN_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SPX_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SQD_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SSV_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "STABLE_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "STAR_USDT_PERP",
+      "rows": 10307,
+      "t_min": 1786540800000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "STBL_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "STG_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "STO_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "STRK_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "STX_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SUI_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SUN_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SUPER_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SUSHI_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SXT_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "SYRUP_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "S_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "TAC_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "TAKE_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "TAO_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "TA_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "THETA_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "THE_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "TIA_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "TLM_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "TNSR_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "TOSHI_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "TOWNS_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "TRADOOR_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "TRB_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "TREE_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "TRIA_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "TRUMP_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "TRUST_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "TRUTH_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "TRX_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "TST_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "TURBO_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "TURTLE_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "TUT_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "TWT_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "UAI_USDT_PERP",
+      "rows": 10306,
+      "t_min": 1786541100000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "UB_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "UNI_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "UP_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "USELESS_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "USTC_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "USUAL_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "US_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "VELODROME_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "VET_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "VIRTUAL_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "VVV_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "WAL_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "WCT_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "WIF_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "WLD_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "WLFI_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "WTI_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "W_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "XAI_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "XAN_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "XEC_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "XLM_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "XMR_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "XNY_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "XPIN_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "XPL_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "XRP_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "XTZ_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "XVG_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "XYZX_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "YB_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "YFI_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "YGG_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ZAMA_USDT_PERP",
+      "rows": 10305,
+      "t_min": 1786541400000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ZBT_USDT_PERP",
+      "rows": 10304,
+      "t_min": 1786541700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ZEC_USDT_PERP",
+      "rows": 10304,
+      "t_min": 1786541700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ZEN_USDT_PERP",
+      "rows": 10304,
+      "t_min": 1786541700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ZEREBRO_USDT_PERP",
+      "rows": 10304,
+      "t_min": 1786541700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ZEST_USDT_PERP",
+      "rows": 10304,
+      "t_min": 1786541700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ZETA_USDT_PERP",
+      "rows": 10304,
+      "t_min": 1786541700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ZIL_USDT_PERP",
+      "rows": 10304,
+      "t_min": 1786541700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ZKC_USDT_PERP",
+      "rows": 10304,
+      "t_min": 1786541700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ZKP_USDT_PERP",
+      "rows": 10304,
+      "t_min": 1786541700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ZKSYNC_USDT_PERP",
+      "rows": 10304,
+      "t_min": 1786541700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ZORA_USDT_PERP",
+      "rows": 10304,
+      "t_min": 1786541700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ZRO_USDT_PERP",
+      "rows": 10304,
+      "t_min": 1786541700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "ZRX_USDT_PERP",
+      "rows": 10304,
+      "t_min": 1786541700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "哈基米_USDT_PERP",
+      "rows": 2322,
+      "t_min": 1788936300000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "币安人生_USDT_PERP",
+      "rows": 10304,
+      "t_min": 1786541700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "我踏马来了_USDT_PERP",
+      "rows": 10304,
+      "t_min": 1786541700000,
+      "t_max": 1789632600000
+    },
+    {
+      "symbol": "牛来_USDT_PERP",
+      "rows": 4970,
+      "t_min": 1788141900000,
+      "t_max": 1789632600000
+    }
+  ],
+  "truncation_check": {
+    "would_truncate": [],
+    "ok": true
+  }
+}

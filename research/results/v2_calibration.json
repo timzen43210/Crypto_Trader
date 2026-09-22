@@ -1,0 +1,6279 @@
+{
+  "metadata": {
+    "task": "V2 滑價敏感度分析（TP/SL 訊號價 vs 成交價）",
+    "script": "research/v2_slippage_scan.py",
+    "script_version": "2.0.0",
+    "stage": "calibrate",
+    "run_time_tpe": "2026-09-21T15:12:55+08:00",
+    "run_time_utc": "2026-09-21T07:12:55+00:00",
+    "machine": "AUG090DPEJPG7",
+    "os": "Windows-11-10.0.26200-SP0",
+    "python": "3.14.7",
+    "pandas": "3.0.5",
+    "numpy": "2.5.3",
+    "repo_head": {
+      "ref": "refs/heads/stage",
+      "commit": "f7a2975929c51d743433c93c7020c2488128b51a"
+    },
+    "offline": true,
+    "resolve_disabled": true,
+    "api_requests": 0,
+    "cache_snapshot_used": true,
+    "config": {
+      "MARKET_TYPE": "PERP",
+      "INTERVAL": "5M",
+      "LOOKBACK_DAYS": 33,
+      "WARMUP_BARS": 300,
+      "EXIT_MODE": "fixed",
+      "TAKE_PROFIT": 0.04,
+      "STOP_LOSS": 0.05,
+      "FEE_RATE": 0.0005,
+      "COOLDOWN_BARS": 12,
+      "MAX_HOLD_HOURS": null,
+      "RESOLVE_SAME_BAR_WITH_5M": false,
+      "RESOLVE_INTERVALS": [
+        "1M"
+      ]
+    },
+    "s4_params": {
+      "MIN_RET_2H": 0.14,
+      "MIN_VOL_RATIO": 2.0,
+      "MAX_CLOSE_POS": 0.6,
+      "MAX_TURN24H": 500000,
+      "MIN_TURN24H": 20000,
+      "COOLDOWN_HOURS": 1.0
+    },
+    "s4_experimental": {
+      "MIN_VOL_VS_MAX24": null,
+      "MIN_SPIKES_1H": null,
+      "MIN_ATR": null,
+      "MIN_RSI": null,
+      "MAX_PRICE": null
+    },
+    "bars_per_hour": 12,
+    "min_bars_required": 300,
+    "cache": {
+      "dir": "pionex_cache",
+      "interval": "5M",
+      "files": 442,
+      "files_readable": 442,
+      "t_min": 1786521900000,
+      "t_min_tpe": "2026-08-12 16:05",
+      "t_max": 1789632600000,
+      "t_max_tpe": "2026-09-17 16:10",
+      "rows_min": 2322,
+      "rows_median": 10310.0,
+      "rows_max": 10370
+    },
+    "freeze_end": 1789632900000,
+    "freeze_end_tpe": "2026-09-17 16:15",
+    "test_start": 1786781700000,
+    "test_start_tpe": "2026-08-15 16:15",
+    "fetch_start": 1786691700000,
+    "fetch_start_tpe": "2026-08-14 15:15",
+    "symbols_source": "快取檔名（無法得知交易對是否已下架）",
+    "symbols": {
+      "scanned": 440,
+      "excluded": 2,
+      "skipped": 0,
+      "failed": 0,
+      "ignored": 0,
+      "rows": [
+        {
+          "symbol": "WTI_USDT_PERP",
+          "status": "排除",
+          "reason": "股票/ETF/商品代幣（依名稱推定，可調整 CRYPTO_X_WHITELIST）"
+        },
+        {
+          "symbol": "XYZX_USDT_PERP",
+          "status": "排除",
+          "reason": "股票/ETF/商品代幣（依名稱推定，可調整 CRYPTO_X_WHITELIST）"
+        },
+        {
+          "symbol": "0G_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "1INCH_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "2Z_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "4_USDT_PERP",
+          "status": "已掃描",
+          "reason": "5 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "AAVE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "AAX_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ACE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ACH_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ACT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ADA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "AERO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "AEVO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "AGLD_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9449
+        },
+        {
+          "symbol": "AGT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "3 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "AIA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "AIGENSYN_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "AIN_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "AIO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "AIXBT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "AKE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "AKT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ALCH_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ALGO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ALLO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ALL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ALT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ANIME_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ANTHROPIC_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "APE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "API3_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "APR_USDT_PERP",
+          "status": "已掃描",
+          "reason": "4 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "APT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ARB_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ARC_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ARIA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ARKM_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ARPA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ARX_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "AR_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ASTER_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ASTR_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ATH_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ATOM_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "AT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "AUCTION_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "AVAX_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "AVNT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "AWE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "AXL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "AXS_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "A_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BABY_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BANANAS31_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BANANA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BAND_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BANK_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BAN_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BARD_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BASED_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BAS_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BAT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BB_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BCH_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BEAMX_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BEAT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BEL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BERA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BEX_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BICO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BILL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BIO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BIRB_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BLEND_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BLESS_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BLUAI_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BLUR_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BNB_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BOME_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BONK_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BRENTOIL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BRETT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BREV_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BROCCOLI_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BR_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BSB_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BSV_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BTC_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BTR_USDT_PERP",
+          "status": "已掃描",
+          "reason": "3 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BTW_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "BULLA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "B_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "CAKE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "CAP_USDT_PERP",
+          "status": "已掃描",
+          "reason": "3 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "CASHCAT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 4041
+        },
+        {
+          "symbol": "CATI_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "CBRS_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "CC_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "CETUS_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "CFG_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "CFX_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "CF_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "CHIP_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "CHZ_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "CKB_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "CLANKER_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "CLO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "3 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "COAI_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "COLLECT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "COMP_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "COOKIE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "COTI_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "CROSS_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "CRO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "CRV_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "CTR_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "CVX_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "CYS_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "DASH_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "DATA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "DODO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "DOGE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "DOGS_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "DOLO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "DOS_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "DOT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "DRIFT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "DUSK_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "DYM_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "EDEN_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "EDGE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "EDU_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "EGLD_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "EIGEN_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ELSA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ENA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ENJ_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ENSO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ENS_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ESP_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ETC_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ETHFI_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ETH_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "EUL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "EVAA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "FARTCOIN_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "FET_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "FF_USDT_PERP",
+          "status": "已掃描",
+          "reason": "3 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "FHE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "FIGHT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "FIL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "FLOKI_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "FLUID_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "FOGO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "FOLKS_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "GALA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "GAS_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "GENIUS_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "GIGGLE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "GMT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "GMX_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "GOAT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "GPS_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "GRAM_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "GRASS_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "GRIFFAIN_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "GRT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "GRVT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "GUA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "GUN_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "GWEI_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "HAEDAL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "HANA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "HBAR_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "HEMI_USDT_PERP",
+          "status": "已掃描",
+          "reason": "3 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "HMSTR_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "HOLO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "HOME_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "HUMA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "HYPE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "HYUNDAI_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "H_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ICNT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ICP_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "IDOL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "IMX_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "INIT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "INJ_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "INX_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "IN_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9449
+        },
+        {
+          "symbol": "IOST_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "IOTA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "IO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "IRYS_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "JASMY_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "JELLYJELLY_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "JTO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "JUP_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "KAIA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "KAITO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "KAS_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "KAT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "KAVA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "KERNEL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "KGEN_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "KIOXIA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "KITE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "KMNO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "KNC_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "LAB_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "LAYER_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "LA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "LDO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "LIGHT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "LINEA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "LINK_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "LISTA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "LIT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "LPT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "LRC_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "LSK_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "LTC_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "LUNA2_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "LUNC_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "LYN_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "MAGIC_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "MAGMA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "MANA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "MANTA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "MANTRA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "MARSCOIN_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 4558
+        },
+        {
+          "symbol": "MASK_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "MAV_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "MEGA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "MELANIA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "MEME_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "MERL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "METIS_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "MET_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "MEW_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ME_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "MITO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "MMT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "MNT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "MON_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "MOODENG_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "MOVE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "MOVR_USDT_PERP",
+          "status": "已掃描",
+          "reason": "3 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "MPX_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "MUBARAK_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "MUX_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "MYX_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "NAORIS_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "NEAR_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "NEIRO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "NEO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "NIGHT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "NIL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "NMR_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "NOM_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "NOT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "NXPC_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "OFC_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "OGN_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "OG_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "OKB_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ONDO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ONG_USDT_PERP",
+          "status": "已掃描",
+          "reason": "3 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ONT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ONX_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ON_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "OPENAI_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "OPEN_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "OPG_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "OPN_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "OP_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ORCA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ORDER_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ORDI_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "O_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "PARTI_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "PENDLE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "PENGU_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "PEOPLE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "PEPE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "PHA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "PIEVERSE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "PIPPIN_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "PIXEL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "PI_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "PLAY_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "PLUME_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "PNUT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "POLYX_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "POL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "PONS_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 4624
+        },
+        {
+          "symbol": "POPCAT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "PORTAL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "4 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "POWER_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "POWR_USDT_PERP",
+          "status": "已掃描",
+          "reason": "3 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "PRL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "PROMPT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "PROS_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "PROVE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "PTB_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "PUMP_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "PYTH_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "QNT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "QTUM_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "Q_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "RARE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "RATS_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "RAVE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "RAY_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "RECALL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "RENDER_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "RESOLV_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "REZ_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "RE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "RIF_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "RIVER_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ROBO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ROSE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "RSR_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "RUNE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SAGA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SAHARA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SAND_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SAPIEN_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SEI_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SENT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SFP_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SHELL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SHIB_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SIREN_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SKL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SKR_USDT_PERP",
+          "status": "已掃描",
+          "reason": "3 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SKYAI_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SKY_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SLP_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SLX_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SNX_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SOLV_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SOL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SOMI_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SOON_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SPACE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SPELL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SPK_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SPORTFUN_USDT_PERP",
+          "status": "已掃描",
+          "reason": "3 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SPX_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SQD_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SSV_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "STABLE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "STAR_USDT_PERP",
+          "status": "已掃描",
+          "reason": "4 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "STBL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "STG_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "STO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "STRK_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "STX_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SUI_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SUN_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SUPER_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SUSHI_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SXT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "SYRUP_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "S_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "TAC_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "TAKE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "TAO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "TA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "THETA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "THE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "TIA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "TLM_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "TNSR_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "TOSHI_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "TOWNS_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "TRADOOR_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "TRB_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "TREE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "3 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "TRIA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "TRUMP_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "TRUST_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "TRUTH_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "TRX_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "TST_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "TURBO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "TURTLE_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "TUT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "TWT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "UAI_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "UB_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "UNI_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "UP_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "USELESS_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "USTC_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "USUAL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "US_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "VELODROME_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "VET_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "VIRTUAL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "VVV_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "WAL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "WCT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "WIF_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "WLD_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "WLFI_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "W_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "XAI_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "XAN_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "XEC_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "XLM_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "XMR_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "XNY_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "XPIN_USDT_PERP",
+          "status": "已掃描",
+          "reason": "3 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "XPL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "XRP_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "XTZ_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "XVG_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "YB_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "YFI_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "YGG_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ZAMA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ZBT_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ZEC_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ZEN_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ZEREBRO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ZEST_USDT_PERP",
+          "status": "已掃描",
+          "reason": "3 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ZETA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ZIL_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ZKC_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ZKP_USDT_PERP",
+          "status": "已掃描",
+          "reason": "1 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ZKSYNC_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ZORA_USDT_PERP",
+          "status": "已掃描",
+          "reason": "3 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ZRO_USDT_PERP",
+          "status": "已掃描",
+          "reason": "2 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "ZRX_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "哈基米_USDT_PERP",
+          "status": "已掃描",
+          "reason": "3 筆交易",
+          "bars": 2322
+        },
+        {
+          "symbol": "币安人生_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "我踏马来了_USDT_PERP",
+          "status": "已掃描",
+          "reason": "3 筆交易",
+          "bars": 9804
+        },
+        {
+          "symbol": "牛来_USDT_PERP",
+          "status": "已掃描",
+          "reason": "0 筆交易",
+          "bars": 4970
+        }
+      ]
+    },
+    "fingerprint": "64c1b5577e30815250158429ab1ab0c732ccfdbb5b3b54be096854dbeb817a0f"
+  },
+  "summary": {
+    "symbols_compared": 440,
+    "min_symbols_required": 100,
+    "trades_pb": 189,
+    "trades_sim": 189,
+    "mismatch_total": 0,
+    "signals_in_window": 674,
+    "compared_fields": [
+      "entry_time",
+      "entry",
+      "tp",
+      "sl",
+      "exit_time",
+      "exit",
+      "result"
+    ],
+    "passed": true,
+    "elapsed_sec": 60.2,
+    "real_cache_changed": []
+  },
+  "symbols": [
+    {
+      "symbol": "0G_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 3,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "1INCH_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "2Z_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "4_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 20,
+      "n_pb": 5,
+      "n_sim": 5,
+      "mismatch": 0
+    },
+    {
+      "symbol": "AAVE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "AAX_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ACE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 1,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ACH_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ACT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ADA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "AERO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "AEVO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "AGLD_USDT_PERP",
+      "bars": 9449,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "AGT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 5,
+      "n_pb": 3,
+      "n_sim": 3,
+      "mismatch": 0
+    },
+    {
+      "symbol": "AIA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "AIGENSYN_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "AIN_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 12,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "AIO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "AIXBT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "AKE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "AKT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ALCH_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 2,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ALGO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ALLO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ALL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ALT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ANIME_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 3,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ANTHROPIC_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "APE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "API3_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "APR_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 6,
+      "n_pb": 4,
+      "n_sim": 4,
+      "mismatch": 0
+    },
+    {
+      "symbol": "APT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ARB_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ARC_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ARIA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ARKM_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ARPA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ARX_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "AR_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ASTER_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ASTR_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 9,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ATH_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ATOM_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "AT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "AUCTION_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "AVAX_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "AVNT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "AWE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "AXL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 1,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "AXS_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "A_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BABY_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BANANAS31_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BANANA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BAND_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 1,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BANK_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BAN_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BARD_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BASED_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BAS_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 5,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BAT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BB_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 2,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BCH_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BEAMX_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 3,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BEAT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BEL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BERA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BEX_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BICO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 3,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BILL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BIO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BIRB_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BLEND_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BLESS_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 1,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BLUAI_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BLUR_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 8,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BNB_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BOME_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BONK_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BRENTOIL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BRETT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BREV_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BROCCOLI_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BR_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 1,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BSB_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BSV_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BTC_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BTR_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 12,
+      "n_pb": 3,
+      "n_sim": 3,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BTW_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 5,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "BULLA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 1,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "B_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 11,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "CAKE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "CAP_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 5,
+      "n_pb": 3,
+      "n_sim": 3,
+      "mismatch": 0
+    },
+    {
+      "symbol": "CASHCAT_USDT_PERP",
+      "bars": 4041,
+      "n_signals": 3,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "CATI_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 4,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "CBRS_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "CC_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "CETUS_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "CFG_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 5,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "CFX_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "CF_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "CHIP_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 1,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "CHZ_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "CKB_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "CLANKER_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "CLO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 8,
+      "n_pb": 3,
+      "n_sim": 3,
+      "mismatch": 0
+    },
+    {
+      "symbol": "COAI_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "COLLECT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 10,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "COMP_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "COOKIE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "COTI_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 12,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "CROSS_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 2,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "CRO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "CRV_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "CTR_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 2,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "CVX_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "CYS_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 4,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "DASH_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 2,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "DATA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "DODO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "DOGE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "DOGS_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 1,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "DOLO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "DOS_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "DOT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "DRIFT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "DUSK_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "DYM_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "EDEN_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 2,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "EDGE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 5,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "EDU_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "EGLD_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "EIGEN_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ELSA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 3,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ENA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ENJ_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ENSO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ENS_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ESP_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ETC_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ETHFI_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ETH_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "EUL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "EVAA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "FARTCOIN_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "FET_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "FF_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 20,
+      "n_pb": 3,
+      "n_sim": 3,
+      "mismatch": 0
+    },
+    {
+      "symbol": "FHE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 7,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "FIGHT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "FIL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "FLOKI_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "FLUID_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 14,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "FOGO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "FOLKS_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "GALA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "GAS_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "GENIUS_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "GIGGLE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "GMT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "GMX_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "GOAT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "GPS_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 5,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "GRAM_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "GRASS_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "GRIFFAIN_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 10,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "GRT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "GRVT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "GUA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "GUN_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "GWEI_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 6,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "HAEDAL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 4,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "HANA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 9,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "HBAR_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "HEMI_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 5,
+      "n_pb": 3,
+      "n_sim": 3,
+      "mismatch": 0
+    },
+    {
+      "symbol": "HMSTR_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "HOLO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "HOME_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "HUMA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "HYPE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "HYUNDAI_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "H_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ICNT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ICP_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "IDOL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 11,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "IMX_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "INIT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "INJ_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "INX_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "IN_USDT_PERP",
+      "bars": 9449,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "IOST_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 2,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "IOTA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "IO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "IRYS_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "JASMY_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "JELLYJELLY_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "JTO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "JUP_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "KAIA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "KAITO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "KAS_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "KAT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 9,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "KAVA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "KERNEL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 1,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "KGEN_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "KIOXIA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "KITE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "KMNO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "KNC_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "LAB_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 5,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "LAYER_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 3,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "LA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 1,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "LDO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "LIGHT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 5,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "LINEA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "LINK_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "LISTA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "LIT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "LPT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "LRC_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "LSK_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 3,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "LTC_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "LUNA2_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 3,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "LUNC_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "LYN_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "MAGIC_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "MAGMA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 6,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "MANA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "MANTA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "MANTRA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 3,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "MARSCOIN_USDT_PERP",
+      "bars": 4558,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "MASK_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "MAV_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "MEGA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "MELANIA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 5,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "MEME_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "MERL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "METIS_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "MET_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "MEW_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ME_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "MITO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "MMT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "MNT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "MON_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "MOODENG_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 3,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "MOVE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 4,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "MOVR_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 12,
+      "n_pb": 3,
+      "n_sim": 3,
+      "mismatch": 0
+    },
+    {
+      "symbol": "MPX_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "MUBARAK_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 5,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "MUX_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "MYX_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "NAORIS_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 5,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "NEAR_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "NEIRO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "NEO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "NIGHT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "NIL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "NMR_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "NOM_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 8,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "NOT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "NXPC_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "OFC_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "OGN_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "OG_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 4,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "OKB_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ONDO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ONG_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 12,
+      "n_pb": 3,
+      "n_sim": 3,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ONT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 9,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ONX_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ON_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 1,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "OPENAI_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "OPEN_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "OPG_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "OPN_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "OP_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ORCA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 3,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ORDER_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ORDI_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "O_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "PARTI_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "PENDLE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "PENGU_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "PEOPLE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "PEPE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "PHA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 1,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "PIEVERSE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 7,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "PIPPIN_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "PIXEL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 2,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "PI_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "PLAY_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "PLUME_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "PNUT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "POLYX_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "POL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "PONS_USDT_PERP",
+      "bars": 4624,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "POPCAT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "PORTAL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 12,
+      "n_pb": 4,
+      "n_sim": 4,
+      "mismatch": 0
+    },
+    {
+      "symbol": "POWER_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "POWR_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 16,
+      "n_pb": 3,
+      "n_sim": 3,
+      "mismatch": 0
+    },
+    {
+      "symbol": "PRL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "PROMPT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 1,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "PROS_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 5,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "PROVE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "PTB_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 1,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "PUMP_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "PYTH_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "QNT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "QTUM_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "Q_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 3,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "RARE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "RATS_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 5,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "RAVE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "RAY_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 11,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "RECALL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "RENDER_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "RESOLV_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "REZ_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 6,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "RE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 3,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "RIF_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "RIVER_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ROBO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ROSE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "RSR_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "RUNE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SAGA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 1,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SAHARA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SAND_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SAPIEN_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SEI_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SENT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SFP_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SHELL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SHIB_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SIREN_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 2,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SKL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SKR_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 13,
+      "n_pb": 3,
+      "n_sim": 3,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SKYAI_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SKY_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SLP_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SLX_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SNX_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SOLV_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 6,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SOL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SOMI_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SOON_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SPACE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SPELL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SPK_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 1,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SPORTFUN_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 16,
+      "n_pb": 3,
+      "n_sim": 3,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SPX_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SQD_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 1,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SSV_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 11,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "STABLE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 10,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "STAR_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 12,
+      "n_pb": 4,
+      "n_sim": 4,
+      "mismatch": 0
+    },
+    {
+      "symbol": "STBL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "STG_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "STO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "STRK_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "STX_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SUI_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SUN_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SUPER_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 5,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SUSHI_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 7,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SXT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "SYRUP_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "S_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "TAC_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 1,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "TAKE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "TAO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "TA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 1,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "THETA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "THE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "TIA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "TLM_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 1,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "TNSR_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 5,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "TOSHI_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "TOWNS_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "TRADOOR_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 3,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "TRB_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 1,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "TREE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 14,
+      "n_pb": 3,
+      "n_sim": 3,
+      "mismatch": 0
+    },
+    {
+      "symbol": "TRIA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 6,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "TRUMP_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 4,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "TRUST_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "TRUTH_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "TRX_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "TST_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "TURBO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "TURTLE_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "TUT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "TWT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "UAI_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "UB_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "UNI_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "UP_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "USELESS_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "USTC_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "USUAL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "US_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 8,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "VELODROME_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "VET_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "VIRTUAL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "VVV_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "WAL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 10,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "WCT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "WIF_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "WLD_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "WLFI_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "W_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "XAI_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "XAN_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "XEC_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "XLM_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "XMR_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "XNY_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "XPIN_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 16,
+      "n_pb": 3,
+      "n_sim": 3,
+      "mismatch": 0
+    },
+    {
+      "symbol": "XPL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "XRP_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "XTZ_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "XVG_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 1,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "YB_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "YFI_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "YGG_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ZAMA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ZBT_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ZEC_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ZEN_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ZEREBRO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ZEST_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 9,
+      "n_pb": 3,
+      "n_sim": 3,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ZETA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ZIL_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ZKC_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 6,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ZKP_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 1,
+      "n_pb": 1,
+      "n_sim": 1,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ZKSYNC_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ZORA_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 20,
+      "n_pb": 3,
+      "n_sim": 3,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ZRO_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 6,
+      "n_pb": 2,
+      "n_sim": 2,
+      "mismatch": 0
+    },
+    {
+      "symbol": "ZRX_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "哈基米_USDT_PERP",
+      "bars": 2322,
+      "n_signals": 11,
+      "n_pb": 3,
+      "n_sim": 3,
+      "mismatch": 0
+    },
+    {
+      "symbol": "币安人生_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    },
+    {
+      "symbol": "我踏马来了_USDT_PERP",
+      "bars": 9804,
+      "n_signals": 5,
+      "n_pb": 3,
+      "n_sim": 3,
+      "mismatch": 0
+    },
+    {
+      "symbol": "牛来_USDT_PERP",
+      "bars": 4970,
+      "n_signals": 0,
+      "n_pb": 0,
+      "n_sim": 0,
+      "mismatch": 0
+    }
+  ],
+  "mismatch_samples": []
+}
