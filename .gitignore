@@ -10,3 +10,6 @@ __pycache__/
 # 不可以放進 state/ 或 output/：dryrun.yml 與 run.sh 每小時 `git add state output`
 # 之後自動 commit push，放那裡會把交易紀錄與日誌一路推進版控。
 runtime/
+
+# G2 量測腳本的中間產物（結果 json 要進版控，這裡不要）
+research/_tmp/
