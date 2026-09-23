@@ -1,0 +1,1954 @@
+{
+ "task": "A0",
+ "method_notes": "A0 — 2 小時漲幅粗篩的候選數量測（完全離線）\n==========================================\n回答一個問題：**「tickers 輪詢 → 2 小時漲幅粗篩 → 只對候選打 klines」這條路徑，\n每根 5 分 K 到底要打幾個 REST 請求、要花幾秒？**\n\n這個數字是 A1 延遲預算的主要成分：候選數是個位數就撐得住端到端 3-5 秒；\n候選數尾端破百，3-5 秒那個數字就不成立。\n\n用法：\n    python research/a0_screen.py                       # 全部 5M 快取\n    python research/a0_screen.py --max-symbols 20      # 冒煙（數字沒有代表性，只驗流程）\n\n結果寫到 research/results/a0_screen.json。本腳本**不連網、不寫入 pionex_cache**。\n\n\n=========================== 量測定義（判讀前請先讀這裡）===========================\n\n[A1] 粗篩條件的定義，以及它為什麼與 s4_signal 完全對齊\n     粗篩 = `s4_signal.features()` 產出的 `ret2h` 欄位 >= 門檻。\n     `ret2h` 沒有在本檔重算，是直接取 features() 的輸出欄位——這一點是刻意的：\n     實盤粗篩用 tickers 的現價序列算 2 小時漲幅，離線能拿到的最佳代理就是 K 棒收盤價，\n     而那正是 features() 算 ret2h 的同一個輸入。重抄一份公式只會製造漂移。\n     暖機期（前 2 小時）ret2h 是 NaN，`NaN >= 門檻` 在 numpy 下為 False，\n     應與 `signal_from_features()` 結尾的 `cond.fillna(False)` 等價。\n\n     這條等價不靠推論，是**真的把 signal_from_features 叫起來對帳**（見\n     input_contract.screen_equivalence）。做法：把 features() 的其他三個欄位釘在\n     「必定通過各自條件」的參數值上（中性化），只留粗篩看的那一欄是真實資料，\n     於是 `signal_from_features(...) == -1` 的位置**就是它對粗篩那一項的判定結果**，\n     包含它對 NaN 的處理。拿它跟粗篩的判定（screen_mask）逐格比對，\n     mismatches 必須是 0。另有一組資料無關的控制組（probe_control）餵入\n     「必定通過 / 必定不通過 / NaN」三列，要求兩邊分別得到 True/-1、False/0、False/0\n     ——這一步是為了防止「兩邊一起錯成 False，比對變成恆等式」這種沒有鑑別力的假驗證。\n\n     BUG-002 的教訓：舊版的 parity 比對兩側都由粗篩自己算出來，signal_from_features\n     從未參與，所以那個計數在任何輸入下都是 0，量不到任何東西。\n     只有讓被驗的對象真的出現在比對的一側，這個數字才有意義。\n\n     另外，粗篩的判定收斂成唯一一個函式 screen_mask()：候選數統計、漏失差集、\n     等價性比對三處都走它。這是刻意的——若等價性比對自己另寫一份比較，\n     它驗的就是它自己，不是量測實際用的那條路徑。\n\n[A2] 漏失率在本量測裡是「定義決定的 0」，不是量測成果\n     baseline 訊號是 `signal_from_features()` 的完整四條件，它的第一個合項就是\n     `ret2h >= MIN_RET_2H`（參數實際值見 metadata.s4_params）。\n     因此只要門檻 <= MIN_RET_2H，粗篩條件就被訊號條件完全蘊含，差集必然為空。\n     **算它是為了驗證實作沒走偏，不是為了產出一個數字。**\n     差集不為空 → 代表粗篩與 s4_signal 的 ret2h 定義脫鉤，那是 bug，要停下來回報。\n     門檻恰等於 MIN_RET_2H 時兩邊是同一個浮點比較，結果也必然相同（不是碰巧）。\n\n[A3] 候選數怎麼逐根 K 棒統計，分母是誰\n     只計入**計價幣為 --quote-asset（預設 USDT）**的交易對。理由不是潔癖：\n     策略4 的兩個成交額條件單位是 USDT，而 turn = close x volume 的 24 小時滾動和，\n     close 以計價幣計價，所以 BTC 計價合約算出來的 turn 單位是 BTC，\n     拿去跟成交額門檻比毫無意義。被排除的檔案會逐一列在 universe.quote_excluded。\n     各交易對的快取長度不同（新上架的幣起點晚），所以逐根 K 棒同時輸出\n     `symbols_observed`（該根有幾個交易對的 ret2h 已過暖機、是有效值），\n     並給兩個統計窗口，**兩個都輸出、不擇一**：\n       all_observed_bars   至少一個交易對有有效 ret2h 的所有 K 棒。窗口最長，\n                           尾端估計最可靠，但前緣幾根因為部分交易對還沒資料而略為低估。\n       full_universe_bars  全部納入的交易對都有有效 ret2h 的 K 棒。窗口較短，\n                           但分母完全一致，是前者的對照組。\n     判讀主值取 all_observed_bars（決定延遲上限的是尾端，需要最長的觀測窗口），\n     若兩者的 p95/p99 差距明顯，以 full_universe_bars 為準重新判讀。\n\n[A4] 候選數換算成 REST 秒數的邊界\n     秒數 = 候選數 / 速率。這條換算**只含 klines 請求本身**，不含 tickers 那一次輪詢、\n     不含連線建立、不含解析與訊號計算（後者見 G2a Stage 3）。\n     所以它是端到端延遲的**下界**，不是端到端延遲。\n\n[A5] 快取是「抓快取當下」的標的池，不是今天的全市場\n     快取檔名代表抓取當時存在的合約。B5（TASK-098）實測今日全市場 TRADING PERP 613 個、\n     其中 USDT 計價 568 個。兩個數字不同是正常的，不可混用：\n     `candidates_per_bar` 一律是快取這批交易對的實測值，\n     另外用 --market-usdt-symbols 做一次**線性外推**放在 projection_to_market，\n     並明確標示它是外推不是實測（線性假設本身也可能低估：新上架的幣波動通常更大）。\n\n[A6] 門檻餘裕與「可容忍的近似誤差」\n     實盤粗篩用 tickers 取樣算出的 2 小時漲幅是近似值，離線無法模擬它的抖動，\n     但可以量它有多少空間：對每一筆 baseline 訊號記下當下的 ret2h，\n     若近似值比真值低估了 e，該訊號在門檻 thr 下仍被撈到的條件是 ret2h - e >= thr。\n     所以 `min(訊號 ret2h) - thr` 就是「一筆都不漏」能容忍的最大低估量，\n     `p05 - thr` 是「容忍 95% 的訊號」的對應值。這兩個數字才是 A1 選門檻的直接輸入，\n     中位數沒有決策意義。",
+ "interval": "5M",
+ "bar_ms": 300000,
+ "bars_per_hour": 12,
+ "thresholds": [
+  0.1,
+  0.11,
+  0.12,
+  0.13,
+  0.135,
+  0.14
+ ],
+ "rates_req_per_s": [
+  10.0,
+  6.0
+ ],
+ "universe": {
+  "note": "[A5] 這是抓快取當下的標的池，不是今天的全市場，兩個數字不可混用。",
+  "cache_dir": "C:\\Claude Code\\Crypto_Trader\\pionex_cache",
+  "interval": "5M",
+  "cache_files_for_interval": 442,
+  "quote_asset_required": "USDT",
+  "quote_matched": 442,
+  "quote_excluded_count": 0,
+  "quote_excluded": [],
+  "quote_excluded_truncated": false,
+  "quote_exclusion_reason": "策略4 的成交額條件單位是計價幣；turn = close x volume 以計價幣計價，非 USDT 計價的合約算出來的 turn 與門檻不同單位，納入會系統性扭曲候選數。",
+  "symbols_considered": 442,
+  "symbols_used": 442,
+  "symbols_skipped": 0,
+  "skipped_detail": [],
+  "warmup_bars_required": 314,
+  "bars_replayed_total": 4525671,
+  "cache_coverage": {
+   "first_bar_open": 1786521900000,
+   "first_bar_open_utc": "2026-08-12 08:05:00 UTC / 16:05:00+08",
+   "last_bar_open": 1789632600000,
+   "last_bar_open_utc": "2026-09-17 08:10:00 UTC / 16:10:00+08",
+   "span_days": 36.003,
+   "grid_bars": 10370,
+   "symbols_observed_per_bar": {
+    "n": 10370,
+    "mean": 435.39662487946,
+    "min": 0.0,
+    "max": 442.0,
+    "p05": 437.0,
+    "p50": 437.0,
+    "p95": 442.0
+   }
+  }
+ },
+ "windows": {
+  "all_observed_bars": {
+   "bars": 10346,
+   "first_bar_open": 1786529100000,
+   "first_bar_open_utc": "2026-08-12 10:05:00 UTC / 18:05:00+08",
+   "last_bar_open": 1789632600000,
+   "last_bar_open_utc": "2026-09-17 08:10:00 UTC / 16:10:00+08",
+   "span_days": 35.92,
+   "symbols_observed": {
+    "n": 10346,
+    "mean": 436.4066305818674,
+    "min": 2.0,
+    "max": 442.0,
+    "p05": 437.0,
+    "p50": 437.0,
+    "p95": 442.0
+   },
+   "is_primary": true
+  },
+  "full_universe_bars": {
+   "bars": 1943,
+   "first_bar_open": 1788943500000,
+   "first_bar_open_utc": "2026-09-09 08:45:00 UTC / 16:45:00+08",
+   "last_bar_open": 1789526100000,
+   "last_bar_open_utc": "2026-09-16 02:35:00 UTC / 10:35:00+08",
+   "span_days": 6.743,
+   "symbols_observed": {
+    "n": 1943,
+    "mean": 442.0,
+    "min": 442.0,
+    "max": 442.0,
+    "p05": 442.0,
+    "p50": 442.0,
+    "p95": 442.0
+   },
+   "is_primary": false
+  }
+ },
+ "candidates_per_bar": {
+  "note": "每根 K 棒有幾個交易對通過 ret2h 粗篩，也就是要打幾次 klines。分母是 universe.symbols_used 這批（全部為 USDT 計價）。",
+  "primary_window": "all_observed_bars",
+  "by_threshold": [
+   {
+    "threshold": 0.1,
+    "is_strategy_threshold": false,
+    "threshold_source": "--thresholds",
+    "windows": {
+     "all_observed_bars": {
+      "bars": 10346,
+      "distribution": {
+       "n": 10346,
+       "mean": 1.1843224434564084,
+       "min": 0.0,
+       "max": 14.0,
+       "p50": 1.0,
+       "p90": 3.0,
+       "p95": 3.0,
+       "p99": 5.0
+      },
+      "zero_candidate_bars": 3617,
+      "zero_candidate_share": 0.3496037115793543,
+      "total_candidate_requests": 12253,
+      "rest_seconds": {
+       "target_s": 10.0,
+       "ceiling_s": 30.0,
+       "per_rate": [
+        {
+         "rate_req_per_s": 10.0,
+         "p50_s": 0.1,
+         "p95_s": 0.3,
+         "p99_s": 0.5,
+         "max_s": 1.4,
+         "p95_exceeds_target": false,
+         "p95_exceeds_ceiling": false,
+         "p99_exceeds_target": false,
+         "p99_exceeds_ceiling": false,
+         "max_exceeds_target": false,
+         "max_exceeds_ceiling": false
+        },
+        {
+         "rate_req_per_s": 6.0,
+         "p50_s": 0.16666666666666666,
+         "p95_s": 0.5,
+         "p99_s": 0.8333333333333334,
+         "max_s": 2.3333333333333335,
+         "p95_exceeds_target": false,
+         "p95_exceeds_ceiling": false,
+         "p99_exceeds_target": false,
+         "p99_exceeds_ceiling": false,
+         "max_exceeds_target": false,
+         "max_exceeds_ceiling": false
+        }
+       ],
+       "note": "[A4] 只含 klines 請求本身，不含 tickers 輪詢 / 連線建立 / 訊號計算，所以是端到端延遲的下界。"
+      }
+     },
+     "full_universe_bars": {
+      "bars": 1943,
+      "distribution": {
+       "n": 1943,
+       "mean": 1.0483787956767885,
+       "min": 0.0,
+       "max": 9.0,
+       "p50": 1.0,
+       "p90": 2.0,
+       "p95": 3.0,
+       "p99": 5.0
+      },
+      "zero_candidate_bars": 712,
+      "zero_candidate_share": 0.36644364384971695,
+      "total_candidate_requests": 2037,
+      "rest_seconds": {
+       "target_s": 10.0,
+       "ceiling_s": 30.0,
+       "per_rate": [
+        {
+         "rate_req_per_s": 10.0,
+         "p50_s": 0.1,
+         "p95_s": 0.3,
+         "p99_s": 0.5,
+         "max_s": 0.9,
+         "p95_exceeds_target": false,
+         "p95_exceeds_ceiling": false,
+         "p99_exceeds_target": false,
+         "p99_exceeds_ceiling": false,
+         "max_exceeds_target": false,
+         "max_exceeds_ceiling": false
+        },
+        {
+         "rate_req_per_s": 6.0,
+         "p50_s": 0.16666666666666666,
+         "p95_s": 0.5,
+         "p99_s": 0.8333333333333334,
+         "max_s": 1.5,
+         "p95_exceeds_target": false,
+         "p95_exceeds_ceiling": false,
+         "p99_exceeds_target": false,
+         "p99_exceeds_ceiling": false,
+         "max_exceeds_target": false,
+         "max_exceeds_ceiling": false
+        }
+       ],
+       "note": "[A4] 只含 klines 請求本身，不含 tickers 輪詢 / 連線建立 / 訊號計算，所以是端到端延遲的下界。"
+      }
+     }
+    },
+    "busiest_bars": [
+     {
+      "rank": 1,
+      "bar_open": 1787368800000,
+      "bar_open_utc": "2026-08-22 03:20:00 UTC / 11:20:00+08",
+      "candidates": 14,
+      "symbols_observed": 437,
+      "candidate_symbols": [
+       {
+        "symbol": "MUBARAK_USDT_PERP",
+        "ret2h": 0.28488089450656284
+       },
+       {
+        "symbol": "TRUMP_USDT_PERP",
+        "ret2h": 0.1776859504132231
+       },
+       {
+        "symbol": "DASH_USDT_PERP",
+        "ret2h": 0.16960241570206325
+       },
+       {
+        "symbol": "TRB_USDT_PERP",
+        "ret2h": 0.14629649712612514
+       },
+       {
+        "symbol": "ZAMA_USDT_PERP",
+        "ret2h": 0.13679808841099161
+       },
+       {
+        "symbol": "ZEN_USDT_PERP",
+        "ret2h": 0.11888638073739655
+       },
+       {
+        "symbol": "SAND_USDT_PERP",
+        "ret2h": 0.11667030806204948
+       },
+       {
+        "symbol": "ZEC_USDT_PERP",
+        "ret2h": 0.1089456482266069
+       },
+       {
+        "symbol": "OKB_USDT_PERP",
+        "ret2h": 0.10551581325301207
+       },
+       {
+        "symbol": "XMR_USDT_PERP",
+        "ret2h": 0.10521664416349563
+       },
+       {
+        "symbol": "MOVE_USDT_PERP",
+        "ret2h": 0.10490463215258838
+       },
+       {
+        "symbol": "XVG_USDT_PERP",
+        "ret2h": 0.1020161290322581
+       },
+       {
+        "symbol": "UP_USDT_PERP",
+        "ret2h": 0.10071350164654236
+       },
+       {
+        "symbol": "ENA_USDT_PERP",
+        "ret2h": 0.10020876826722347
+       }
+      ],
+      "candidate_symbols_total": 14,
+      "candidate_symbols_note": "最忙那一根的候選清單（ret2h 由高到低，最多 30 筆）"
+     },
+     {
+      "rank": 2,
+      "bar_open": 1787369400000,
+      "bar_open_utc": "2026-08-22 03:30:00 UTC / 11:30:00+08",
+      "candidates": 14,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 3,
+      "bar_open": 1787370600000,
+      "bar_open_utc": "2026-08-22 03:50:00 UTC / 11:50:00+08",
+      "candidates": 14,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 4,
+      "bar_open": 1787369100000,
+      "bar_open_utc": "2026-08-22 03:25:00 UTC / 11:25:00+08",
+      "candidates": 13,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 5,
+      "bar_open": 1787369700000,
+      "bar_open_utc": "2026-08-22 03:35:00 UTC / 11:35:00+08",
+      "candidates": 12,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 6,
+      "bar_open": 1787370000000,
+      "bar_open_utc": "2026-08-22 03:40:00 UTC / 11:40:00+08",
+      "candidates": 12,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 7,
+      "bar_open": 1787370300000,
+      "bar_open_utc": "2026-08-22 03:45:00 UTC / 11:45:00+08",
+      "candidates": 12,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 8,
+      "bar_open": 1787370900000,
+      "bar_open_utc": "2026-08-22 03:55:00 UTC / 11:55:00+08",
+      "candidates": 12,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 9,
+      "bar_open": 1787368500000,
+      "bar_open_utc": "2026-08-22 03:15:00 UTC / 11:15:00+08",
+      "candidates": 11,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 10,
+      "bar_open": 1787373600000,
+      "bar_open_utc": "2026-08-22 04:40:00 UTC / 12:40:00+08",
+      "candidates": 10,
+      "symbols_observed": 437
+     }
+    ]
+   },
+   {
+    "threshold": 0.11,
+    "is_strategy_threshold": false,
+    "threshold_source": "--thresholds",
+    "windows": {
+     "all_observed_bars": {
+      "bars": 10346,
+      "distribution": {
+       "n": 10346,
+       "mean": 0.949255751014885,
+       "min": 0.0,
+       "max": 9.0,
+       "p50": 1.0,
+       "p90": 2.0,
+       "p95": 3.0,
+       "p99": 4.0
+      },
+      "zero_candidate_bars": 4389,
+      "zero_candidate_share": 0.4242219215155616,
+      "total_candidate_requests": 9821,
+      "rest_seconds": {
+       "target_s": 10.0,
+       "ceiling_s": 30.0,
+       "per_rate": [
+        {
+         "rate_req_per_s": 10.0,
+         "p50_s": 0.1,
+         "p95_s": 0.3,
+         "p99_s": 0.4,
+         "max_s": 0.9,
+         "p95_exceeds_target": false,
+         "p95_exceeds_ceiling": false,
+         "p99_exceeds_target": false,
+         "p99_exceeds_ceiling": false,
+         "max_exceeds_target": false,
+         "max_exceeds_ceiling": false
+        },
+        {
+         "rate_req_per_s": 6.0,
+         "p50_s": 0.16666666666666666,
+         "p95_s": 0.5,
+         "p99_s": 0.6666666666666666,
+         "max_s": 1.5,
+         "p95_exceeds_target": false,
+         "p95_exceeds_ceiling": false,
+         "p99_exceeds_target": false,
+         "p99_exceeds_ceiling": false,
+         "max_exceeds_target": false,
+         "max_exceeds_ceiling": false
+        }
+       ],
+       "note": "[A4] 只含 klines 請求本身，不含 tickers 輪詢 / 連線建立 / 訊號計算，所以是端到端延遲的下界。"
+      }
+     },
+     "full_universe_bars": {
+      "bars": 1943,
+      "distribution": {
+       "n": 1943,
+       "mean": 0.8492022645393721,
+       "min": 0.0,
+       "max": 5.0,
+       "p50": 1.0,
+       "p90": 2.0,
+       "p95": 3.0,
+       "p99": 4.0
+      },
+      "zero_candidate_bars": 869,
+      "zero_candidate_share": 0.447246525990736,
+      "total_candidate_requests": 1650,
+      "rest_seconds": {
+       "target_s": 10.0,
+       "ceiling_s": 30.0,
+       "per_rate": [
+        {
+         "rate_req_per_s": 10.0,
+         "p50_s": 0.1,
+         "p95_s": 0.3,
+         "p99_s": 0.4,
+         "max_s": 0.5,
+         "p95_exceeds_target": false,
+         "p95_exceeds_ceiling": false,
+         "p99_exceeds_target": false,
+         "p99_exceeds_ceiling": false,
+         "max_exceeds_target": false,
+         "max_exceeds_ceiling": false
+        },
+        {
+         "rate_req_per_s": 6.0,
+         "p50_s": 0.16666666666666666,
+         "p95_s": 0.5,
+         "p99_s": 0.6666666666666666,
+         "max_s": 0.8333333333333334,
+         "p95_exceeds_target": false,
+         "p95_exceeds_ceiling": false,
+         "p99_exceeds_target": false,
+         "p99_exceeds_ceiling": false,
+         "max_exceeds_target": false,
+         "max_exceeds_ceiling": false
+        }
+       ],
+       "note": "[A4] 只含 klines 請求本身，不含 tickers 輪詢 / 連線建立 / 訊號計算，所以是端到端延遲的下界。"
+      }
+     }
+    },
+    "busiest_bars": [
+     {
+      "rank": 1,
+      "bar_open": 1787369100000,
+      "bar_open_utc": "2026-08-22 03:25:00 UTC / 11:25:00+08",
+      "candidates": 9,
+      "symbols_observed": 437,
+      "candidate_symbols": [
+       {
+        "symbol": "MUBARAK_USDT_PERP",
+        "ret2h": 0.2943743937924346
+       },
+       {
+        "symbol": "TRUMP_USDT_PERP",
+        "ret2h": 0.18541345659989705
+       },
+       {
+        "symbol": "DASH_USDT_PERP",
+        "ret2h": 0.17836622533100166
+       },
+       {
+        "symbol": "ZAMA_USDT_PERP",
+        "ret2h": 0.13594745222929938
+       },
+       {
+        "symbol": "ZEN_USDT_PERP",
+        "ret2h": 0.12896564670546273
+       },
+       {
+        "symbol": "UP_USDT_PERP",
+        "ret2h": 0.11960406928787459
+       },
+       {
+        "symbol": "TRB_USDT_PERP",
+        "ret2h": 0.11283983849259749
+       },
+       {
+        "symbol": "SAND_USDT_PERP",
+        "ret2h": 0.11155202821869503
+       },
+       {
+        "symbol": "XMR_USDT_PERP",
+        "ret2h": 0.11025168815224062
+       }
+      ],
+      "candidate_symbols_total": 9,
+      "candidate_symbols_note": "最忙那一根的候選清單（ret2h 由高到低，最多 30 筆）"
+     },
+     {
+      "rank": 2,
+      "bar_open": 1787369700000,
+      "bar_open_utc": "2026-08-22 03:35:00 UTC / 11:35:00+08",
+      "candidates": 9,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 3,
+      "bar_open": 1787370000000,
+      "bar_open_utc": "2026-08-22 03:40:00 UTC / 11:40:00+08",
+      "candidates": 9,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 4,
+      "bar_open": 1787370300000,
+      "bar_open_utc": "2026-08-22 03:45:00 UTC / 11:45:00+08",
+      "candidates": 9,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 5,
+      "bar_open": 1787302200000,
+      "bar_open_utc": "2026-08-21 08:50:00 UTC / 16:50:00+08",
+      "candidates": 8,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 6,
+      "bar_open": 1787369400000,
+      "bar_open_utc": "2026-08-22 03:30:00 UTC / 11:30:00+08",
+      "candidates": 8,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 7,
+      "bar_open": 1787370600000,
+      "bar_open_utc": "2026-08-22 03:50:00 UTC / 11:50:00+08",
+      "candidates": 8,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 8,
+      "bar_open": 1787370900000,
+      "bar_open_utc": "2026-08-22 03:55:00 UTC / 11:55:00+08",
+      "candidates": 8,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 9,
+      "bar_open": 1787374800000,
+      "bar_open_utc": "2026-08-22 05:00:00 UTC / 13:00:00+08",
+      "candidates": 8,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 10,
+      "bar_open": 1788594000000,
+      "bar_open_utc": "2026-09-05 07:40:00 UTC / 15:40:00+08",
+      "candidates": 8,
+      "symbols_observed": 441
+     }
+    ]
+   },
+   {
+    "threshold": 0.12,
+    "is_strategy_threshold": false,
+    "threshold_source": "--thresholds",
+    "windows": {
+     "all_observed_bars": {
+      "bars": 10346,
+      "distribution": {
+       "n": 10346,
+       "mean": 0.7773052387396095,
+       "min": 0.0,
+       "max": 7.0,
+       "p50": 1.0,
+       "p90": 2.0,
+       "p95": 3.0,
+       "p99": 4.0
+      },
+      "zero_candidate_bars": 5073,
+      "zero_candidate_share": 0.49033442876474,
+      "total_candidate_requests": 8042,
+      "rest_seconds": {
+       "target_s": 10.0,
+       "ceiling_s": 30.0,
+       "per_rate": [
+        {
+         "rate_req_per_s": 10.0,
+         "p50_s": 0.1,
+         "p95_s": 0.3,
+         "p99_s": 0.4,
+         "max_s": 0.7,
+         "p95_exceeds_target": false,
+         "p95_exceeds_ceiling": false,
+         "p99_exceeds_target": false,
+         "p99_exceeds_ceiling": false,
+         "max_exceeds_target": false,
+         "max_exceeds_ceiling": false
+        },
+        {
+         "rate_req_per_s": 6.0,
+         "p50_s": 0.16666666666666666,
+         "p95_s": 0.5,
+         "p99_s": 0.6666666666666666,
+         "max_s": 1.1666666666666667,
+         "p95_exceeds_target": false,
+         "p95_exceeds_ceiling": false,
+         "p99_exceeds_target": false,
+         "p99_exceeds_ceiling": false,
+         "max_exceeds_target": false,
+         "max_exceeds_ceiling": false
+        }
+       ],
+       "note": "[A4] 只含 klines 請求本身，不含 tickers 輪詢 / 連線建立 / 訊號計算，所以是端到端延遲的下界。"
+      }
+     },
+     "full_universe_bars": {
+      "bars": 1943,
+      "distribution": {
+       "n": 1943,
+       "mean": 0.6922285126093669,
+       "min": 0.0,
+       "max": 5.0,
+       "p50": 0.0,
+       "p90": 2.0,
+       "p95": 2.0,
+       "p99": 3.0
+      },
+      "zero_candidate_bars": 1015,
+      "zero_candidate_share": 0.5223880597014925,
+      "total_candidate_requests": 1345,
+      "rest_seconds": {
+       "target_s": 10.0,
+       "ceiling_s": 30.0,
+       "per_rate": [
+        {
+         "rate_req_per_s": 10.0,
+         "p50_s": 0.0,
+         "p95_s": 0.2,
+         "p99_s": 0.3,
+         "max_s": 0.5,
+         "p95_exceeds_target": false,
+         "p95_exceeds_ceiling": false,
+         "p99_exceeds_target": false,
+         "p99_exceeds_ceiling": false,
+         "max_exceeds_target": false,
+         "max_exceeds_ceiling": false
+        },
+        {
+         "rate_req_per_s": 6.0,
+         "p50_s": 0.0,
+         "p95_s": 0.3333333333333333,
+         "p99_s": 0.5,
+         "max_s": 0.8333333333333334,
+         "p95_exceeds_target": false,
+         "p95_exceeds_ceiling": false,
+         "p99_exceeds_target": false,
+         "p99_exceeds_ceiling": false,
+         "max_exceeds_target": false,
+         "max_exceeds_ceiling": false
+        }
+       ],
+       "note": "[A4] 只含 klines 請求本身，不含 tickers 輪詢 / 連線建立 / 訊號計算，所以是端到端延遲的下界。"
+      }
+     }
+    },
+    "busiest_bars": [
+     {
+      "rank": 1,
+      "bar_open": 1787370300000,
+      "bar_open_utc": "2026-08-22 03:45:00 UTC / 11:45:00+08",
+      "candidates": 7,
+      "symbols_observed": 437,
+      "candidate_symbols": [
+       {
+        "symbol": "MUBARAK_USDT_PERP",
+        "ret2h": 0.34875791524598143
+       },
+       {
+        "symbol": "TRUMP_USDT_PERP",
+        "ret2h": 0.2753246753246754
+       },
+       {
+        "symbol": "XVG_USDT_PERP",
+        "ret2h": 0.14531625300240192
+       },
+       {
+        "symbol": "MELANIA_USDT_PERP",
+        "ret2h": 0.13888888888888884
+       },
+       {
+        "symbol": "DASH_USDT_PERP",
+        "ret2h": 0.13747172656446338
+       },
+       {
+        "symbol": "TRB_USDT_PERP",
+        "ret2h": 0.13390084591497997
+       },
+       {
+        "symbol": "MOVE_USDT_PERP",
+        "ret2h": 0.13333333333333353
+       }
+      ],
+      "candidate_symbols_total": 7,
+      "candidate_symbols_note": "最忙那一根的候選清單（ret2h 由高到低，最多 30 筆）"
+     },
+     {
+      "rank": 2,
+      "bar_open": 1787370600000,
+      "bar_open_utc": "2026-08-22 03:50:00 UTC / 11:50:00+08",
+      "candidates": 7,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 3,
+      "bar_open": 1787374500000,
+      "bar_open_utc": "2026-08-22 04:55:00 UTC / 12:55:00+08",
+      "candidates": 7,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 4,
+      "bar_open": 1787374800000,
+      "bar_open_utc": "2026-08-22 05:00:00 UTC / 13:00:00+08",
+      "candidates": 7,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 5,
+      "bar_open": 1788629100000,
+      "bar_open_utc": "2026-09-05 17:25:00 UTC / 01:25:00+08",
+      "candidates": 7,
+      "symbols_observed": 441
+     },
+     {
+      "rank": 6,
+      "bar_open": 1788629400000,
+      "bar_open_utc": "2026-09-05 17:30:00 UTC / 01:30:00+08",
+      "candidates": 7,
+      "symbols_observed": 441
+     },
+     {
+      "rank": 7,
+      "bar_open": 1788629700000,
+      "bar_open_utc": "2026-09-05 17:35:00 UTC / 01:35:00+08",
+      "candidates": 7,
+      "symbols_observed": 441
+     },
+     {
+      "rank": 8,
+      "bar_open": 1787302200000,
+      "bar_open_utc": "2026-08-21 08:50:00 UTC / 16:50:00+08",
+      "candidates": 6,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 9,
+      "bar_open": 1787367600000,
+      "bar_open_utc": "2026-08-22 03:00:00 UTC / 11:00:00+08",
+      "candidates": 6,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 10,
+      "bar_open": 1787369700000,
+      "bar_open_utc": "2026-08-22 03:35:00 UTC / 11:35:00+08",
+      "candidates": 6,
+      "symbols_observed": 437
+     }
+    ]
+   },
+   {
+    "threshold": 0.13,
+    "is_strategy_threshold": false,
+    "threshold_source": "--thresholds",
+    "windows": {
+     "all_observed_bars": {
+      "bars": 10346,
+      "distribution": {
+       "n": 10346,
+       "mean": 0.649333075584767,
+       "min": 0.0,
+       "max": 7.0,
+       "p50": 0.0,
+       "p90": 2.0,
+       "p95": 2.0,
+       "p99": 3.0
+      },
+      "zero_candidate_bars": 5665,
+      "zero_candidate_share": 0.5475546104774792,
+      "total_candidate_requests": 6718,
+      "rest_seconds": {
+       "target_s": 10.0,
+       "ceiling_s": 30.0,
+       "per_rate": [
+        {
+         "rate_req_per_s": 10.0,
+         "p50_s": 0.0,
+         "p95_s": 0.2,
+         "p99_s": 0.3,
+         "max_s": 0.7,
+         "p95_exceeds_target": false,
+         "p95_exceeds_ceiling": false,
+         "p99_exceeds_target": false,
+         "p99_exceeds_ceiling": false,
+         "max_exceeds_target": false,
+         "max_exceeds_ceiling": false
+        },
+        {
+         "rate_req_per_s": 6.0,
+         "p50_s": 0.0,
+         "p95_s": 0.3333333333333333,
+         "p99_s": 0.5,
+         "max_s": 1.1666666666666667,
+         "p95_exceeds_target": false,
+         "p95_exceeds_ceiling": false,
+         "p99_exceeds_target": false,
+         "p99_exceeds_ceiling": false,
+         "max_exceeds_target": false,
+         "max_exceeds_ceiling": false
+        }
+       ],
+       "note": "[A4] 只含 klines 請求本身，不含 tickers 輪詢 / 連線建立 / 訊號計算，所以是端到端延遲的下界。"
+      }
+     },
+     "full_universe_bars": {
+      "bars": 1943,
+      "distribution": {
+       "n": 1943,
+       "mean": 0.5728255275347401,
+       "min": 0.0,
+       "max": 5.0,
+       "p50": 0.0,
+       "p90": 2.0,
+       "p95": 2.0,
+       "p99": 3.0
+      },
+      "zero_candidate_bars": 1124,
+      "zero_candidate_share": 0.5784868759650026,
+      "total_candidate_requests": 1113,
+      "rest_seconds": {
+       "target_s": 10.0,
+       "ceiling_s": 30.0,
+       "per_rate": [
+        {
+         "rate_req_per_s": 10.0,
+         "p50_s": 0.0,
+         "p95_s": 0.2,
+         "p99_s": 0.3,
+         "max_s": 0.5,
+         "p95_exceeds_target": false,
+         "p95_exceeds_ceiling": false,
+         "p99_exceeds_target": false,
+         "p99_exceeds_ceiling": false,
+         "max_exceeds_target": false,
+         "max_exceeds_ceiling": false
+        },
+        {
+         "rate_req_per_s": 6.0,
+         "p50_s": 0.0,
+         "p95_s": 0.3333333333333333,
+         "p99_s": 0.5,
+         "max_s": 0.8333333333333334,
+         "p95_exceeds_target": false,
+         "p95_exceeds_ceiling": false,
+         "p99_exceeds_target": false,
+         "p99_exceeds_ceiling": false,
+         "max_exceeds_target": false,
+         "max_exceeds_ceiling": false
+        }
+       ],
+       "note": "[A4] 只含 klines 請求本身，不含 tickers 輪詢 / 連線建立 / 訊號計算，所以是端到端延遲的下界。"
+      }
+     }
+    },
+    "busiest_bars": [
+     {
+      "rank": 1,
+      "bar_open": 1787370300000,
+      "bar_open_utc": "2026-08-22 03:45:00 UTC / 11:45:00+08",
+      "candidates": 7,
+      "symbols_observed": 437,
+      "candidate_symbols": [
+       {
+        "symbol": "MUBARAK_USDT_PERP",
+        "ret2h": 0.34875791524598143
+       },
+       {
+        "symbol": "TRUMP_USDT_PERP",
+        "ret2h": 0.2753246753246754
+       },
+       {
+        "symbol": "XVG_USDT_PERP",
+        "ret2h": 0.14531625300240192
+       },
+       {
+        "symbol": "MELANIA_USDT_PERP",
+        "ret2h": 0.13888888888888884
+       },
+       {
+        "symbol": "DASH_USDT_PERP",
+        "ret2h": 0.13747172656446338
+       },
+       {
+        "symbol": "TRB_USDT_PERP",
+        "ret2h": 0.13390084591497997
+       },
+       {
+        "symbol": "MOVE_USDT_PERP",
+        "ret2h": 0.13333333333333353
+       }
+      ],
+      "candidate_symbols_total": 7,
+      "candidate_symbols_note": "最忙那一根的候選清單（ret2h 由高到低，最多 30 筆）"
+     },
+     {
+      "rank": 2,
+      "bar_open": 1788629400000,
+      "bar_open_utc": "2026-09-05 17:30:00 UTC / 01:30:00+08",
+      "candidates": 7,
+      "symbols_observed": 441
+     },
+     {
+      "rank": 3,
+      "bar_open": 1787370600000,
+      "bar_open_utc": "2026-08-22 03:50:00 UTC / 11:50:00+08",
+      "candidates": 6,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 4,
+      "bar_open": 1788591600000,
+      "bar_open_utc": "2026-09-05 07:00:00 UTC / 15:00:00+08",
+      "candidates": 6,
+      "symbols_observed": 441
+     },
+     {
+      "rank": 5,
+      "bar_open": 1788628500000,
+      "bar_open_utc": "2026-09-05 17:15:00 UTC / 01:15:00+08",
+      "candidates": 6,
+      "symbols_observed": 441
+     },
+     {
+      "rank": 6,
+      "bar_open": 1788628800000,
+      "bar_open_utc": "2026-09-05 17:20:00 UTC / 01:20:00+08",
+      "candidates": 6,
+      "symbols_observed": 441
+     },
+     {
+      "rank": 7,
+      "bar_open": 1788629100000,
+      "bar_open_utc": "2026-09-05 17:25:00 UTC / 01:25:00+08",
+      "candidates": 6,
+      "symbols_observed": 441
+     },
+     {
+      "rank": 8,
+      "bar_open": 1788629700000,
+      "bar_open_utc": "2026-09-05 17:35:00 UTC / 01:35:00+08",
+      "candidates": 6,
+      "symbols_observed": 441
+     },
+     {
+      "rank": 9,
+      "bar_open": 1786707900000,
+      "bar_open_utc": "2026-08-14 11:45:00 UTC / 19:45:00+08",
+      "candidates": 5,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 10,
+      "bar_open": 1787367600000,
+      "bar_open_utc": "2026-08-22 03:00:00 UTC / 11:00:00+08",
+      "candidates": 5,
+      "symbols_observed": 437
+     }
+    ]
+   },
+   {
+    "threshold": 0.135,
+    "is_strategy_threshold": false,
+    "threshold_source": "--thresholds",
+    "windows": {
+     "all_observed_bars": {
+      "bars": 10346,
+      "distribution": {
+       "n": 10346,
+       "mean": 0.5978155809008312,
+       "min": 0.0,
+       "max": 6.0,
+       "p50": 0.0,
+       "p90": 2.0,
+       "p95": 2.0,
+       "p99": 3.0
+      },
+      "zero_candidate_bars": 5947,
+      "zero_candidate_share": 0.5748115213609124,
+      "total_candidate_requests": 6185,
+      "rest_seconds": {
+       "target_s": 10.0,
+       "ceiling_s": 30.0,
+       "per_rate": [
+        {
+         "rate_req_per_s": 10.0,
+         "p50_s": 0.0,
+         "p95_s": 0.2,
+         "p99_s": 0.3,
+         "max_s": 0.6,
+         "p95_exceeds_target": false,
+         "p95_exceeds_ceiling": false,
+         "p99_exceeds_target": false,
+         "p99_exceeds_ceiling": false,
+         "max_exceeds_target": false,
+         "max_exceeds_ceiling": false
+        },
+        {
+         "rate_req_per_s": 6.0,
+         "p50_s": 0.0,
+         "p95_s": 0.3333333333333333,
+         "p99_s": 0.5,
+         "max_s": 1.0,
+         "p95_exceeds_target": false,
+         "p95_exceeds_ceiling": false,
+         "p99_exceeds_target": false,
+         "p99_exceeds_ceiling": false,
+         "max_exceeds_target": false,
+         "max_exceeds_ceiling": false
+        }
+       ],
+       "note": "[A4] 只含 klines 請求本身，不含 tickers 輪詢 / 連線建立 / 訊號計算，所以是端到端延遲的下界。"
+      }
+     },
+     "full_universe_bars": {
+      "bars": 1943,
+      "distribution": {
+       "n": 1943,
+       "mean": 0.5295934122490993,
+       "min": 0.0,
+       "max": 5.0,
+       "p50": 0.0,
+       "p90": 2.0,
+       "p95": 2.0,
+       "p99": 3.0
+      },
+      "zero_candidate_bars": 1175,
+      "zero_candidate_share": 0.6047349459598559,
+      "total_candidate_requests": 1029,
+      "rest_seconds": {
+       "target_s": 10.0,
+       "ceiling_s": 30.0,
+       "per_rate": [
+        {
+         "rate_req_per_s": 10.0,
+         "p50_s": 0.0,
+         "p95_s": 0.2,
+         "p99_s": 0.3,
+         "max_s": 0.5,
+         "p95_exceeds_target": false,
+         "p95_exceeds_ceiling": false,
+         "p99_exceeds_target": false,
+         "p99_exceeds_ceiling": false,
+         "max_exceeds_target": false,
+         "max_exceeds_ceiling": false
+        },
+        {
+         "rate_req_per_s": 6.0,
+         "p50_s": 0.0,
+         "p95_s": 0.3333333333333333,
+         "p99_s": 0.5,
+         "max_s": 0.8333333333333334,
+         "p95_exceeds_target": false,
+         "p95_exceeds_ceiling": false,
+         "p99_exceeds_target": false,
+         "p99_exceeds_ceiling": false,
+         "max_exceeds_target": false,
+         "max_exceeds_ceiling": false
+        }
+       ],
+       "note": "[A4] 只含 klines 請求本身，不含 tickers 輪詢 / 連線建立 / 訊號計算，所以是端到端延遲的下界。"
+      }
+     }
+    },
+    "busiest_bars": [
+     {
+      "rank": 1,
+      "bar_open": 1787370600000,
+      "bar_open_utc": "2026-08-22 03:50:00 UTC / 11:50:00+08",
+      "candidates": 6,
+      "symbols_observed": 437,
+      "candidate_symbols": [
+       {
+        "symbol": "MUBARAK_USDT_PERP",
+        "ret2h": 0.3490980009751341
+       },
+       {
+        "symbol": "TRUMP_USDT_PERP",
+        "ret2h": 0.33744221879815095
+       },
+       {
+        "symbol": "MELANIA_USDT_PERP",
+        "ret2h": 0.18823529411764706
+       },
+       {
+        "symbol": "XVG_USDT_PERP",
+        "ret2h": 0.16294820717131486
+       },
+       {
+        "symbol": "UP_USDT_PERP",
+        "ret2h": 0.15637860082304522
+       },
+       {
+        "symbol": "DASH_USDT_PERP",
+        "ret2h": 0.138537794299876
+       }
+      ],
+      "candidate_symbols_total": 6,
+      "candidate_symbols_note": "最忙那一根的候選清單（ret2h 由高到低，最多 30 筆）"
+     },
+     {
+      "rank": 2,
+      "bar_open": 1788591600000,
+      "bar_open_utc": "2026-09-05 07:00:00 UTC / 15:00:00+08",
+      "candidates": 6,
+      "symbols_observed": 441
+     },
+     {
+      "rank": 3,
+      "bar_open": 1788628500000,
+      "bar_open_utc": "2026-09-05 17:15:00 UTC / 01:15:00+08",
+      "candidates": 6,
+      "symbols_observed": 441
+     },
+     {
+      "rank": 4,
+      "bar_open": 1788628800000,
+      "bar_open_utc": "2026-09-05 17:20:00 UTC / 01:20:00+08",
+      "candidates": 6,
+      "symbols_observed": 441
+     },
+     {
+      "rank": 5,
+      "bar_open": 1788629100000,
+      "bar_open_utc": "2026-09-05 17:25:00 UTC / 01:25:00+08",
+      "candidates": 6,
+      "symbols_observed": 441
+     },
+     {
+      "rank": 6,
+      "bar_open": 1788629400000,
+      "bar_open_utc": "2026-09-05 17:30:00 UTC / 01:30:00+08",
+      "candidates": 6,
+      "symbols_observed": 441
+     },
+     {
+      "rank": 7,
+      "bar_open": 1788629700000,
+      "bar_open_utc": "2026-09-05 17:35:00 UTC / 01:35:00+08",
+      "candidates": 6,
+      "symbols_observed": 441
+     },
+     {
+      "rank": 8,
+      "bar_open": 1787367600000,
+      "bar_open_utc": "2026-08-22 03:00:00 UTC / 11:00:00+08",
+      "candidates": 5,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 9,
+      "bar_open": 1787368800000,
+      "bar_open_utc": "2026-08-22 03:20:00 UTC / 11:20:00+08",
+      "candidates": 5,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 10,
+      "bar_open": 1787370300000,
+      "bar_open_utc": "2026-08-22 03:45:00 UTC / 11:45:00+08",
+      "candidates": 5,
+      "symbols_observed": 437
+     }
+    ]
+   },
+   {
+    "threshold": 0.14,
+    "is_strategy_threshold": true,
+    "threshold_source": "s4_signal.DEFAULT_PARAMS['MIN_RET_2H']",
+    "windows": {
+     "all_observed_bars": {
+      "bars": 10346,
+      "distribution": {
+       "n": 10346,
+       "mean": 0.5496810361492365,
+       "min": 0.0,
+       "max": 6.0,
+       "p50": 0.0,
+       "p90": 2.0,
+       "p95": 2.0,
+       "p99": 3.0
+      },
+      "zero_candidate_bars": 6209,
+      "zero_candidate_share": 0.6001353179972937,
+      "total_candidate_requests": 5687,
+      "rest_seconds": {
+       "target_s": 10.0,
+       "ceiling_s": 30.0,
+       "per_rate": [
+        {
+         "rate_req_per_s": 10.0,
+         "p50_s": 0.0,
+         "p95_s": 0.2,
+         "p99_s": 0.3,
+         "max_s": 0.6,
+         "p95_exceeds_target": false,
+         "p95_exceeds_ceiling": false,
+         "p99_exceeds_target": false,
+         "p99_exceeds_ceiling": false,
+         "max_exceeds_target": false,
+         "max_exceeds_ceiling": false
+        },
+        {
+         "rate_req_per_s": 6.0,
+         "p50_s": 0.0,
+         "p95_s": 0.3333333333333333,
+         "p99_s": 0.5,
+         "max_s": 1.0,
+         "p95_exceeds_target": false,
+         "p95_exceeds_ceiling": false,
+         "p99_exceeds_target": false,
+         "p99_exceeds_ceiling": false,
+         "max_exceeds_target": false,
+         "max_exceeds_ceiling": false
+        }
+       ],
+       "note": "[A4] 只含 klines 請求本身，不含 tickers 輪詢 / 連線建立 / 訊號計算，所以是端到端延遲的下界。"
+      }
+     },
+     "full_universe_bars": {
+      "bars": 1943,
+      "distribution": {
+       "n": 1943,
+       "mean": 0.47967061245496656,
+       "min": 0.0,
+       "max": 4.0,
+       "p50": 0.0,
+       "p90": 1.0,
+       "p95": 2.0,
+       "p99": 3.0
+      },
+      "zero_candidate_bars": 1231,
+      "zero_candidate_share": 0.633556356150283,
+      "total_candidate_requests": 932,
+      "rest_seconds": {
+       "target_s": 10.0,
+       "ceiling_s": 30.0,
+       "per_rate": [
+        {
+         "rate_req_per_s": 10.0,
+         "p50_s": 0.0,
+         "p95_s": 0.2,
+         "p99_s": 0.3,
+         "max_s": 0.4,
+         "p95_exceeds_target": false,
+         "p95_exceeds_ceiling": false,
+         "p99_exceeds_target": false,
+         "p99_exceeds_ceiling": false,
+         "max_exceeds_target": false,
+         "max_exceeds_ceiling": false
+        },
+        {
+         "rate_req_per_s": 6.0,
+         "p50_s": 0.0,
+         "p95_s": 0.3333333333333333,
+         "p99_s": 0.5,
+         "max_s": 0.6666666666666666,
+         "p95_exceeds_target": false,
+         "p95_exceeds_ceiling": false,
+         "p99_exceeds_target": false,
+         "p99_exceeds_ceiling": false,
+         "max_exceeds_target": false,
+         "max_exceeds_ceiling": false
+        }
+       ],
+       "note": "[A4] 只含 klines 請求本身，不含 tickers 輪詢 / 連線建立 / 訊號計算，所以是端到端延遲的下界。"
+      }
+     }
+    },
+    "busiest_bars": [
+     {
+      "rank": 1,
+      "bar_open": 1788591600000,
+      "bar_open_utc": "2026-09-05 07:00:00 UTC / 15:00:00+08",
+      "candidates": 6,
+      "symbols_observed": 441,
+      "candidate_symbols": [
+       {
+        "symbol": "B_USDT_PERP",
+        "ret2h": 0.47195921340131086
+       },
+       {
+        "symbol": "NAORIS_USDT_PERP",
+        "ret2h": 0.20605355064027941
+       },
+       {
+        "symbol": "AKE_USDT_PERP",
+        "ret2h": 0.1807354437012607
+       },
+       {
+        "symbol": "BULLA_USDT_PERP",
+        "ret2h": 0.17731400350485882
+       },
+       {
+        "symbol": "TRADOOR_USDT_PERP",
+        "ret2h": 0.16837297212159386
+       },
+       {
+        "symbol": "MAGMA_USDT_PERP",
+        "ret2h": 0.14549248747913168
+       }
+      ],
+      "candidate_symbols_total": 6,
+      "candidate_symbols_note": "最忙那一根的候選清單（ret2h 由高到低，最多 30 筆）"
+     },
+     {
+      "rank": 2,
+      "bar_open": 1788628500000,
+      "bar_open_utc": "2026-09-05 17:15:00 UTC / 01:15:00+08",
+      "candidates": 6,
+      "symbols_observed": 441
+     },
+     {
+      "rank": 3,
+      "bar_open": 1788629700000,
+      "bar_open_utc": "2026-09-05 17:35:00 UTC / 01:35:00+08",
+      "candidates": 6,
+      "symbols_observed": 441
+     },
+     {
+      "rank": 4,
+      "bar_open": 1787367600000,
+      "bar_open_utc": "2026-08-22 03:00:00 UTC / 11:00:00+08",
+      "candidates": 5,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 5,
+      "bar_open": 1787370600000,
+      "bar_open_utc": "2026-08-22 03:50:00 UTC / 11:50:00+08",
+      "candidates": 5,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 6,
+      "bar_open": 1787370900000,
+      "bar_open_utc": "2026-08-22 03:55:00 UTC / 11:55:00+08",
+      "candidates": 5,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 7,
+      "bar_open": 1787371200000,
+      "bar_open_utc": "2026-08-22 04:00:00 UTC / 12:00:00+08",
+      "candidates": 5,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 8,
+      "bar_open": 1787371500000,
+      "bar_open_utc": "2026-08-22 04:05:00 UTC / 12:05:00+08",
+      "candidates": 5,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 9,
+      "bar_open": 1787373900000,
+      "bar_open_utc": "2026-08-22 04:45:00 UTC / 12:45:00+08",
+      "candidates": 5,
+      "symbols_observed": 437
+     },
+     {
+      "rank": 10,
+      "bar_open": 1787374200000,
+      "bar_open_utc": "2026-08-22 04:50:00 UTC / 12:50:00+08",
+      "candidates": 5,
+      "symbols_observed": 437
+     }
+    ]
+   }
+  ]
+ },
+ "projection_to_market": {
+  "note": "[A5] 線性外推，不是實測。假設全市場其餘交易對的候選機率與快取這批相同；新上架的幣波動通常更大，這個假設可能低估。",
+  "cache_symbols_used": 442,
+  "market_usdt_symbols": 568,
+  "market_usdt_source": "B5（TASK-098）實測全市場 TRADING PERP，由 --market-usdt-symbols 帶入",
+  "scale_factor": 1.2850678733031675,
+  "window": "all_observed_bars",
+  "by_threshold": [
+   {
+    "threshold": 0.1,
+    "p95_candidates": 3.8552036199095028,
+    "p99_candidates": 6.425339366515837,
+    "max_candidates": 17.990950226244344,
+    "rest_seconds": [
+     {
+      "rate_req_per_s": 10.0,
+      "p95_s": 0.3855203619909503,
+      "p99_s": 0.6425339366515838,
+      "max_s": 1.7990950226244344,
+      "p99_exceeds_target": false,
+      "p99_exceeds_ceiling": false,
+      "max_exceeds_target": false,
+      "max_exceeds_ceiling": false
+     },
+     {
+      "rate_req_per_s": 6.0,
+      "p95_s": 0.6425339366515838,
+      "p99_s": 1.0708898944193062,
+      "max_s": 2.9984917043740573,
+      "p99_exceeds_target": false,
+      "p99_exceeds_ceiling": false,
+      "max_exceeds_target": false,
+      "max_exceeds_ceiling": false
+     }
+    ]
+   },
+   {
+    "threshold": 0.11,
+    "p95_candidates": 3.8552036199095028,
+    "p99_candidates": 5.14027149321267,
+    "max_candidates": 11.565610859728508,
+    "rest_seconds": [
+     {
+      "rate_req_per_s": 10.0,
+      "p95_s": 0.3855203619909503,
+      "p99_s": 0.514027149321267,
+      "max_s": 1.1565610859728508,
+      "p99_exceeds_target": false,
+      "p99_exceeds_ceiling": false,
+      "max_exceeds_target": false,
+      "max_exceeds_ceiling": false
+     },
+     {
+      "rate_req_per_s": 6.0,
+      "p95_s": 0.6425339366515838,
+      "p99_s": 0.856711915535445,
+      "max_s": 1.9276018099547514,
+      "p99_exceeds_target": false,
+      "p99_exceeds_ceiling": false,
+      "max_exceeds_target": false,
+      "max_exceeds_ceiling": false
+     }
+    ]
+   },
+   {
+    "threshold": 0.12,
+    "p95_candidates": 3.8552036199095028,
+    "p99_candidates": 5.14027149321267,
+    "max_candidates": 8.995475113122172,
+    "rest_seconds": [
+     {
+      "rate_req_per_s": 10.0,
+      "p95_s": 0.3855203619909503,
+      "p99_s": 0.514027149321267,
+      "max_s": 0.8995475113122172,
+      "p99_exceeds_target": false,
+      "p99_exceeds_ceiling": false,
+      "max_exceeds_target": false,
+      "max_exceeds_ceiling": false
+     },
+     {
+      "rate_req_per_s": 6.0,
+      "p95_s": 0.6425339366515838,
+      "p99_s": 0.856711915535445,
+      "max_s": 1.4992458521870287,
+      "p99_exceeds_target": false,
+      "p99_exceeds_ceiling": false,
+      "max_exceeds_target": false,
+      "max_exceeds_ceiling": false
+     }
+    ]
+   },
+   {
+    "threshold": 0.13,
+    "p95_candidates": 2.570135746606335,
+    "p99_candidates": 3.8552036199095028,
+    "max_candidates": 8.995475113122172,
+    "rest_seconds": [
+     {
+      "rate_req_per_s": 10.0,
+      "p95_s": 0.2570135746606335,
+      "p99_s": 0.3855203619909503,
+      "max_s": 0.8995475113122172,
+      "p99_exceeds_target": false,
+      "p99_exceeds_ceiling": false,
+      "max_exceeds_target": false,
+      "max_exceeds_ceiling": false
+     },
+     {
+      "rate_req_per_s": 6.0,
+      "p95_s": 0.4283559577677225,
+      "p99_s": 0.6425339366515838,
+      "max_s": 1.4992458521870287,
+      "p99_exceeds_target": false,
+      "p99_exceeds_ceiling": false,
+      "max_exceeds_target": false,
+      "max_exceeds_ceiling": false
+     }
+    ]
+   },
+   {
+    "threshold": 0.135,
+    "p95_candidates": 2.570135746606335,
+    "p99_candidates": 3.8552036199095028,
+    "max_candidates": 7.7104072398190056,
+    "rest_seconds": [
+     {
+      "rate_req_per_s": 10.0,
+      "p95_s": 0.2570135746606335,
+      "p99_s": 0.3855203619909503,
+      "max_s": 0.7710407239819006,
+      "p99_exceeds_target": false,
+      "p99_exceeds_ceiling": false,
+      "max_exceeds_target": false,
+      "max_exceeds_ceiling": false
+     },
+     {
+      "rate_req_per_s": 6.0,
+      "p95_s": 0.4283559577677225,
+      "p99_s": 0.6425339366515838,
+      "max_s": 1.2850678733031675,
+      "p99_exceeds_target": false,
+      "p99_exceeds_ceiling": false,
+      "max_exceeds_target": false,
+      "max_exceeds_ceiling": false
+     }
+    ]
+   },
+   {
+    "threshold": 0.14,
+    "p95_candidates": 2.570135746606335,
+    "p99_candidates": 3.8552036199095028,
+    "max_candidates": 7.7104072398190056,
+    "rest_seconds": [
+     {
+      "rate_req_per_s": 10.0,
+      "p95_s": 0.2570135746606335,
+      "p99_s": 0.3855203619909503,
+      "max_s": 0.7710407239819006,
+      "p99_exceeds_target": false,
+      "p99_exceeds_ceiling": false,
+      "max_exceeds_target": false,
+      "max_exceeds_ceiling": false
+     },
+     {
+      "rate_req_per_s": 6.0,
+      "p95_s": 0.4283559577677225,
+      "p99_s": 0.6425339366515838,
+      "max_s": 1.2850678733031675,
+      "p99_exceeds_target": false,
+      "p99_exceeds_ceiling": false,
+      "max_exceeds_target": false,
+      "max_exceeds_ceiling": false
+     }
+    ]
+   }
+  ]
+ },
+ "leakage_check": {
+  "note": "[A2] 差集 = baseline 訊號有、粗篩沒撈到。門檻 <= 策略門檻時結構上必為 0；算它是為了驗實作沒走偏，不是量測成果。",
+  "baseline_definition": "s4_signal.signal_from_features(features(df, bars_per_hour), None) == -1（完整四條件、預設參數）",
+  "screen_definition": "features(df, bars_per_hour)['ret2h'] >= threshold",
+  "baseline_signals_total": 697,
+  "by_threshold": [
+   {
+    "threshold": 0.1,
+    "below_strategy_threshold": true,
+    "baseline_signals": 697,
+    "missed_signals": 0,
+    "missed_rate": 0.0,
+    "must_be_zero": true,
+    "ok": true,
+    "missed_detail": [],
+    "missed_detail_truncated": false
+   },
+   {
+    "threshold": 0.11,
+    "below_strategy_threshold": true,
+    "baseline_signals": 697,
+    "missed_signals": 0,
+    "missed_rate": 0.0,
+    "must_be_zero": true,
+    "ok": true,
+    "missed_detail": [],
+    "missed_detail_truncated": false
+   },
+   {
+    "threshold": 0.12,
+    "below_strategy_threshold": true,
+    "baseline_signals": 697,
+    "missed_signals": 0,
+    "missed_rate": 0.0,
+    "must_be_zero": true,
+    "ok": true,
+    "missed_detail": [],
+    "missed_detail_truncated": false
+   },
+   {
+    "threshold": 0.13,
+    "below_strategy_threshold": true,
+    "baseline_signals": 697,
+    "missed_signals": 0,
+    "missed_rate": 0.0,
+    "must_be_zero": true,
+    "ok": true,
+    "missed_detail": [],
+    "missed_detail_truncated": false
+   },
+   {
+    "threshold": 0.135,
+    "below_strategy_threshold": true,
+    "baseline_signals": 697,
+    "missed_signals": 0,
+    "missed_rate": 0.0,
+    "must_be_zero": true,
+    "ok": true,
+    "missed_detail": [],
+    "missed_detail_truncated": false
+   },
+   {
+    "threshold": 0.14,
+    "below_strategy_threshold": false,
+    "baseline_signals": 697,
+    "missed_signals": 0,
+    "missed_rate": 0.0,
+    "must_be_zero": true,
+    "ok": true,
+    "missed_detail": [],
+    "missed_detail_truncated": false
+   }
+  ],
+  "all_ok": true,
+  "check_is_non_vacuous": {
+   "note": "差集為空有兩種可能：粗篩真的被蘊含，或粗篩根本全通過（檢查本身沒有鑑別力）。下面兩個數字都 > 0 才代表這個驗證有意義。",
+   "baseline_signals": 697,
+   "bars_where_screen_rejects_someone_at_lowest_threshold": 10346
+  }
+ },
+ "signal_margin": {
+  "note": "[A6] 每一筆 baseline 訊號當下的 ret2h。最小值與低百分位才是決策數字：它們決定實盤近似誤差能容忍多少。",
+  "distribution": {
+   "n": 697,
+   "mean": 0.20874169750686788,
+   "min": 0.14008620689655182,
+   "max": 0.6315028901734105,
+   "p05": 0.14320110721975537,
+   "p10": 0.14578090149568762,
+   "p25": 0.15659920293818863,
+   "p50": 0.18132854578096946,
+   "p75": 0.222608695652174,
+   "p95": 0.3748889777266258
+  },
+  "above_strategy_threshold": {
+   "n": 697,
+   "mean": 0.06874169750686784,
+   "min": 8.620689655181035e-05,
+   "max": 0.49150289017341053,
+   "p05": 0.0032011072197553727,
+   "p10": 0.00578090149568762,
+   "p25": 0.016599202938188617,
+   "p50": 0.04132854578096945
+  },
+  "error_tolerance_by_threshold": [
+   {
+    "threshold": 0.1,
+    "tolerable_underestimate_all_signals": 0.04008620689655182,
+    "tolerable_underestimate_95pct": 0.04320110721975537,
+    "tolerable_underestimate_90pct": 0.045780901495687615,
+    "note": "實盤近似值若比真值低估 e，該訊號仍被撈到的條件是 ret2h - e >= threshold。"
+   },
+   {
+    "threshold": 0.11,
+    "tolerable_underestimate_all_signals": 0.030086206896551823,
+    "tolerable_underestimate_95pct": 0.033201107219755374,
+    "tolerable_underestimate_90pct": 0.03578090149568762,
+    "note": "實盤近似值若比真值低估 e，該訊號仍被撈到的條件是 ret2h - e >= threshold。"
+   },
+   {
+    "threshold": 0.12,
+    "tolerable_underestimate_all_signals": 0.020086206896551828,
+    "tolerable_underestimate_95pct": 0.02320110721975538,
+    "tolerable_underestimate_90pct": 0.025780901495687625,
+    "note": "實盤近似值若比真值低估 e，該訊號仍被撈到的條件是 ret2h - e >= threshold。"
+   },
+   {
+    "threshold": 0.13,
+    "tolerable_underestimate_all_signals": 0.01008620689655182,
+    "tolerable_underestimate_95pct": 0.01320110721975537,
+    "tolerable_underestimate_90pct": 0.015780901495687616,
+    "note": "實盤近似值若比真值低估 e，該訊號仍被撈到的條件是 ret2h - e >= threshold。"
+   },
+   {
+    "threshold": 0.135,
+    "tolerable_underestimate_all_signals": 0.005086206896551815,
+    "tolerable_underestimate_95pct": 0.008201107219755366,
+    "tolerable_underestimate_90pct": 0.010780901495687611,
+    "note": "實盤近似值若比真值低估 e，該訊號仍被撈到的條件是 ret2h - e >= threshold。"
+   },
+   {
+    "threshold": 0.14,
+    "tolerable_underestimate_all_signals": 8.620689655181035e-05,
+    "tolerable_underestimate_95pct": 0.0032011072197553614,
+    "tolerable_underestimate_90pct": 0.005780901495687607,
+    "note": "實盤近似值若比真值低估 e，該訊號仍被撈到的條件是 ret2h - e >= threshold。"
+   }
+  ]
+ },
+ "offline_proof": {
+  "guard_installed": true,
+  "patched": [
+   "connect",
+   "connect_ex",
+   "create_connection"
+  ],
+  "self_test_probe": [
+   "198.51.100.1",
+   9
+  ],
+  "self_test_blocked_calls": 2,
+  "self_test_ok": true,
+  "connect_attempts": 0,
+  "connect_attempt_detail": [],
+  "arm_log": [
+   {
+    "action": "arm",
+    "reason": "import g2_measure / strategy",
+    "self_tested": false
+   },
+   {
+    "action": "disarm"
+   },
+   {
+    "action": "arm",
+    "reason": "main(): 整個執行",
+    "self_tested": true
+   },
+   {
+    "action": "nested_arm",
+    "reason": "run(): 整段量測",
+    "depth": 2
+   }
+  ],
+  "arm_scope_note": "籠子是 scoped 武裝（F4）：(1) import g2_measure / strategy 的那一段，(2) run() 整段（讀快取、算特徵、算訊號、建結果、寫 json）。兩段合起來覆蓋本腳本所有會動到 I/O 的程式；區間外只剩 argparse 與 socket.gethostname()，沒有任何建立連線的能力。離開區間會把 socket 的原函式放回去，所以只是 import 本檔的 process （例如 pytest 跑整個 tests/）不會繼承這個全域 patch。",
+  "note": "self_test_ok=true 代表籠子確實會攔（不是只裝了沒生效）；connect_attempts=0 代表除了自我測試之外，全程沒有任何連線企圖。"
+ },
+ "cache_write_check": {
+  "note": "AC-5：只讀不寫。比對執行前後的檔數與每個檔的 size/mtime 指紋。",
+  "cache_dir": "C:\\Claude Code\\Crypto_Trader\\pionex_cache",
+  "before": {
+   "files": 1413,
+   "fingerprint_sha256": "d3f7fcec07b14a861db57a3e0187ae2ee3c6be09256b62fd7508b902c62d1394",
+   "newest_mtime_ns": 1789640311135272500,
+   "newest_mtime_utc": "2026-09-17 10:18:31 UTC / 18:18:31+08"
+  },
+  "after": {
+   "files": 1413,
+   "fingerprint_sha256": "d3f7fcec07b14a861db57a3e0187ae2ee3c6be09256b62fd7508b902c62d1394",
+   "newest_mtime_ns": 1789640311135272500,
+   "newest_mtime_utc": "2026-09-17 10:18:31 UTC / 18:18:31+08"
+  },
+  "unchanged": true
+ },
+ "input_contract": {
+  "note": "餵給 s4_signal 的 DataFrame 一律 time 升冪、固定週期、無缺漏（由 g2_measure.prepare_frame 保證，本檔不自行補洞）。",
+  "bars_per_hour_is_int": true,
+  "filled_bars_total": 0,
+  "time_monotonic_all": true,
+  "fixed_period_all": true,
+  "nan_ret2h_total": 10608,
+  "expected_nan_ret2h_total": 10608,
+  "nan_ret2h_matches_expected": true,
+  "nan_turn_total": 126854,
+  "expected_nan_turn_total": 126854,
+  "nan_turn_matches_expected": true,
+  "nan_parity_mismatches": 0,
+  "nan_parity_note": "粗篩的判定（screen_mask：ret2h >= 門檻，NaN 為 False）與**實際呼叫 signal_from_features()**（其他三項中性化後）對同一項的判定，在全部 4525671 格逐格比對的不一致格數，必須是 0。細節與控制組見 input_contract.screen_equivalence；這個欄位與 screen_equivalence.mismatches 是同一個數字。",
+  "screen_equivalence": {
+   "note": "[A1] captain PRD 11(a) 的驗證點：粗篩條件是否真的等於 signal_from_features 對同一項的判定。比對的一側是量測實際走的 screen_mask()，另一側是**真的呼叫 signal_from_features()**（其他三項中性化）。這四個布林全部為 true 才算證明了等價；任何一個 false 都會進 verdict.stop_conditions_triggered 並讓離開碼非 0。",
+   "screen_definition": "screen_mask(features(df, bph)['ret2h'], threshold)",
+   "signal_side_definition": "s4_signal.signal_from_features(neutral_frame(..., 'ret2h', ...), None) == -1，門檻取 DEFAULT_PARAMS['MIN_RET_2H']",
+   "rows_compared": 4525671,
+   "mismatches": 0,
+   "screen_says_pass_rows": 5687,
+   "signal_says_pass_rows": 5687,
+   "nan_rows_in_screen_feature": 10608,
+   "probe_control": {
+    "note": "控制組（不依賴任何快取資料）：餵入「必定通過 / 必定不通過 / NaN」三列，粗篩判定與 signal_from_features 的判定必須逐格一致，且必須是 [true, false, false]——兩邊一起錯成 false 的話這個比對就沒有鑑別力。",
+    "feature": "ret2h",
+    "pass_value_from": "s4_signal.DEFAULT_PARAMS['MIN_RET_2H']",
+    "probe_values": [
+     "pass_value",
+     "definitely_below_pass_value",
+     "nan"
+    ],
+    "screen_says_pass": [
+     true,
+     false,
+     false
+    ],
+    "signal_says_pass": [
+     true,
+     false,
+     false
+    ],
+    "expected": [
+     true,
+     false,
+     false
+    ],
+    "agree": true,
+    "expected_shape_ok": true,
+    "ok": true
+   },
+   "checks": {
+    "mismatches_zero": true,
+    "probe_control_ok": true,
+    "non_vacuous": true,
+    "warmup_nan_as_expected": true
+   },
+   "non_vacuous_note": "signal 側必須同時出現「有通過」與「沒通過」兩種結果，否則這份比對只證明了兩邊在單一分支上一致，沒有鑑別力。",
+   "ok": true
+  },
+  "screen_pass_bars_by_threshold": {
+   "0.1": 12253,
+   "0.11": 9821,
+   "0.12": 8042,
+   "0.13": 6718,
+   "0.135": 6185,
+   "0.14": 5687
+  }
+ },
+ "verdict": {
+  "primary_window": "all_observed_bars",
+  "primary_window_reason": "決定延遲上限的是尾端，尾端需要最長的觀測窗口；full_universe_bars 是分母完全一致的對照組。",
+  "AC1_leakage_ok": true,
+  "AC1_screen_equivalence_ok": true,
+  "AC1_screen_equivalence_checks": {
+   "mismatches_zero": true,
+   "probe_control_ok": true,
+   "non_vacuous": true,
+   "warmup_nan_as_expected": true
+  },
+  "AC2_distribution_complete": true,
+  "AC3_rest_seconds_flagged": true,
+  "AC4_margin_present": true,
+  "AC5_offline_and_scope_ok": true,
+  "stop_conditions_triggered": [],
+  "overall": "PASS"
+ },
+ "metadata": {
+  "script": "a0_screen 1.1",
+  "script_file": "research/a0_screen.py",
+  "script_sha256": "f650ba38eba2e69270747d4c92b92b5e41017e807b9654794b2d80109731252b",
+  "task": "A0（2 小時漲幅粗篩的候選數量測）",
+  "machine": "AUG090DPEJPG7",
+  "started_utc": "2026-09-23 02:55:23 UTC / 10:55:23+08",
+  "started_epoch_ms": 1790132123994,
+  "started_local": "2026-09-23T10:55:23.994000+08:00",
+  "finished_utc": "2026-09-23 02:55:31 UTC / 10:55:31+08",
+  "finished_epoch_ms": 1790132131140,
+  "finished_local": "2026-09-23T10:55:31.140000+08:00",
+  "elapsed_s": 7.147,
+  "python": "3.14.7",
+  "platform": "win32",
+  "pandas": "3.0.5",
+  "numpy": "2.5.3",
+  "git_commit": "9233be0",
+  "git_commit_note": "repo HEAD。要指認腳本本身請用 script_sha256。",
+  "reused_from_g2_measure": [
+   "list_cache_symbols",
+   "load_cache_frame",
+   "prepare_frame",
+   "bars_per_hour_of",
+   "INTERVAL_MS",
+   "HOUR_MS",
+   "fmt_ms",
+   "write_json",
+   "now_ms",
+   "say",
+   "warn",
+   "G2Error"
+  ],
+  "rest_requests_total": 0,
+  "rest_note": "本腳本沒有呼叫 g2_measure.rest_get()，也沒有任何 HTTP / WebSocket 出口，全程零請求（證據見 offline_proof）。",
+  "s4_params": {
+   "MIN_RET_2H": 0.14,
+   "MIN_VOL_RATIO": 2.0,
+   "MAX_CLOSE_POS": 0.6,
+   "MAX_TURN24H": 500000,
+   "MIN_TURN24H": 20000,
+   "COOLDOWN_HOURS": 1.0
+  },
+  "s4_feature_cols": [
+   "ret2h",
+   "volr",
+   "cpos",
+   "turn"
+  ],
+  "screen_feature": "ret2h",
+  "screen_param_key": "MIN_RET_2H",
+  "params": {
+   "cache_dir": "C:\\Claude Code\\Crypto_Trader\\pionex_cache",
+   "interval": "5M",
+   "quote_asset": "USDT",
+   "thresholds_cli": "0.10,0.11,0.12,0.13,0.135",
+   "thresholds_effective": [
+    0.1,
+    0.11,
+    0.12,
+    0.13,
+    0.135,
+    0.14
+   ],
+   "rates": [
+    10.0,
+    6.0
+   ],
+   "latency_target_s": 10.0,
+   "latency_ceiling_s": 30.0,
+   "max_symbols": 0,
+   "replay_bars": 0,
+   "top_busy": 10,
+   "busy_symbols": 30,
+   "market_usdt_symbols": 568,
+   "max_missed_records": 50,
+   "min_span_days": 7.0
+  },
+  "cli_argv": [],
+  "runtime_notes": [],
+  "output_backup": null,
+  "cache_coverage": {
+   "first_bar_open": 1786521900000,
+   "first_bar_open_utc": "2026-08-12 08:05:00 UTC / 16:05:00+08",
+   "last_bar_open": 1789632600000,
+   "last_bar_open_utc": "2026-09-17 08:10:00 UTC / 16:10:00+08",
+   "span_days": 36.003,
+   "grid_bars": 10370,
+   "symbols_observed_per_bar": {
+    "n": 10370,
+    "mean": 435.39662487946,
+    "min": 0.0,
+    "max": 442.0,
+    "p05": 437.0,
+    "p50": 437.0,
+    "p95": 442.0
+   }
+  },
+  "cache_files_for_interval": 442,
+  "quote_matched": 442,
+  "symbols_considered": 442,
+  "symbols_used": 442,
+  "symbols_skipped": 0,
+  "cache_coverage_note": "PRD 6 要求 metadata 帶「快取涵蓋範圍與交易對數」（F6）。這六個欄位是 universe.cache_coverage / universe.cache_files_for_interval / universe.quote_matched / universe.symbols_considered / universe.symbols_used / universe.symbols_skipped 的引用複本，內容完全相同；原欄位保留原位，避免打壞已經在 parse 這份 json 的下游。"
+ }
+}
