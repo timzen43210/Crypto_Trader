@@ -113,6 +113,18 @@ HTTP 取數在 `live/pionex_api.py`（原本叫 `live/http.py`，跟標準庫的
 沒設密鑰不影響用不到它的元件 —— `import live.config` 不會失敗，要用的元件會在取用當下拋出
 說得出該設哪個環境變數的例外。`python -m live` 只報告每個密鑰「已設定 / 未設定」，不印值。
 
+日誌在 `live/logsetup.py`（刻意不叫 `logging.py`，理由同上面 `http.py` 的改名）。進入點啟動時
+呼叫一次 `logsetup.setup()`，之後各模組照標準寫法 `logging.getLogger(__name__)` 即可；import 本身
+沒有副作用。日誌檔預設在 `runtime/logs/live.log`（UTF-8、依大小輪替，位置 / 等級 / 輪替參數都在
+`live/config.py`），同時輸出到終端機；時間戳一律是台北時間，與主機時區無關。終端機編不出的字元
+（cp950 / cp1252 下的 emoji 等）會變成 Python 跳脫序列（`⚠` → `\u26a0`、`🔴` → `\U0001f534`），
+不會出現 `--- Logging error ---` 把訊息吃掉；日誌檔則是 UTF-8 原字元。
+未攔截的例外（含背景執行緒）會帶完整 traceback 進日誌，程序照樣結束、不自動重啟；若之後有人
+停用或重設了 logging，traceback 仍會照 Python 預設印到 stderr，不會消失。
+**同一個日誌檔同時只能有一個行程在寫**（Windows 上別的行程開著檔案會讓輪替失敗）。
+`python -m live` 會報告日誌會寫到哪裡、能不能寫，但不會建立任何日誌檔。離線測試在
+`tests/test_logsetup.py`。
+
 ## 方法 A：GitHub Actions（免費、免主機）
 
 1. 在 GitHub 建立一個新的 repo（建議 Private），把這個資料夾的所有檔案上傳，

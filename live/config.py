@@ -56,6 +56,8 @@ import 本模組不會因為缺密鑰而失敗（見 require_secret 的 docstrin
 
 import os
 
+from live.paths import RUNTIME_DIR
+
 # ============================== 第二層：執行參數 ==============================
 # 派網 API 的根位址。端點路徑（/api/v1/common/symbols 之類）不放這裡：
 # 換掉端點路徑等於換一支 API，那是程式邏輯，不是設定。
@@ -70,6 +72,20 @@ HTTP_RETRIES = 3
 # market_static.refresh_if_stale() 的預設逾時（秒）：距上次「成功」刷新超過這個秒數才再打
 MARKET_STATIC_STALE_SECONDS = 3600
 
+# ---- 日誌（live.logsetup.setup() 的預設值）----
+# 日誌檔位置。一律在 runtime/ 底下（已 .gitignore），絕不可以放進 state/ 或 output/。
+# 多一層 logs/ 是為了讓輪替出來的 live.log.1 ... 跟日後的 SQLite 等檔案分開放。
+# 目錄由 setup() 自己建（live.paths 刻意不建目錄）。
+LOG_FILE = os.path.join(RUNTIME_DIR, "logs", "live.log")
+
+# 根 logger 的等級（標準庫的等級名稱字串）。檔案與終端機用同一個等級。
+LOG_LEVEL = "INFO"
+
+# 輪替：單檔到這個大小（bytes）就輪替，連同目前這份最多留 LOG_BACKUP_COUNT + 1 份。
+# 10 MB x (5 + 1) = 約 60 MB 上限，對小規格雲端主機是安全的量，也夠回頭查幾週。
+LOG_MAX_BYTES = 10 * 1024 * 1024
+LOG_BACKUP_COUNT = 5
+
 
 def execution_params():
     """目前生效的執行參數，name -> value。給 `python -m live` 報告用。
@@ -82,6 +98,10 @@ def execution_params():
         "HTTP_TIMEOUT_SECONDS": HTTP_TIMEOUT_SECONDS,
         "HTTP_RETRIES": HTTP_RETRIES,
         "MARKET_STATIC_STALE_SECONDS": MARKET_STATIC_STALE_SECONDS,
+        "LOG_FILE": LOG_FILE,
+        "LOG_LEVEL": LOG_LEVEL,
+        "LOG_MAX_BYTES": LOG_MAX_BYTES,
+        "LOG_BACKUP_COUNT": LOG_BACKUP_COUNT,
     }
 
 

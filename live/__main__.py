@@ -6,8 +6,14 @@ python -m live — 環境與路徑冒煙檢查
 設定與密鑰齊不齊。
 
 印出 Python 版本、requirements-live.txt 實際列的那些套件裝了沒（版本多少）、
-runtime/ 解析到哪裡與能不能寫、live.config 的執行參數實際值、每個密鑰有沒有設，
-以及這份 code 是哪個 commit，然後 exit 0。
+runtime/ 解析到哪裡與能不能寫、live.config 的執行參數實際值、日誌會寫到哪裡與能不能寫、
+每個密鑰有沒有設，以及這份 code 是哪個 commit，然後 exit 0。
+
+日誌只報告「setup() 會寫到哪裡」，這裡不呼叫 live.logsetup.setup()、不產生任何日誌檔。
+
+stdout 接到 pipe 時 Windows 用的是系統地區編碼（cp1252 / cp950），印中文會直接
+UnicodeEncodeError 死掉，所以 main() 一開始先把 stdout 換成 UTF-8（跟各測試 runner、
+market_static 的 probe 同一招）。只在 main() 裡做，import 本模組不動任何全域串流。
 
 密鑰只報告「已設定 / 未設定」，絕不印值也不印前幾碼 —— 只有一個訂閱者的 TG bot
 token 露出前幾碼就已經是實質洩漏。缺密鑰時 exit code 一樣是 0：這支是報告，不是
@@ -66,7 +72,33 @@ def _git_commit():
     return r.stdout.strip() or "unknown"
 
 
+def _make_stdout_safe():
+    """讓後面的 print() 在任何終端機編碼下都不會因為中文而崩潰。
+
+    sys.stdout 可能是 None（沒有主控台的服務，此時 print 本來就什麼都不做），也可能被
+    換成不支援 reconfigure 的物件（IDE、測試替身）—— 兩種都原樣放過。
+    """
+    stream = sys.stdout
+    if stream is None or not hasattr(stream, "reconfigure"):
+        return
+    try:
+        stream.reconfigure(encoding="utf-8", errors="replace")
+    except (OSError, ValueError):
+        pass
+
+
+def _nearest_existing(path):
+    """往上找第一個已經存在的路徑。setup() 建目錄時就是在它底下建，所以檢查它能不能寫。"""
+    while not os.path.exists(path):
+        parent = os.path.dirname(path)
+        if parent == path:
+            break
+        path = parent
+    return path
+
+
 def main():
+    _make_stdout_safe()
     print("=== live 環境冒煙檢查 ===")
 
     print("\n[Python]")
@@ -97,6 +129,16 @@ def main():
     print("\n[設定] live/config.py 的執行參數（不敏感，直接印）")
     for name, value in config.execution_params().items():
         print("  %-28s: %s" % (name, value))
+
+    print("\n[日誌] live.logsetup.setup() 會寫到這裡；冒煙檢查不呼叫 setup()，不產生日誌檔")
+    print("  日誌檔     : %s" % config.LOG_FILE)
+    print("  等級       : %s" % config.LOG_LEVEL)
+    print("  輪替       : 單檔 %d bytes，另保留 %d 份舊檔" % (config.LOG_MAX_BYTES, config.LOG_BACKUP_COUNT))
+    log_exists = os.path.isfile(config.LOG_FILE)
+    print("  檔案存在   : %s" % ("是" if log_exists else "否 (setup() 時才建立目錄與檔案)"))
+    # 只用 os.access 判斷，不實際建目錄或開檔 —— 冒煙檢查不可以留下任何東西
+    log_probe = _nearest_existing(config.LOG_FILE)
+    print("  可寫       : %s (檢查對象 %s)" % ("是" if os.access(log_probe, os.W_OK) else "否", log_probe))
 
     print("\n[密鑰] 只從環境變數讀；這裡只報告有沒有設，不印值")
     for env_name, purpose in config.SECRET_ENV_VARS.items():
