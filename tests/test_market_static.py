@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
 B5 (market_static) 驗收測試 — riskTable tier1 解析、未載入即查詢、refresh_if_stale 不發請求、
-刷新失敗保留舊快取，外加 live.http 的信封 / 429 / SSL 訊息。
+刷新失敗保留舊快取，外加 live.pionex_api 的信封 / 429 / SSL / 重試節奏。
 
-全程離線：monkeypatch live.market_static.api_get 與 live.http.requests.get，不打任何外部 API。
+全程離線：monkeypatch live.market_static.api_get 與 live.pionex_api.requests.get，不打任何外部 API。
 不依賴 pytest（這台開發機沒裝）：直接 `python tests/test_market_static.py` 會逐一跑完並印結果；
 用 pytest 跑也可以，函式都是 test_ 開頭、不用任何 fixture。
 """
@@ -14,7 +14,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import live.http as lh  # noqa: E402
+import live.pionex_api as lh  # noqa: E402
 
 # ============================== 假資料（欄位名照真實回應） ==============================
 SYMBOLS_FIXTURE = [
@@ -174,7 +174,7 @@ def test_refresh_if_stale_makes_no_request_when_fresh():
 
 def test_refresh_if_stale_refreshes_when_stale():
     ms, calls = _loaded_module()
-    ms.last_refresh_at = time.time() - (ms.STALE_SECONDS + 1)   # 假裝一小時零一秒前刷的
+    ms.last_refresh_mono = time.monotonic() - (ms.STALE_SECONDS + 1)  # 假裝一小時零一秒前刷的
     assert ms.refresh_if_stale() is True
     assert len(calls) == 4, "逾時了卻沒發請求"
     assert time.time() - ms.last_refresh_at < 5
@@ -182,7 +182,7 @@ def test_refresh_if_stale_refreshes_when_stale():
 
 def test_refresh_if_stale_honours_custom_max_age():
     ms, calls = _loaded_module()
-    ms.last_refresh_at = time.time() - 10
+    ms.last_refresh_mono = time.monotonic() - 10
     assert ms.refresh_if_stale(max_age=60) is True and len(calls) == 2
     assert ms.refresh_if_stale(max_age=5) is True and len(calls) == 4
 
@@ -208,7 +208,7 @@ def test_refresh_failure_keeps_old_cache_and_records_error():
     # 之後 refresh_if_stale 會再試（逾時是看上次成功），成功後 last_refresh_ok 回到 True
     fake_ok, calls = _fake_api_get_factory()
     ms.api_get = fake_ok
-    ms.last_refresh_at = time.time() - (ms.STALE_SECONDS + 1)
+    ms.last_refresh_mono = time.monotonic() - (ms.STALE_SECONDS + 1)
     assert ms.refresh_if_stale() is True and len(calls) == 2
     assert ms.status()["last_refresh_ok"] is True
     assert ms.status()["last_error"] is not None                # 歷史錯誤不清掉，看 last_refresh_ok 判斷
@@ -267,7 +267,7 @@ def test_refresh_survives_unexpected_structure():
     assert ms.max_leverage("BTC_USDT_PERP") == 100
 
 
-# ============================== live.http：信封 / 429 / SSL ==============================
+# ============================== live.pionex_api：信封 / 429 / SSL ==============================
 class _Resp:
     def __init__(self, status_code, js=None, text=""):
         self.status_code = status_code
@@ -281,7 +281,7 @@ class _Resp:
 
 
 def _with_patched(get_impl, fn):
-    """暫時把 live.http 的 requests.get 與 time.sleep 換掉，跑 fn 後還原。"""
+    """暫時把 live.pionex_api 的 requests.get 與 time.sleep 換掉，跑 fn 後還原。"""
     orig_get, orig_sleep = lh.requests.get, lh.time.sleep
     lh.requests.get, lh.time.sleep = get_impl, lambda s: None
     try:
@@ -368,6 +368,37 @@ def test_http_connection_error_retries_then_raises():
         assert len(calls) == 3 and "boom" in str(e)
     else:
         raise AssertionError("連線錯誤重試用盡應拋 ApiError")
+
+
+def _collect_sleeps(get_impl, retries):
+    """跑一次注定失敗的 api_get，回傳它實際睡了哪幾秒。"""
+    slept = []
+    orig_get, orig_sleep = lh.requests.get, lh.time.sleep
+    lh.requests.get, lh.time.sleep = get_impl, slept.append
+    try:
+        lh.api_get("/p", {}, retries=retries)
+    except lh.ApiError:
+        pass
+    finally:
+        lh.requests.get, lh.time.sleep = orig_get, orig_sleep
+    return slept
+
+
+def test_http_does_not_sleep_after_final_attempt():
+    """S1：只有「後面還要再試一次」才 sleep，最後一次失敗直接拋，不再白等一輪。"""
+    def http_503(url, params=None, headers=None, timeout=None):
+        return _Resp(503, text="upstream down")
+
+    def http_429(url, params=None, headers=None, timeout=None):
+        return _Resp(429, text="slow down")
+
+    def conn_error(url, params=None, headers=None, timeout=None):
+        raise lh.requests.exceptions.ConnectionError("boom")
+
+    assert _collect_sleeps(http_503, 3) == [1.0, 2.0]     # 嘗試 3 次 → 只睡 2 次
+    assert _collect_sleeps(conn_error, 3) == [1.0, 2.0]
+    assert _collect_sleeps(http_429, 3) == [1, 2]         # 429 是 2**k 退避
+    assert _collect_sleeps(http_503, 1) == []             # 只嘗試一次 → 完全不睡
 
 
 # ============================== 不用 pytest 也能跑 ==============================

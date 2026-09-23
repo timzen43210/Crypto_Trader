@@ -38,14 +38,17 @@ live.market_static — 全市場交易對規格 + 槓桿上限的記憶體快取
 
 import time
 
-from live.http import api_get
+from live import config
+from live.pionex_api import api_get
 
 SYMBOLS_PATH = "/api/v1/common/symbols"
 SYMBOLS_PARAMS = {"type": "PERP", "status": "TRADING"}
 RISK_TABLE_PATH = "/api/v1/common/riskTable"
 RISK_TABLE_PARAMS = {"type": "PERP"}
 
-STALE_SECONDS = 3600  # refresh_if_stale() 的預設逾時：距上次「成功」刷新超過這個秒數才再打
+# refresh_if_stale() 的預設逾時。數值的單一來源在 live.config，這裡只是給預設參數用的別名，
+# 要調整請改 live/config.py，不要改這一行。
+STALE_SECONDS = config.MARKET_STATIC_STALE_SECONDS
 
 
 class NotLoadedError(RuntimeError):
@@ -57,7 +60,10 @@ _specs = {}        # symbol -> 交易對規格 dict（symbols 端點的原始元
 _leverage = {}     # symbol -> tier1 maxLeverage (int)；riskTable 有這個幣但 rows 解析不出的不放
 _loaded = False    # 至少成功 refresh 過一次
 
-last_refresh_at = None   # 最近一次「成功」刷新的時間（epoch 秒）；refresh_if_stale 以此判斷逾時
+last_refresh_at = None   # 最近一次「成功」刷新的時間（epoch 秒）；給日誌 / status() 顯示用
+last_refresh_mono = None # 同一次成功刷新當下的 time.monotonic() 讀數；逾時判斷只看這個，
+                         # 因為雲端主機會 NTP 校時，wall clock 往前往後跳都會算錯經過多久。
+                         # 它是「開機以來的秒數」這類相對值，不是可顯示的時間，別拿去印。
 last_attempt_at = None   # 最近一次嘗試刷新的時間（不論成敗）
 last_refresh_ok = None   # 最近一次嘗試的結果；None = 從未嘗試
 last_error = None        # 最近一次失敗的訊息（"ExceptionType: message"）；成功不會清掉它
@@ -66,12 +72,12 @@ last_error_at = None     # 最近一次失敗的時間
 
 # ---------------- 取數與解析 ----------------
 def fetch_symbols():
-    """打 symbols 端點，回傳 data.symbols 那個 list（原始元素）。失敗拋 live.http.ApiError。"""
+    """打 symbols 端點，回傳 data.symbols 那個 list（原始元素）。失敗拋 live.pionex_api.ApiError。"""
     return api_get(SYMBOLS_PATH, SYMBOLS_PARAMS)["data"]["symbols"]
 
 
 def fetch_risk_table():
-    """打 riskTable 端點，回傳 data.symbols 那個 list（原始元素）。失敗拋 live.http.ApiError。"""
+    """打 riskTable 端點，回傳 data.symbols 那個 list（原始元素）。失敗拋 live.pionex_api.ApiError。"""
     return api_get(RISK_TABLE_PATH, RISK_TABLE_PARAMS)["data"]["symbols"]
 
 
@@ -123,7 +129,7 @@ def refresh():
     這裡接住的是 Exception（含 ApiError 與解析時的 KeyError 等），不接 KeyboardInterrupt。
     """
     global _specs, _leverage, _loaded
-    global last_refresh_at, last_attempt_at, last_refresh_ok, last_error, last_error_at
+    global last_refresh_at, last_refresh_mono, last_attempt_at, last_refresh_ok, last_error, last_error_at
 
     last_attempt_at = time.time()
     try:
@@ -143,6 +149,7 @@ def refresh():
     _specs, _leverage = specs, leverage
     _loaded = True
     last_refresh_at = time.time()
+    last_refresh_mono = time.monotonic()
     last_refresh_ok = True
     return True
 
@@ -152,8 +159,12 @@ def refresh_if_stale(max_age=STALE_SECONDS):
 
     逾時是看「上次成功」的時間，所以刷新失敗之後下一次呼叫會再試，直到成功為止；
     呼叫節奏由呼叫者控制（預期是每根 K 棒一次）。
+
+    經過多久是用 time.monotonic() 算的，不是 time.time()：單調時鐘不受 NTP 校時影響。
+    用 wall clock 的話，系統時間往後跳會讓快取被當成永遠新鮮（跳多久就不刷多久），
+    往前跳則會多打一次沒必要的請求。雲端主機有 NTP，這不是假想情境。
     """
-    if last_refresh_at is not None and time.time() - last_refresh_at < max_age:
+    if last_refresh_mono is not None and time.monotonic() - last_refresh_mono < max_age:
         return True
     return refresh()
 
@@ -212,7 +223,7 @@ def _probe():
     import sys
     from collections import Counter
 
-    from live.http import ApiError
+    from live.pionex_api import ApiError
 
     # stdout 接到 pipe 時 Windows 會用 cp1252，印中文會炸；這裡只影響這支 probe
     if hasattr(sys.stdout, "reconfigure"):

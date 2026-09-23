@@ -2,10 +2,16 @@
 """
 python -m live — 環境與路徑冒煙檢查
 ===================================
-搬到一台新主機上之後第一個該跑的指令，用來回答兩個問題：環境裝對了嗎、路徑對嗎。
+搬到一台新主機上之後第一個該跑的指令，用來回答三個問題：環境裝對了嗎、路徑對嗎、
+設定與密鑰齊不齊。
 
 印出 Python 版本、requirements-live.txt 實際列的那些套件裝了沒（版本多少）、
-runtime/ 解析到哪裡與能不能寫、以及這份 code 是哪個 commit，然後 exit 0。
+runtime/ 解析到哪裡與能不能寫、live.config 的執行參數實際值、每個密鑰有沒有設，
+以及這份 code 是哪個 commit，然後 exit 0。
+
+密鑰只報告「已設定 / 未設定」，絕不印值也不印前幾碼 —— 只有一個訂閱者的 TG bot
+token 露出前幾碼就已經是實質洩漏。缺密鑰時 exit code 一樣是 0：這支是報告，不是
+放行閘門，沒有用到 TG 的元件在沒設密鑰的機器上照樣要能跑。
 
 它只印資訊，不做任何事，也不建立任何目錄。業務邏輯不要加到這裡來。
 
@@ -17,6 +23,7 @@ import subprocess
 import sys
 from importlib.metadata import PackageNotFoundError, version
 
+from live import config
 from live.paths import REPO_ROOT, RUNTIME_DIR
 
 REQUIREMENTS_LIVE = os.path.join(REPO_ROOT, "requirements-live.txt")
@@ -86,6 +93,16 @@ def main():
     print("  目錄存在   : %s" % ("是" if exists else "否 (第一次寫入時才建立)"))
     probe = RUNTIME_DIR if exists else REPO_ROOT
     print("  可寫       : %s (檢查對象 %s)" % ("是" if os.access(probe, os.W_OK) else "否", probe))
+
+    print("\n[設定] live/config.py 的執行參數（不敏感，直接印）")
+    for name, value in config.execution_params().items():
+        print("  %-28s: %s" % (name, value))
+
+    print("\n[密鑰] 只從環境變數讀；這裡只報告有沒有設，不印值")
+    for env_name, purpose in config.SECRET_ENV_VARS.items():
+        state = "已設定" if config.secret_is_set(env_name) else "未設定"
+        print("  %-28s: %s  (%s)" % (env_name, state, purpose))
+    print("  未設定不影響用不到它的元件；要用的元件會在取用當下拋出說明清楚的例外。")
 
     print("\n[git]")
     print("  commit     : %s" % _git_commit())

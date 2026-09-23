@@ -85,7 +85,8 @@ START_FROM = "2026-09-01 00:00"   # 設 None = 只從第一次執行當下開始
 
 `live/` 是實盤端的套件，與上面這套回測 / dry run 互不相干（不會 import 根目錄那幾支
 `pionex_*.py`），目前只有一個環境冒煙檢查：在 repo 根目錄執行 `python -m live`，會印出
-Python 版本、套件版本、路徑與目前 commit，用來確認一台新主機裝對了沒。
+Python 版本、套件版本、路徑、執行參數與密鑰有沒有設、目前 commit，用來確認一台新主機
+裝對了沒。缺密鑰不會讓它失敗（exit code 仍是 0），它是報告不是放行閘門。
 
 它的相依另外列在 **`requirements-live.txt`**，和 dry run 用的 `requirements.txt` 分開：
 GitHub Actions 與 `run.sh` 只裝後者，實盤主機才裝前者，兩份不要合併。實盤執行期產生的
@@ -97,8 +98,20 @@ GitHub Actions 與 `run.sh` 只裝後者，實盤主機才裝前者，兩份不�
 觸發（`refresh()` / `refresh_if_stale()`），沒有背景執行緒；刷新失敗保留舊資料、記 `last_error`。
 `python -m live.market_static` 會真實連線印出兩端點的結構、槓桿分布與抽樣，離線測試在
 `tests/test_market_static.py`（不需要 pytest，直接 `python tests/test_market_static.py`）。
-HTTP 取數在 `live/http.py`，程式不內建任何 CA 憑證路徑；網路有 SSL inspection 的機器請設環境變數
-`REQUESTS_CA_BUNDLE`。
+HTTP 取數在 `live/pionex_api.py`（原本叫 `live/http.py`，跟標準庫的 `http` 同名，被遮蔽時症狀會長成
+「requests 壞掉」很難追，故改名）。程式不內建任何 CA 憑證路徑；網路有 SSL inspection 的機器請設
+環境變數 `REQUESTS_CA_BUNDLE`。
+
+設定與密鑰分三層，規則寫在 `live/config.py` 的 docstring：
+
+| 層 | 放在哪裡 | 怎麼改 |
+| --- | --- | --- |
+| 策略參數（`MIN_RET_2H` 等六個） | `strategy/s4_signal.py` 的 `DEFAULT_PARAMS`，**唯一來源** | 改那裡。`live/` 只用 `config.strategy_params()` 引用，不可以抄一份數值過去 |
+| 執行參數（BASE URL、timeout、retries、快取逾時） | `live/config.py` 的模組層級常數 | 改檔案再 commit。沒有設定檔格式、沒有 parser、沒有 dev/prod 切換 |
+| 密鑰（TG bot token、A 頻道 channel id） | 環境變數 `CRYPTO_TRADER_TG_BOT_TOKEN`、`CRYPTO_TRADER_TG_CHANNEL_ID` | 啟動前 `export`，雲端主機用 systemd 的 `Environment=`。**絕不進版控**，不支援 `.env` 或任何檔案來源 |
+
+沒設密鑰不影響用不到它的元件 —— `import live.config` 不會失敗，要用的元件會在取用當下拋出
+說得出該設哪個環境變數的例外。`python -m live` 只報告每個密鑰「已設定 / 未設定」，不印值。
 
 ## 方法 A：GitHub Actions（免費、免主機）
 
