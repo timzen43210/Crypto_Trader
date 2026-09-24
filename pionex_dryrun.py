@@ -107,16 +107,21 @@ S4_RULE = dict(s4.S4)          # 條件沿用 pionex_strategy4.py 的 S4
 # 規則來自 pionex_strategy5.S5（整份，比照策略4 的 S4_RULE）；止盈、止損、出場模式、最長持倉、
 # 手續費來自 pionex_strategy5.CONFIG（見 S5_FROM_BACKTEST）。兩邊是同一份參數：要調請改
 # pionex_strategy5.py，dry run 會跟著變（參數指紋隨之改變 → 該帳本自動重置，見 book_fingerprint()）。
-# 目標是「複製群組機器人的訊號與出場」，不是追求勝率。規則（v2）依 2026-09-24 用群組 1283 筆訊號校準：
-#   ① 前一根 1h K（整點切）收盤 ÷ 最低 − 1 ≥ MIN_RISE_FROM_LOW（校準值 6%）
-#   ② 本小時到目前為止的累計量 ≥ MIN_VOL_MULT × 前一根 1h K 的量（校準值 1 倍 = 持平）
-#   ③ 現價（這根 1 分K 收盤）> 前一根 1h K 最高價 × (1 + MIN_ABOVE_PH)（校準值 0）
+# 目標是「複製群組機器人的訊號與出場」，不是追求勝率。規則 v3（2026-09-24 使用者指定，尚未用群組訊號校準）：
+#   ① 前一根 1h K（整點切）收盤 ÷ 開盤 − 1 ≥ MIN_RISE_FROM_OPEN
+#   ② 爆量，下列任一：
+#      A. 本小時到目前為止的累計量 ≥ MIN_VOL_MULT × 前一根 1h K 的量（不限時）
+#      EARLY_VOL_RULES 的每個 (N, k)：開盤 N 分鐘內（這根 1 分K 收盤分鐘 ≤ N）累計量曾 ≥ k × 前根量，
+#      成立後本小時剩下的時間都算（黏著）。例：第 20 分追平前根、第 40 分才突破前高 → 第 40 分進場。
+#   ③ 現價（這根 1 分K 收盤）> 前一根 1h K 最高價 × (1 + MIN_ABOVE_PH)
 #   三條件第一次同時成立的那根 1 分K 收盤進場；同幣每小時最多一次、持倉中不重複進場。
-#   出場：止盈 TAKE_PROFIT（校準值跌 3%）/ 止損 STOP_LOSS（校準值漲 5% = 群組第 1 次加倉點，
+#   門檻與分支的數值一律看 pionex_strategy5.S5，這裡不寫死。
+#   出場：止盈 TAKE_PROFIT（跌 3%）/ 止損 STOP_LOSS（漲 5% = 群組第 1 次加倉點，
 #   群組把有加倉的單記為止損）。出場後冷卻：COOLDOWN_HOURS 在 use_config() 換算成根數
-#   （0 → 1 根 = 出場的下一根 1 分K 起可再進場，與校準時一致）。
-#   1 分K 上校準：群組 46 筆訊號用派網 1 分K 重算，結果 100% 一致；進場當下量倍數中位 1.10。
-# s5_indicators() 只實作 v2；S5 切到其他變體時 main() 會在開頭停下並說明原因（check_s5_variant()）。
+#   （0 → 1 根 = 出場的下一根 1 分K 起可再進場）。
+#   舊規則 v2（① 收盤 ÷ 最低、② 1 倍不限時）的校準數字（群組 1283 筆、46 筆 1 分K 重算 100% 一致等）
+#   只適用 v2，不適用 v3。s5 帳本 2026-09-24 因規則修改重置，重置前的紀錄屬 v2。
+# s5_indicators() 只實作 v3；S5 切到其他變體時 main() 會在開頭停下並說明原因（check_s5_variant()）。
 # 刻意不統一（兩邊本質不同）：INTERVAL（這裡 1M、回測 15M）、RESOLVE_*（1 分K 已是最小週期）、WARMUP。
 S5_RULE = dict(strat5.S5)
 S5_FROM_BACKTEST = ("TAKE_PROFIT", "STOP_LOSS", "EXIT_MODE", "MAX_HOLD_HOURS", "FEE_RATE")
@@ -439,7 +444,10 @@ def indicators(book, df, btc):
 
 
 # ============================== 策略5：訊號與報表欄位 ==============================
-S5_DIAG = [("① 前根收盤比最低", "s5_rise", 13, "0.00%"), ("② 觸發時量倍數", "s5_volx", 12, "0.00"),
+# "s5_branch" 在交易紀錄裡存的是文字標籤：進場那根當下成立的所有分支，用 "+" 連接，
+# 標籤由 pionex_strategy5.branch_label() 依分支參數產生（格式與例子見該函式）
+S5_DIAG = [("① 前根收盤比開盤", "s5_rise", 13, "0.00%"), ("② 觸發時量倍數", "s5_volx", 12, "0.00"),
+           ("② 爆量分支", "s5_branch", 18, "@"),
            ("③ 進場價vs前高", "s5_above", 12, "0.00%"), ("觸發於第幾分鐘", "s5_minute", 12, "0")]
 
 
@@ -447,15 +455,14 @@ class S5VariantError(ValueError):
     """策略5 的設定是 dry run 沒實作的變體（見 check_s5_variant()）。"""
 
 
-# s5_indicators() 只實作 v2。pionex_strategy5.S5 其餘的開關 dry run 都沒有實作，打開了不會報錯、
+# s5_indicators() 只實作 v3。pionex_strategy5.S5 其餘的開關 dry run 都沒有實作，打開了不會報錯、
 # 只會被靜默忽略（跑的其實是另一個策略），所以 main() 一開始先擋下。
 # 每列：(鍵, 是否支援, 支援的值, 鍵不存在時回測模組的行為)
 _MISSING = object()
-S5_V2_ONLY = [
+S5_SUPPORTED = [
     ("REQUIRE_VOL_BURST", lambda v: v is True, "True", _MISSING),
     ("REQUIRE_HIGHER_HIGH", lambda v: v is True, "True", _MISSING),
     ("HH_MODE", lambda v: v == "price", "'price'", "high"),       # 回測 S5.get("HH_MODE", "high")
-    ("FAST_VOL_MULT", lambda v: v is None, "None（關閉分支 B）", None),  # 回測 S5.get("FAST_VOL_MULT")
     ("MIN_TURN24H", lambda v: v is None, "None", _MISSING),
     ("MAX_TURN24H", lambda v: v is None, "None", _MISSING),
     ("MAX_PRICE", lambda v: v is None, "None", _MISSING),
@@ -463,7 +470,10 @@ S5_V2_ONLY = [
 
 
 def check_s5_variant():
-    """策略5 必須是 dry run 支援的 v2 組合，否則拋 S5VariantError（訊息列出每個不符的鍵）。
+    """策略5 必須是 dry run 支援的 v3 組合，否則拋 S5VariantError（訊息列出每個不符的鍵）。
+       EARLY_VOL_RULES 必須是 (1～60 的整數分鐘, 正數倍數) 的序列（空序列 = 只剩分支 A），
+       格式規則與回測共用 pionex_strategy5.early_rules_problems()；已移除的舊鍵
+       （FAST_VOL_MULT / FAST_WINDOW_MIN / MIN_RISE_FROM_LOW）出現也擋下，避免有人以為它還有作用。
        由 main() 在任何網路請求與狀態檔寫入之前呼叫；刻意不放在 import 時，
        因為 pionex_s5_compare.py 與測試會 import 本模組。
        停下整個 dry run 而不是只跳過 s5：dry run 每次都會補處理上次之後的所有 K 棒，
@@ -473,13 +483,20 @@ def check_s5_variant():
     if not books:
         return
     bad = []
-    for key, ok, want, default in S5_V2_ONLY:
+    for key, ok, want, default in S5_SUPPORTED:
         v = S5_RULE.get(key, default)
         if v is _MISSING:
             bad.append(f"  pionex_strategy5.S5[{key!r}] 未設定（dry run 只支援 {want}）")
         elif not ok(v):
             src = "" if key in S5_RULE else "，未設定時回測的預設值"
             bad.append(f"  pionex_strategy5.S5[{key!r}] = {v!r}{src}（dry run 只支援 {want}）")
+    for key, why in strat5.LEGACY_KEYS.items():
+        if key in S5_RULE:
+            bad.append(f"  pionex_strategy5.S5[{key!r}] 是已移除的舊鍵，不會有任何作用：{why}，並刪除這個鍵")
+    if "EARLY_VOL_RULES" not in S5_RULE:
+        bad.append("  pionex_strategy5.S5['EARLY_VOL_RULES'] 未設定（() = 關閉限時分支，只剩 A）")
+    else:
+        bad += [f"  pionex_strategy5.S5: {p}" for p in strat5.early_rules_problems(S5_RULE["EARLY_VOL_RULES"])]
     for b in books:
         v = {**S5_CONFIG, **BOOKS[b]["overrides"]}.get("EXIT_MODE")
         if v != "fixed":
@@ -488,13 +505,21 @@ def check_s5_variant():
         raise S5VariantError(
             "策略5 的設定不是 dry run 支援的組合，dry run 停止（尚未發出任何網路請求、未寫入狀態檔）：\n"
             + "\n".join(bad) + "\n"
-            "dry run 的策略五只實作 v2，要改變體得先改 pionex_dryrun.py 的 s5_indicators()；"
+            "dry run 的策略五只實作 v3，要改變體得先改 pionex_dryrun.py 的 s5_indicators()；"
             "否則請把 pionex_strategy5.py 的上列設定改回。修好後下次執行會自動補處理漏掉的 K 棒"
             "（1 分K 保留約 7 天）。")
 
 
 def s5_indicators(df, btc=None):
     """1 分K：算出每一根的小時脈絡，標出每小時「三條件第一次同時成立」的那一根（signal = -1）。
+       ① 前一小時 收盤 ÷ 開盤 − 1（開盤 = 前一小時第一根 1 分K 的 open）
+       ② A：本小時累計量 ≥ MIN_VOL_MULT × 前根量；或 EARLY_VOL_RULES 任一分支（黏著，見下）
+       ③ 這根 1 分K 收盤 > 前根最高 × (1 + MIN_ABOVE_PH)
+       限時分支 (N, k)：這根 1 分K 收盤分鐘 ≤ N 且累計量 ≥ k × 前根量，第一次成立的那根起本小時都算成立。
+       s5_branch_code 記錄每根當下成立的分支（bit0 = A、bit(i+1) = EARLY_VOL_RULES[i]），
+       進場時由 snapshot5() 轉成文字標籤。
+       呼叫端抓的 1 分K 至少從「第一根要處理的 K 棒往前 WARMUP 根（150 根 > 2 小時）」開始，
+       所以本小時與前一小時都是從整點第一根算起，黏著狀態與累計量不會因為分批執行而斷掉。
        step_symbol() 需要的共用欄位（ret1h、atr_pct…）策略5 用不到，填 NaN 即可。"""
     for col in ("ret1h", "atr_pct", "ma_dev", "obv_chg", "liq24", "vol_ratio", "close_pos",
                 "htf_dev", "ret24", "btc_ret1h", "btc_ma_dev"):
@@ -504,46 +529,60 @@ def s5_indicators(df, btc=None):
     t = df["time"].to_numpy()
     hid = t // HOUR
     g = df.groupby(hid)
-    hr = pd.DataFrame({"H": g["high"].max(), "L": g["low"].min(), "C": g["close"].last(),
+    hr = pd.DataFrame({"O": g["open"].first(), "H": g["high"].max(), "C": g["close"].last(),
                        "V": g["volume"].sum(), "N": g.size()})
     prev = hr.reindex(hr.index - 1)
     prev.index = hr.index
     m = lambda col: pd.Series(hid).map(prev[col]).to_numpy(dtype=float)
-    pH, pL, pC, pV, pN = m("H"), m("L"), m("C"), m("V"), m("N")
+    pO, pH, pC, pV, pN = m("O"), m("H"), m("C"), m("V"), m("N")
     cumv = df.groupby(hid)["volume"].cumsum().to_numpy(dtype=float)
     c = df["close"].to_numpy(dtype=float)
+    minute = ((t % HOUR) + bar) // 60_000                  # 這根 1 分K 收盤時是該小時第幾分鐘（1～60）
     with np.errstate(invalid="ignore", divide="ignore"):
-        rise = pC / pL - 1
+        rise = np.where(pO > 0, pC / pO - 1, np.nan)
         volx = np.where(pV > 0, cumv / pV, np.nan)
         above = c / pH - 1
-        ok = ((pN == per_hour) & (rise >= S5_RULE["MIN_RISE_FROM_LOW"])
-              & (volx >= S5_RULE["MIN_VOL_MULT"]) & (c > pH * (1 + S5_RULE["MIN_ABOVE_PH"])))
+        burst_a = volx >= S5_RULE["MIN_VOL_MULT"]
+        code = burst_a.astype(np.int64)
+        for i, (n_min, mult) in enumerate(S5_RULE["EARLY_VOL_RULES"]):
+            hit = (minute <= n_min) & (volx >= mult)
+            stick = pd.Series(hit.astype(np.int64)).groupby(hid).cumsum().to_numpy() > 0
+            code |= stick.astype(np.int64) << (i + 1)
+        ok = ((pN == per_hour) & (rise >= S5_RULE["MIN_RISE_FROM_OPEN"])
+              & (code > 0) & (c > pH * (1 + S5_RULE["MIN_ABOVE_PH"])))
     ok = np.nan_to_num(ok, nan=0).astype(bool)
     first = ok & (pd.Series(ok.astype(int)).groupby(hid).cumsum().to_numpy() == 1)
     df["signal"] = np.where(first, -1, 0)
     df["s5_rise"], df["s5_volx"], df["s5_above"] = rise, volx, above
-    df["s5_minute"] = ((t % HOUR) + bar) // 60_000
+    df["s5_branch_code"] = code
+    df["s5_minute"] = minute
     return df
 
 
 def snapshot5(row):
-    return {k: f(row[k]) for _, k, _, _ in S5_DIAG}
+    out = {k: f(row[k]) for _, k, _, _ in S5_DIAG if k != "s5_branch"}
+    out["s5_branch"] = strat5.branch_label(row["s5_branch_code"], S5_RULE)
+    return out
 
 
 def s5_param_rows(rows):
-    """參數頁：前 6 列沿用，中間固定 8 列，讓「盈虧平衡勝率」落在第 16 列（資金模擬頁會引用 B16）。"""
+    """參數頁：前 6 列沿用，中間固定 8 列，讓「盈虧平衡勝率」落在第 16 列（總覽頁 I5:I7 引用 參數!$B$16）。"""
     C = pb.CONFIG
     head = list(rows[:6])
     head[2] = ("K棒週期", "條件看 1 小時K（整點切）；進出場用 1 分K", "每根 1 分K 收盤檢查一次 ≈ 每分鐘掃描")
     head[3] = ("止盈", C["TAKE_PROFIT"], "做空：價格下跌此比例")
     head[4] = ("止損", C["STOP_LOSS"], "做空：價格上漲此比例（= 群組第 1 次加倉點）")
-    mid = [
+    early = "、".join(f"{n} 分內 ≥ {k:g} 倍" for n, k in S5_RULE["EARLY_VOL_RULES"])
+    mid = [                     # 固定 8 列：規則列變多時用合併說明的方式塞進來，不可增加列數
         ("策略", "策略5 — 群組訊號複製（只做空）", "目標是複製群組訊號，不是追求勝率"),
-        ("① 前根收盤比最低點漲", S5_RULE["MIN_RISE_FROM_LOW"], "前一根 1h K：收盤 ÷ 最低 − 1"),
-        ("② 當根量 ÷ 前一根量", S5_RULE["MIN_VOL_MULT"], "本小時到目前為止的累計量；1.0 = 持平"),
+        ("① 前根收盤比開盤漲", S5_RULE["MIN_RISE_FROM_OPEN"], "前一根 1h K：收盤 ÷ 開盤 − 1"),
+        ("②A 當根量 ÷ 前一根量", f'{S5_RULE["MIN_VOL_MULT"]:g} 倍',
+         "本小時到目前為止的累計量，不限時；A 與限時分支符合任一即可"),
+        ("② 限時分支", early or "關閉",
+         "開盤 N 分內（1 分K 收盤 ≤ 第 N 分）累計量曾達門檻，成立後本小時都算（黏著）"),
         ("③ 現價 > 前高 ×", 1 + S5_RULE["MIN_ABOVE_PH"], "現價 = 那根 1 分K 收盤價"),
-        ("進場時機", "三條件第一次同時成立", "以那根 1 分K 收盤價進場；同幣每小時最多一次"),
-        ("持倉中", "不重複進場", "與群組機器人一致"),
+        ("進場時機", "三條件第一次同時成立",
+         "以那根 1 分K 收盤價進場；同幣每小時最多一次；持倉中不重複進場（與群組機器人一致）"),
         ("出場後冷卻", f'{C["COOLDOWN_BARS"]} 根',
          "出場的下一根 1 分K 起可再進場（須不同小時）" if C["COOLDOWN_BARS"] == 1 else
          f'出場後第 {C["COOLDOWN_BARS"]} 根 1 分K 起可再進場（COOLDOWN_HOURS = {S5_RULE["COOLDOWN_HOURS"]:g}）'),
@@ -982,8 +1021,13 @@ def write_outputs(state, t_now):
             write_s5_signals(state["books"][book])
 
 
+S5_CSV_COLUMNS = ["交易對", "進場時間", "進場價", "止盈價", "加倉價", "群組結果", "共加倉次數", "出場時間",
+                  "判定說明", "前根收盤比開盤", "觸發時量倍數", "② 爆量分支", "進場價vs前高", "觸發於第幾分鐘"]
+
+
 def s5_rows(bk):
-    """策略5 的紀錄轉成群組 signals.csv 同格式（給 pionex_s5_compare.py 比對用）。"""
+    """策略5 的紀錄轉成群組 signals.csv 同格式（給 pionex_s5_compare.py 比對用）。
+       欄位固定為 S5_CSV_COLUMNS：帳本剛重置、還沒有任何訊號時也照樣輸出表頭。"""
     trades = bk["closed"] + open_as_trades(bk, pb.INTERVAL_MS[BOOK_INTERVAL["s5"]])
     rows = []
     for tr in sorted(trades, key=lambda x: (x["entry_time"], x["symbol"])):
@@ -994,9 +1038,10 @@ def s5_rows(bk):
                      "群組結果": tr["result"] if done else None, "共加倉次數": None,
                      "出場時間": f"{pb.to_dt(tr['exit_time']):%Y-%m-%d %H:%M}" if done else None,
                      "判定說明": tr.get("note") or None,
-                     "前根收盤比最低": tr.get("s5_rise"), "觸發時量倍數": tr.get("s5_volx"),
+                     "前根收盤比開盤": tr.get("s5_rise"), "觸發時量倍數": tr.get("s5_volx"),
+                     "② 爆量分支": tr.get("s5_branch"),
                      "進場價vs前高": tr.get("s5_above"), "觸發於第幾分鐘": tr.get("s5_minute")})
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=S5_CSV_COLUMNS)
 
 
 def write_s5_signals(bk):
@@ -1023,7 +1068,7 @@ def s5_summary_lines(bk):
             L.append(f"| {r.交易對} | {r.進場時間[5:]} | {r.進場價:.6g} | "
                      f"{r.群組結果 if isinstance(r.群組結果, str) else '持倉中'} | "
                      f"{r.出場時間[5:] if isinstance(r.出場時間, str) else ''} | "
-                     f"{fmt(r.前根收盤比最低, '{:.1%}')} | {fmt(r.觸發時量倍數, '{:.2f}')} | "
+                     f"{fmt(r.前根收盤比開盤, '{:.1%}')} | {fmt(r.觸發時量倍數, '{:.2f}')} | "
                      f"{fmt(r.進場價vs前高, '{:+.1%}')} |")
         L += ["", "</details>", ""]
     return L

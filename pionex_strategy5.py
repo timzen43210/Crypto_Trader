@@ -3,39 +3,50 @@
 """
 策略5 — 爆量過高（只做空，小時K條件、盤中觸發即進場）
 ======================================================
-條件（以 1 小時 K 為單位）：
-  ① 前一根：收盤價比該根最低點漲 ≥ MIN_RISE_FROM_LOW（預設 6%）
-  ② 爆量（兩個分支，符合任一個即可）：
-       A. 當根累計量 ≥ MIN_VOL_MULT × 前一根量（預設 2 倍，即多一倍以上）
-       B. 開盤 FAST_WINDOW_MIN 分鐘內（預設 30），當根累計量 ≥ FAST_VOL_MULT × 前一根量（預設 1 倍＝持平），
-          且現價 > 前一根最高價
-  ③ 當根：最高價 > 前一根最高價（分支 B 成立時必然成立）
+條件（以 1 小時 K 為單位，整點切）：
+  ① 前一根：收盤價比該根開盤價漲 ≥ MIN_RISE_FROM_OPEN（預設 6%）
+  ② 爆量（分支符合任一個即可）：
+       A. 本小時到目前為止的累計量 ≥ MIN_VOL_MULT × 前一根量（預設 2 倍，不限時；上一根 10 → 這根 ≥ 20）
+       限時分支 EARLY_VOL_RULES，每個分支是 (N 分鐘, k 倍)，預設兩個：
+         B. (30, 1.0)：開盤 30 分鐘內累計量曾 ≥ 1 倍前根（追平）
+         C. (15, 0.5)：開盤 15 分鐘內累計量曾 ≥ 0.5 倍前根
+       「N 分鐘內」= 小K收盤時刻 ≤ 第 N 分鐘（含第 N 分鐘收盤那根）。
+       限時分支是「黏著」的：一旦成立，本小時剩下的時間都算爆量成立。
+       例（使用者確認）：第 20 分量就追平前根、第 40 分價格才突破前高（量還沒到 2 倍）→ 第 40 分進場（B）。
+       限時分支是純粹的量條件，突破前高是 ③ 的事。
+  ③ 現價 > 前一根最高價 × (1 + MIN_ABOVE_PH)（HH_MODE="price"；"high" = 當根曾碰過前高之上）
 進場：三個條件「第一次同時成立的那一刻」就用當下價格進場做空，不等整點收盤。
 
-v2（目前預設，依群組訊號校準）：① 6%　② 當根量 ≥ 1 倍前根　③ 現價 > 前高
-  校準結果：15 種寫法中最像群組（抓到率 64%、命中率 51%、每天 15 筆 vs 群組 12 筆）。
-  改回原版：MIN_VOL_MULT=2.0、FAST_VOL_MULT=1.0、HH_MODE="high"。
+v3（目前預設，2026-09-24 使用者指定）：① 收盤比開盤 6%　② A 2 倍 / B 30 分內 1 倍 / C 15 分內 0.5 倍（B、C 黏著）
+  ③ 現價 > 前高。**v3 尚未用群組訊號校準**，要不要調整以 pionex_s5_compare.py 逐筆比對為準。
+v2（歷史，已停用）：① 前根收盤 ÷ 最低 − 1 ≥ 6%　② 當根累計量 ≥ 1 倍前根（不限時）　③ 現價 > 前高。
+  當時用群組 1283 筆訊號校準（15 種寫法中最像群組：抓到率 64%、命中率 51%、每天 15 筆 vs 群組 12 筆；
+  ③ 用現價判斷和群組 99.6% 吻合）。**這些數字全部是 v2 規則下的結果，不適用 v3。**
 
 變體（S5 的兩個開關）：
-  REQUIRE_VOL_BURST=True,  REQUIRE_HIGHER_HIGH=True  → ①+②+③（原版，預設）
+  REQUIRE_VOL_BURST=True,  REQUIRE_HIGHER_HIGH=True  → ①+②+③（預設）
   REQUIRE_VOL_BURST=False, REQUIRE_HIGHER_HIGH=True  → ①+③：前根漲 6% 後，當根一過前高就進場
-  REQUIRE_VOL_BURST=False, REQUIRE_HIGHER_HIGH=False → 只有 ①：那一根 1h K 收盤時若收盤比最低漲 ≥ 6%，
+  REQUIRE_VOL_BURST=False, REQUIRE_HIGHER_HIGH=False → 只有 ①：那一根 1h K 收盤時若收盤比開盤漲 ≥ 6%，
                                                        就在收盤當下進場（不用等下一根）
 
 回測怎麼模擬「盤中觸發」：
   量只會累積、高點只會墊高，所以把這一小時拆成 SUB_INTERVAL 的小K逐根檢查，
   找到三條件第一次同時成立的那根小K，以它的收盤價進場。
-  分支 B 的「現價」用小K收盤價判斷；時間窗用小K收盤時刻判斷
-  （15M → 第 15、30 分鐘那兩根；5M → 第 5~30 分鐘那六根；30M → 只有第 30 分鐘那根）。
+  ③ 的「現價」用小K收盤價判斷；限時分支的時間窗用小K收盤時刻判斷，所以每個分支的 N 都必須是
+  小K分鐘數的整數倍，否則看不到窗口邊界，main() 會在開頭停下（check_rules()）：
+  5M、15M 看得到 15 與 30 分；30M 看不到 15 分；60M 兩個都看不到。
+  量只會累積，所以「開盤 N 分內曾達到」等於「第 N 分鐘收盤時已達到」：小K週期不影響限時分支
+  會不會成立，只影響最早能在第幾分鐘用上它（例：第 20 分追平，15M 要到第 30 分那根才看得到）。
   等於模擬「每 SUB_INTERVAL 掃描一次、掃到就下單」。實盤掃得更快的話，進場會更早一點。
   出場（止盈止損）也在小K上逐根判斷，同根雙觸再用更小的K判先後。
 
 SUB_INTERVAL 的取捨（派網每個週期只保留約 10,000 根）：
   "5M"  → 進場時點最精確（每 5 分鐘掃一次），但只有約 33 天歷史 —— 只裝得下一種行情
   "15M" → 每 15 分鐘掃一次，約 100 天歷史，能跨過好幾輪行情（預設）
-  "30M" → 每 30 分鐘掃一次，約 200 天
+  "30M" → 每 30 分鐘掃一次，約 200 天。看不到 15 分窗口，要用得先把 EARLY_VOL_RULES 的 15 分分支拿掉
   "60M" → 不做盤中檢查，約 410 天。只有 ① 的變體本來就在整點收盤進場，用 60M 結果不失真，
-          而且能跨過一年多的行情，是驗證「只有 ①」最好的設定。
+          而且能跨過一年多的行情，是驗證「只有 ①」最好的設定（要先把 EARLY_VOL_RULES 設成 ()，
+          60M 看不到任何限時分支的窗口）。
           出場用 1 小時K；同根雙觸依 5M→15M→30M 判先後，超過約 200 天的舊資料無小K可判 → 保守計止損。
           （①+③ 用 60M 會變成等整點收盤才判斷過前高，進場比實盤晚，不建議）
   建議兩個都跑：15M 看策略在不同行情下是否成立，5M 看掃描頻率對結果影響多大。
@@ -63,23 +74,27 @@ import pionex_backtest as pb
 
 # ============================== 進場條件 ==============================
 # pionex_dryrun.py 的策略5 帳本整份取用這個 S5（以及下方 CONFIG 的止盈止損、手續費、出場模式）。
-# dry run 只實作 v2 組合；把開關切到 dry run 沒實作的變體，dry run 會在開頭停下並說明是哪個鍵
-# （見 pionex_dryrun.check_s5_variant()），要改變體得先改 pionex_dryrun.s5_indicators()。
+# dry run 只實作 v3 組合（①②③ 全開、HH_MODE="price"、不加過濾）；把開關切到 dry run 沒實作的變體，
+# dry run 會在開頭停下並說明是哪個鍵（見 pionex_dryrun.check_s5_variant()），
+# 要改變體得先改 pionex_dryrun.s5_indicators()。門檻數值與限時分支可以直接改，dry run 會跟著變。
 S5 = {
-    "MIN_RISE_FROM_LOW": 0.06,     # ① 前一根：收盤 ÷ 最低 − 1 下限
-    "MIN_VOL_MULT": 1.0,           # ②A 當根累計量 ÷ 前一根量 下限；1.0 = 持平（v2）；原版 2.0 = 多一倍以上
-    "FAST_VOL_MULT": None,         # ②B 當根累計量 ÷ 前一根量 下限；1.0 = 持平（None = 關閉分支 B；v2 關閉，原版 1.0）
-    "FAST_WINDOW_MIN": 30,         # ②B 必須在開盤幾分鐘內達成
+    "MIN_RISE_FROM_OPEN": 0.06,    # ① 前一根：收盤 ÷ 開盤 − 1 下限（v2 的 MIN_RISE_FROM_LOW 是 收盤 ÷ 最低，已停用）
+    "MIN_VOL_MULT": 2.0,           # ②A 本小時累計量 ÷ 前一根量 下限，不限時；2.0 = 多一倍（上一根 10 → 這根 ≥ 20）
+    # ② 限時分支：每個 (N 分鐘, k 倍) = 開盤 N 分鐘內（小K收盤分鐘 ≤ N）累計量曾 ≥ k × 前一根量，
+    #    成立後本小時剩下的時間都算（黏著）。N 為 1～60 的整數，k > 0；() = 關閉，只剩 A。
+    #    預設 B = (30, 1.0) 30 分內追平、C = (15, 0.5) 15 分內達一半。要增減分支只改這一行。
+    #    回測的 SUB_INTERVAL 必須整除每個 N（見檔頭），dry run 用 1 分K，1～60 都看得到。
+    "EARLY_VOL_RULES": ((30, 1.0), (15, 0.5)),
     "REQUIRE_VOL_BURST": True,     # ② 爆量開關；False = 不看量（變體，見檔頭）
     "REQUIRE_HIGHER_HIGH": True,   # ③ 過前高；②③ 都關 = 只有 ①，前根收盤即進場
-    "HH_MODE": "price",            # ③ 怎麼算過前高："price" = 現價（小K收盤）> 前高（v2，和群組 99.6% 吻合）；
-                                   #                 "high" = 當根曾經碰過前高之上（原版）
+    "HH_MODE": "price",            # ③ 怎麼算過前高："price" = 現價（小K收盤）> 前高（v2 規則下和群組 99.6% 吻合）；
+                                   #                 "high" = 當根曾經碰過前高之上（最早的原版）
     "MIN_ABOVE_PH": 0.0,           # ③ 用 "price" 時，現價須高於前高至少此比例（0.01 = 1%）
     # ---- 以下預設關閉（None = 不限），想加過濾再開 ----
     "MIN_TURN24H": None,           # 近24h成交額下限（USDT），例 20_000
     "MAX_TURN24H": None,           # 近24h成交額上限，例 500_000
     "MAX_PRICE": None,             # 價格上限
-    # 出場後冷卻幾小時。2026-09-24 使用者決定以 dry run 為準（群組校準版），由 1.0 改為 0：
+    # 出場後冷卻幾小時。2026-09-24 使用者決定以 dry run 為準（當時的 v2 群組校準版），由 1.0 改為 0，v3 沿用：
     # 0 代表「出場的下一根 K 棒起可再進場」（main() 以 max(1, round(COOLDOWN_HOURS × H())) 換算，
     # 0 → 1 根）；同一小時仍最多進場一次（first_per_hour）。
     # pionex_dryrun.py 的策略5 直接取用這份 S5（單一來源），改這裡 dry run 會跟著變。
@@ -131,13 +146,76 @@ N_BLOCKS = 6
 VERDICT_MIN_TRADES = 30
 VERDICT_MIN_DAYS = 8
 
-DIAG = [("① 前根收盤比最低", "sig_rise", 13, "0.00%"), ("前根漲幅(收對收)", "prev_ret", 13, "0.00%"),
-("② 爆量分支", "branch", 10, "0"), ("② 觸發時量倍數", "volx", 12, "0.00"), ("③ 觸發時高點超過前高", "hh_pct", 16, "0.00%"),
+DIAG = [("① 前根收盤比開盤", "sig_rise", 13, "0.00%"), ("前根漲幅(收對收)", "prev_ret", 13, "0.00%"),
+("② 爆量分支", "branch", 16, "@"), ("② 觸發時量倍數", "volx", 12, "0.00"), ("③ 觸發時高點超過前高", "hh_pct", 16, "0.00%"),
         ("進場價vs前高", "entry_vs_ph", 12, "0.00%"), ("觸發於第幾分鐘", "minute", 12, "0"),
         ("MA20乖離", "madev", 10, "0.00%"), ("RSI(1h)", "rsi", 9, "0.0"),
         ("ATR%(1h)", "atr1h", 10, "0.00%"), ("24h成交額", "turn", 13, "#,##0")]
 TRIG = [k for _, k, _, _ in DIAG]
-BRANCH_LABEL = {1: "A 量翻倍", 2: "B 快速持平+過前高", 3: "A+B"}
+
+# 已移除的舊鍵：留在 S5 裡不會有任何作用，所以回測 check_rules() 與 dry run check_s5_variant() 都會擋下
+LEGACY_KEYS = {"MIN_RISE_FROM_LOW": "改用 MIN_RISE_FROM_OPEN（① 已改成 收盤 ÷ 開盤）",
+               "FAST_VOL_MULT": "改用 EARLY_VOL_RULES", "FAST_WINDOW_MIN": "改用 EARLY_VOL_RULES"}
+
+
+class S5RuleError(ValueError):
+    """S5 的規則設定有誤，或回測的小K週期看不到限時分支的窗口邊界（見 check_rules()）。"""
+
+
+def early_rules_problems(rules):
+    """EARLY_VOL_RULES 的格式檢查，回傳問題清單（空 = 沒問題）。
+       必須是序列（tuple / list），每個元素是 (1～60 的整數分鐘, 正數倍數)；空序列 = 只剩分支 A。
+       pionex_dryrun.check_s5_variant() 也用這個函式，兩邊的規則一致。"""
+    if not isinstance(rules, (tuple, list)):
+        return [f"EARLY_VOL_RULES 必須是 (分鐘, 倍數) 的序列（tuple 或 list），目前是 {rules!r}"]
+    out = []
+    for i, r in enumerate(rules):
+        if not isinstance(r, (tuple, list)) or len(r) != 2:
+            out.append(f"EARLY_VOL_RULES[{i}] = {r!r}：每個分支必須是 (分鐘, 倍數)")
+            continue
+        n, k = r
+        if isinstance(n, bool) or not isinstance(n, (int, np.integer)) or not 1 <= n <= 60:
+            out.append(f"EARLY_VOL_RULES[{i}] = {r!r}：分鐘必須是 1～60 的整數")
+        if (isinstance(k, bool) or not isinstance(k, (int, float, np.integer, np.floating))
+                or not np.isfinite(k) or k <= 0):
+            out.append(f"EARLY_VOL_RULES[{i}] = {r!r}：倍數必須是大於 0 的數字")
+    return out
+
+
+def check_rules(interval=None):
+    """回測 main() 開頭呼叫：規則格式、舊鍵、以及小K週期看不看得到每個限時分支的窗口邊界。
+       限時分支的 N 必須是小K分鐘數的整數倍，否則「第 N 分鐘」落在某根小K中間，
+       只能用下一根收盤的累計量去判斷，會靜默算錯（例：30M 看不到 15 分、60M 看不到 30 分）。"""
+    interval = interval or CONFIG["INTERVAL"]
+    bad = [f"  pionex_strategy5.S5[{k!r}] 是已移除的舊鍵，不會有任何作用：{why}，並刪除這個鍵"
+           for k, why in LEGACY_KEYS.items() if k in S5]
+    if "EARLY_VOL_RULES" not in S5:
+        bad.append("  pionex_strategy5.S5['EARLY_VOL_RULES'] 未設定（() = 關閉限時分支，只剩 A）")
+    else:
+        probs = early_rules_problems(S5["EARLY_VOL_RULES"])
+        bad += [f"  {p}" for p in probs]
+        step = pb.INTERVAL_MS[interval] // 60_000
+        if not probs:
+            for i, (n, k) in enumerate(S5["EARLY_VOL_RULES"]):
+                if n % step:
+                    bad.append(f"  限時分支 EARLY_VOL_RULES[{i}] = ({n}, {k:g})（開盤 {n} 分內量 ≥ {k:g} 倍前根）："
+                               f"小K週期 {interval} 每根 {step} 分鐘，看不到第 {n} 分鐘的邊界")
+    if bad:
+        raise S5RuleError("策略5 規則設定有誤，回測停止：\n" + "\n".join(bad) + "\n"
+                          "限時分支的分鐘數必須是 SUB_INTERVAL 分鐘數的整數倍（5M、15M 看得到 15 與 30 分；"
+                          "30M 看不到 15 分；60M 都看不到）。請改用 5M / 15M，或把看不到的分支從 "
+                          "EARLY_VOL_RULES 拿掉（跑「只有 ①」的 60M 變體時設成 ()）。")
+
+
+def branch_label(code, rules=None):
+    """② 爆量分支的文字標籤，由分支參數產生（不寫死）：code 的 bit0 = A，bit(i+1) = EARLY_VOL_RULES[i]。
+       例：A → "2倍"、B → "30分1倍"、C → "15分0.5倍"、B+C → "30分1倍+15分0.5倍"；0 → "-"。
+       rules 預設為本模組的 S5；pionex_dryrun.py 傳入它自己的 S5_RULE。"""
+    rules = S5 if rules is None else rules
+    code = int(code)
+    names = [f"{rules['MIN_VOL_MULT']:g}倍"] + [f"{n}分{k:g}倍" for n, k in rules["EARLY_VOL_RULES"]]
+    got = [nm for i, nm in enumerate(names) if code >> i & 1]
+    return "+".join(got) if got else "-"
 
 
 def H():
@@ -153,18 +231,21 @@ def rsi(c, n=14):
 
 
 def hour_context(df):
-    """在小K上附加：所屬小時、前一小時的 OHLCV、本小時到目前為止的累計量與最高價。"""
+    """在小K上附加：所屬小時、前一小時的 OHLCV、本小時開盤價、本小時到目前為止的累計量與最高價。
+       開盤價 = 該小時第一根小K 的 open。只在該小時資料完整時才會被採用（前一小時看 ph_n、
+       只有 ① 的變體看 n_in_hour），所以資料開頭那個不完整的小時不會拿錯開盤價。"""
     t = df["time"].to_numpy()
     hid = t // HOUR_MS
     g = df.groupby(hid, sort=True)
-    hr = pd.DataFrame({"h": g["high"].max(), "l": g["low"].min(), "c": g["close"].last(),
-                       "v": g["volume"].sum(), "n": g.size()})
+    hr = pd.DataFrame({"o": g["open"].first(), "h": g["high"].max(), "l": g["low"].min(),
+                       "c": g["close"].last(), "v": g["volume"].sum(), "n": g.size()})
     prev = hr.reindex(hr.index - 1)              # 前一小時（必須剛好是 hid-1）
     prev.index = hr.index
     pprev = hr.reindex(hr.index - 2)
     pprev.index = hr.index
     m = lambda s: pd.Series(hid).map(s).to_numpy()
     df["hid"] = hid
+    df["h_open"], df["ph_open"] = m(hr["o"]), m(prev["o"])
     df["ph_high"], df["ph_low"], df["ph_close"] = m(prev["h"]), m(prev["l"]), m(prev["c"])
     df["ph_vol"], df["ph_n"] = m(prev["v"]), m(prev["n"])
     df["pph_close"] = m(pprev["c"])
@@ -189,9 +270,9 @@ def only_rule1():
 
 
 def close_rise_mask(df):
-    """只有 ① 的進場點：一小時的最後一根小K（該小時資料完整），且這一小時 收盤 ÷ 最低 − 1 ≥ 門檻。"""
+    """只有 ① 的進場點：一小時的最後一根小K（該小時資料完整），且這一小時 收盤 ÷ 開盤 − 1 ≥ 門檻。"""
     done = df["last_in_hour"].to_numpy() & (df["n_in_hour"].to_numpy() == H())
-    return done & (df["self_rise"] >= S5["MIN_RISE_FROM_LOW"]).fillna(False).to_numpy()
+    return done & (df["self_rise"] >= S5["MIN_RISE_FROM_OPEN"]).fillna(False).to_numpy()
 
 
 def c3_mask(df):
@@ -202,19 +283,33 @@ def c3_mask(df):
 
 
 def burst_branches(df):
-    """② 爆量的兩個分支（布林陣列）。
-       A：當根累計量 ≥ MIN_VOL_MULT × 前根量
-       B：開盤 FAST_WINDOW_MIN 分鐘內、累計量 ≥ FAST_VOL_MULT × 前根量、且現價（小K收盤）> 前根最高價"""
+    """② 爆量的各分支（布林陣列），回傳 (A, [限時分支…])，限時分支順序同 EARLY_VOL_RULES。
+       A：本小時到目前為止的累計量 ≥ MIN_VOL_MULT × 前根量（不限時）
+       限時分支 (N, k)：小K收盤分鐘 ≤ N 且累計量 ≥ k × 前根量「第一次成立的那根起」，
+       本小時剩下的小K都算成立（黏著）。純粹是量條件，突破前高是 ③ 的事。"""
     volx = df["volx"].to_numpy(float)
+    minute = df["minute"].to_numpy()
+    hid = df["hid"].to_numpy()
     with np.errstate(invalid="ignore"):
         a = volx >= S5["MIN_VOL_MULT"]
-        if S5.get("FAST_VOL_MULT") is None:
-            b = np.zeros(len(df), dtype=bool)
-        else:
-            b = ((df["minute"].to_numpy() <= S5["FAST_WINDOW_MIN"])
-                 & (volx >= S5["FAST_VOL_MULT"])
-                 & (df["close"].to_numpy(float) > df["ph_high"].to_numpy(float)))
-    return a, b
+        early = []
+        for n, k in S5["EARLY_VOL_RULES"]:
+            hit = (minute <= n) & (volx >= k)
+            early.append(pd.Series(hit.astype(np.int64)).groupby(hid).cumsum().to_numpy() > 0)
+    return a, early
+
+
+def branch_code(a, early):
+    """把 burst_branches() 的結果編成整數：bit0 = A，bit(i+1) = 第 i 個限時分支（標籤見 branch_label()）。"""
+    code = a.astype(np.int64)
+    for i, e in enumerate(early):
+        code |= e.astype(np.int64) << (i + 1)
+    return code
+
+
+def any_early(early, n):
+    """任一限時分支成立（沒有限時分支 → 全 False）。"""
+    return np.logical_or.reduce(early) if early else np.zeros(n, dtype=bool)
 
 
 def add_indicators(df, btc=None):
@@ -248,26 +343,26 @@ def add_indicators(df, btc=None):
 
     # ---- 策略5 條件（小時尺度，盤中逐根小K檢查）----
     df = hour_context(df)
-    df["rise_low"] = df["ph_close"] / df["ph_low"] - 1                    # ①
+    df["rise_open"] = df["ph_close"] / df["ph_open"] - 1                  # ① 前一小時 收盤 ÷ 開盤 − 1
     df["prev_ret"] = df["ph_close"] / df["pph_close"] - 1                 # 診斷用
     df["volx"] = df["cum_vol"] / df["ph_vol"].replace(0, np.nan)          # ②
     df["hh_pct"] = df["cum_high"] / df["ph_high"] - 1                     # ③（>0 = 已過前高）
     df["entry_vs_ph"] = c / df["ph_high"] - 1                             # 進場價 vs 前高
     df["minute"] = ((df["time"] % HOUR_MS) + pb.bar_ms()) // 60_000       # 這根小K收盤時是該小時第幾分鐘
-    df["self_rise"] = c / df["cum_low"] - 1                               # 本小時到目前為止：收盤 ÷ 最低 − 1
+    df["self_rise"] = c / df["h_open"] - 1                                # 本小時到目前為止：收盤 ÷ 本小時開盤 − 1
     complete = (df["ph_n"] == H()).fillna(False)                          # 前一小時資料要完整才算數
 
-    bA, bB = burst_branches(df)
-    df["branch"] = np.where(bA, 1, 0) + np.where(bB, 2, 0)                # 1=A、2=B、3=兩個都成立
+    bA, bE = burst_branches(df)
+    df["branch"] = branch_code(bA, bE)                                    # 成立的分支，標籤見 branch_label()
     if only_rule1():
         ok = pd.Series(close_rise_mask(df), index=df.index)
         df["sig_rise"] = df["self_rise"]
         df["branch"] = 0
     else:
-        df["sig_rise"] = df["rise_low"]
-        ok = complete & (df["rise_low"] >= S5["MIN_RISE_FROM_LOW"])
+        df["sig_rise"] = df["rise_open"]
+        ok = complete & (df["rise_open"] >= S5["MIN_RISE_FROM_OPEN"])
         if S5["REQUIRE_VOL_BURST"]:
-            ok &= bA | bB
+            ok &= bA | any_early(bE, len(df))
         else:
             df["branch"] = 0
         if S5["REQUIRE_HIGHER_HIGH"]:
@@ -312,15 +407,15 @@ def short_outcomes(df, tp, sl, fwd, chunk=2000):
 CONDITION_NAMES = [
     "全部K棒（隨機做空）",
     "① 只看前根（前根收盤當下進場）",
-    "②A 當根量 ≥ 倍數",
-    "②B 開盤快速量持平 + 現價 > 前高",
-    "② 爆量（A 或 B）",
+    "②A 當根量 ≥ 倍數（不限時）",
+    "②限時 開盤 N 分內量達門檻（任一限時分支，黏著）",
+    "② 爆量（A 或任一限時分支）",
     "③ 過前高（依 HH_MODE）",
     "①+②", "①+③", "②+③",
-    "①+②A+③（舊版：只有量翻倍）",
-    "①+②B（只靠新分支）",
+    "①+②A+③（只靠 A：不限時量倍數）",
+    "①+②限時+③（只靠限時分支）",
     "①+②+③（策略5，盤中觸發即進場）",
-    "新分支額外帶來的：舊版該小時不會觸發",
+    "限時分支額外帶來的：只靠 A 該小時不會觸發",
     "對照：策略5 條件，但等整點收盤才進場",
     "延伸：觸發時價格仍在前高之上",
     "延伸：觸發時價格已跌回前高之下",
@@ -342,9 +437,9 @@ def entry_points(df):
        只含 ① 時，它在該小時一開始就已知，所以進場點是該小時第一根小K。"""
     hid = df["hid"].to_numpy()
     complete = (df["ph_n"] == H()).fillna(False).to_numpy()
-    c1 = complete & (df["rise_low"] >= S5["MIN_RISE_FROM_LOW"]).fillna(False).to_numpy()
-    bA, bB = burst_branches(df)
-    c2a, c2b = complete & bA, complete & bB
+    c1 = complete & (df["rise_open"] >= S5["MIN_RISE_FROM_OPEN"]).fillna(False).to_numpy()
+    bA, bE = burst_branches(df)
+    c2a, c2b = complete & bA, complete & any_early(bE, len(df))
     c2 = c2a | c2b
     c3 = complete & c3_mask(df)
     fp = lambda mk: first_per_hour(mk, hid)
@@ -437,14 +532,15 @@ def param_rows(rows):
     head[3] = ("止盈", C["TAKE_PROFIT"], "做空：價格下跌此比例")
     head[4] = ("止損", C["STOP_LOSS"], "做空：價格上漲此比例")
     opt = lambda k: S5[k] if S5[k] is not None else "不限"
-    mid = [                                            # 8 列，讓「盈虧平衡勝率」落在第 16 列（資金模擬頁會引用）
+    early = early_rules_text()
+    mid = [                                            # 8 列，讓「盈虧平衡勝率」落在第 16 列（總覽頁 I5:I7 引用 參數!$B$16）
         ("策略", "策略5 — 爆量過高（只做空）", variant_name()),
-        ("① 前根收盤比最低點漲", S5["MIN_RISE_FROM_LOW"], "前一根 1h K：收盤 ÷ 最低 − 1"),
-        ("②A 當根量 ÷ 前一根量", S5["MIN_VOL_MULT"] if S5["REQUIRE_VOL_BURST"] else "關閉（不看量）",
-         "當根到目前為止的累計量；2.0 = 多一倍以上（A、B 符合一個即可）"),
-        ("②B 開盤快速量持平", "關閉" if S5.get("FAST_VOL_MULT") is None or not S5["REQUIRE_VOL_BURST"] else
-         f'{S5["FAST_WINDOW_MIN"]} 分鐘內量 ≥ {S5["FAST_VOL_MULT"]:g} 倍前根，且現價 > 前高',
-         f"現價 = 那根 {pb.interval_label()} 的收盤價"),
+        ("① 前根收盤比開盤漲", S5["MIN_RISE_FROM_OPEN"],
+         "只有 ①：該根 1h K 收盤 ÷ 開盤 − 1" if only_rule1() else "前一根 1h K：收盤 ÷ 開盤 − 1"),
+        ("②A 當根量 ÷ 前一根量", f'{S5["MIN_VOL_MULT"]:g} 倍' if S5["REQUIRE_VOL_BURST"] else "關閉（不看量）",
+         "本小時到目前為止的累計量，不限時；A 與限時分支符合任一即可"),
+        ("② 限時分支", early if early and S5["REQUIRE_VOL_BURST"] else "關閉",
+         f"開盤 N 分內（{pb.interval_label()}小K收盤 ≤ 第 N 分）累計量曾達門檻，成立後本小時都算（黏著）"),
         ("③ 過前高", ("否" if not S5["REQUIRE_HIGHER_HIGH"] else
                      f'現價 > 前高 × (1+{S5.get("MIN_ABOVE_PH", 0):g})' if S5.get("HH_MODE") == "price"
                      else "當根最高價 > 前高"),
@@ -462,26 +558,38 @@ def param_rows(rows):
     return head + mid + be + tail
 
 
+def early_rules_text():
+    """限時分支的人看得懂的寫法，例如「30 分內 ≥ 1 倍、15 分內 ≥ 0.5 倍」；沒有分支 → ""。"""
+    return "、".join(f"{n} 分內 ≥ {k:g} 倍" for n, k in S5["EARLY_VOL_RULES"])
+
+
+# v3 = 2026-09-24 使用者指定的預設組合；variant_name() 用來判斷目前是不是 v3（不是就標「自訂」）
+V3 = {"MIN_RISE_FROM_OPEN": 0.06, "MIN_VOL_MULT": 2.0, "EARLY_VOL_RULES": ((30, 1.0), (15, 0.5)),
+      "REQUIRE_VOL_BURST": True, "REQUIRE_HIGHER_HIGH": True, "HH_MODE": "price", "MIN_ABOVE_PH": 0.0}
+
+
 def variant_name():
     if only_rule1():
-        return "變體：只有 ①（前根收盤即進場）"
+        return f"變體：只有 ①（收盤比開盤 {S5['MIN_RISE_FROM_OPEN']:.0%}，1h 收盤即進場）"
     hh = ("現價過前高" + (f" {S5.get('MIN_ABOVE_PH', 0):.0%}" if S5.get("MIN_ABOVE_PH") else "")
           if S5.get("HH_MODE") == "price" else "最高價過前高")
-    parts = [f"① {S5['MIN_RISE_FROM_LOW']:.0%}"]
+    parts = [f"① 收盤比開盤 {S5['MIN_RISE_FROM_OPEN']:.0%}"]
     if S5["REQUIRE_VOL_BURST"]:
-        parts.append(f"② 量 ≥ {S5['MIN_VOL_MULT']:g} 倍" + ("＋快速持平分支" if S5.get("FAST_VOL_MULT") else ""))
+        parts.append(" 或 ".join([f"② 量 ≥ {S5['MIN_VOL_MULT']:g} 倍"] +
+                                 [f"{n} 分內 ≥ {k:g} 倍" for n, k in S5["EARLY_VOL_RULES"]]))
     if S5["REQUIRE_HIGHER_HIGH"]:
         parts.append(f"③ {hh}")
-    v2 = (S5["REQUIRE_VOL_BURST"] and S5["REQUIRE_HIGHER_HIGH"] and S5["MIN_VOL_MULT"] == 1.0
-          and not S5.get("FAST_VOL_MULT") and S5.get("HH_MODE") == "price" and not S5.get("MIN_ABOVE_PH"))
-    return ("v2：" if v2 else "自訂：") + "　".join(parts)
+    same = lambda k, v: (tuple(map(tuple, S5.get(k) or ())) == v if k == "EARLY_VOL_RULES"
+                         else S5.get(k) == v)
+    v3 = all(same(k, v) for k, v in V3.items())
+    return ("v3：" if v3 else "自訂：") + "　".join(parts)
 
 
 def diag_columns():
     def values(tr):
         v = [tr.get(k) for k in TRIG]
         b = tr.get("branch")
-        v[TRIG.index("branch")] = BRANCH_LABEL.get(int(b), "-") if b is not None else None
+        v[TRIG.index("branch")] = branch_label(b) if b is not None else None
         return v
     return [n for n, *_ in DIAG], [w for _, _, w, _ in DIAG], values
 
@@ -638,7 +746,7 @@ def validation_sheets(trades, val, test_start, now):
         wc.append([])
         wc.append([f"粗體列 = 目前設定的版本（{variant_name()}），和實際回測是同一批訊號，只是沒有冷卻與持倉限制。"])
         wc.append(["讀法：拿掉某一條後「超額」掉很多 → 那一條在扛；拿掉後幾乎不變 → 那一條只是裝飾，可以考慮放寬換訊號量。"])
-        wc.append(["新分支值不值得加：看「舊版」與「策略5」兩列的勝率差，以及「新分支額外帶來的」那列本身勝率是否過盈虧平衡。"])
+        wc.append(["限時分支值不值得加：看「只靠 A」與「策略5」兩列的勝率差，以及「限時分支額外帶來的」那列本身勝率是否過盈虧平衡。"])
         wc.append(["「對照」列 = 同一批小時、同樣三條件，但等到整點收盤才進場。和上一列相比，就是盤中觸發進場的價值。"])
         wc.append(["「延伸」兩列不屬於策略5 條件，只是觀察：觸發當下價格是否還在前高之上，勝率差多少。"])
         for row in wc.iter_rows(min_row=2):
@@ -651,6 +759,7 @@ def validation_sheets(trades, val, test_start, now):
 
 # ============================== 主程式 ==============================
 def main():
+    check_rules()               # 規則格式與小K週期檢查，必須在任何網路請求之前
     pb.CONFIG.update(CONFIG)
     pb.CONFIG["COOLDOWN_BARS"] = max(1, round(S5["COOLDOWN_HOURS"] * H()))
     pb.PARAM_ROWS_HOOK, pb.DIAG_COLUMNS_HOOK = param_rows, diag_columns
@@ -667,11 +776,10 @@ def main():
     period = f"{pb.to_dt(test_start):%Y-%m-%d %H:%M} ~ {pb.to_dt(now):%Y-%m-%d %H:%M}"
     print(f"策略5 爆量過高（只做空）　條件：1小時K　進出場：{pb.interval_label()}　區間：{period}")
     print(f"版本：{variant_name()}")
-    fb = ("" if S5.get("FAST_VOL_MULT") is None or not S5["REQUIRE_VOL_BURST"] else
-          f" 或 {S5['FAST_WINDOW_MIN']}分內量 ≥ {S5['FAST_VOL_MULT']:g} 倍且現價 > 前高")
-    conds = [f"① 前根收盤比最低 ≥ {S5['MIN_RISE_FROM_LOW']:.0%}"]
+    early = early_rules_text()
+    conds = [f"① 前根收盤比開盤 ≥ {S5['MIN_RISE_FROM_OPEN']:.0%}"]
     if S5["REQUIRE_VOL_BURST"]:
-        conds.append(f"② 當根量 ≥ {S5['MIN_VOL_MULT']:g} 倍前根{fb}")
+        conds.append(f"② 當根量 ≥ {S5['MIN_VOL_MULT']:g} 倍前根" + (f" 或 {early}（黏著）" if early else ""))
     if S5["REQUIRE_HIGHER_HIGH"]:
         conds.append("③ 現價 > 前高" if S5.get("HH_MODE") == "price" else "③ 當根高點 > 前高")
     how = "該根收盤當下進場" if only_rule1() else "第一次同時成立即進場"
@@ -734,11 +842,10 @@ def main():
         conservative = sum("保守計止損" in (t.get("note") or "") for t in closed)
         print(f"已平倉 {len(closed)}，止盈 {wins}，勝率 {wr:.1%}（盈虧平衡 {be:.2%}），"
               f"每筆 EV {(wr * tp - (1 - wr) * sl - 2 * fee):+.2%}")
-        for code, lab in BRANCH_LABEL.items():
-            sub = [t for t in closed if t.get("branch") == code]
-            if sub:
-                w_ = sum(t["result"] == "止盈" for t in sub) / len(sub)
-                print(f"  爆量分支 {lab}：{len(sub)} 筆，勝率 {w_:.1%}")
+        for code in sorted({int(t["branch"]) for t in closed if t.get("branch")}):
+            sub = [t for t in closed if t.get("branch") and int(t["branch"]) == code]
+            w_ = sum(t["result"] == "止盈" for t in sub) / len(sub)
+            print(f"  爆量分支 {branch_label(code)}：{len(sub)} 筆，勝率 {w_:.1%}")
         if conservative:
             print(f"  其中 {conservative} 筆是同根雙觸且更小週期已超出保留期限 → 保守計止損"
                   f"（真實勝率可能略高）")

@@ -12,7 +12,7 @@
 | `rev` | 策略2 大戶提款 正式版 | 72 筆、勝率 70.8% |
 | `rev_wide` | 策略2 放寬版（啟動前漲幅不限） | 179 筆、勝率 68.7% |
 | `s4` | 策略4 爆量竭盡（**5分K**，只做空） | 33 天（2026-08-15~09-17）189 筆已平倉、勝率 68.3%（TP4%/SL5%，即目前生效參數：`MIN_RET_2H=0.14`／`MAX_CLOSE_POS=0.60`，見 `pionex_tpsl_sweep.py` 三組實跑驗證） |
-| `s5` | 策略5 群組訊號複製（**1分K 重播**，只做空） | 目標是**複製群組機器人的訊號與出場**，不是追求勝率。規則依 2026-09-24 用群組 1283 筆訊號校準；其中 46 筆以派網 1 分K 重算，結果 100% 一致。成效以 `pionex_s5_compare.py` 與群組逐筆比對為準（見下方「策略5」一節） |
+| `s5` | 策略5 群組訊號複製（**1分K 重播**，只做空） | 目標是**複製群組機器人的訊號與出場**，不是追求勝率。目前是 2026-09-24 使用者指定的 v3 規則，**尚未用群組訊號校準**（先前「群組 1283 筆校準、46 筆 1 分K 重算 100% 一致」是舊規則 v2 的結果，不適用 v3）。成效以 `pionex_s5_compare.py` 與群組逐筆比對為準（見下方「策略5」一節） |
 
 **`main`（策略1延續）已於 2026-09-17 退役**：用 22.6 萬筆標註資料測過核心假設不成立
 （1h動能 + MA20 + OBV 這組訊號對觸發順序不帶資訊，先前看到的高勝率完全由市場漂移解釋），
@@ -44,10 +44,18 @@
 
 參數只有一份，在 `pionex_strategy5.py`：dry run 的 `S5_RULE` 就是整份 `pionex_strategy5.S5`，
 止盈、止損、出場模式、最長持倉、手續費取 `pionex_strategy5.CONFIG`（比照策略4 取 `pionex_strategy4.S4`）。
-條件以 1 小時 K（整點切）為單位，進出場用 1 分 K：
+條件以 1 小時 K（整點切）為單位，進出場用 1 分 K（規則 v3，2026-09-24 起）：
 
-1. 前一根 1h K：收盤 ÷ 最低 − 1 ≥ 6%（`MIN_RISE_FROM_LOW`）
-2. 本小時到目前為止的累計量 ≥ 前一根 1h K 的量（`MIN_VOL_MULT = 1.0`，即持平）
+1. 前一根 1h K：收盤 ÷ **開盤** − 1 ≥ 6%（`MIN_RISE_FROM_OPEN`）
+2. 爆量，下列三個分支**符合任一個**即可：
+   - A：本小時到目前為止的累計量 ≥ 2 × 前一根 1h K 的量，不限時（上一根 10，這根要 ≥ 20；`MIN_VOL_MULT = 2.0`）
+   - B：開盤 **30 分鐘內**累計量曾 ≥ 1 × 前一根的量（追平）
+   - C：開盤 **15 分鐘內**累計量曾 ≥ 0.5 × 前一根的量
+
+   B、C 設在 `EARLY_VOL_RULES = ((30, 1.0), (15, 0.5))`，每個分支是 (N 分鐘, k 倍)，要增減分支只改這一處。
+   「N 分鐘內」以 1 分K 收盤時刻 ≤ 第 N 分鐘判斷（含第 N 分鐘收盤那根）。
+   **B、C 是「黏著」的**：一旦成立，這一整個小時的爆量都算成立，之後在突破前高那一刻進場。
+   例（使用者確認）：第 20 分鐘量就追平前一根、第 40 分鐘價格才突破前高（這時量還沒到 2 倍）→ **第 40 分鐘進場**。
 3. 現價（這根 1 分K 收盤）> 前一根 1h K 最高價（`MIN_ABOVE_PH = 0.0`）
 
 三條件**第一次同時成立**的那根 1 分K 收盤進場；同一個幣每小時最多一次、持倉中不重複進場。
@@ -56,6 +64,11 @@ dry run 與回測用同一個換算式 `max(1, round(COOLDOWN_HOURS × 每小時
 等於重播一個「每分鐘掃描一次」的機器人。因為是拿已收盤的 1 分K 事後重播，GitHub 排程延遲或跳過
 都不影響結果，下次執行會補處理。
 
+**2026-09-24 規則修正，`s5` 帳本因此重置**（參數指紋改變 → 自動清空，依 `BOOK_START_FROM["s5"]` 以新規則回補，
+最多往前 `S5_MAX_BACKFILL_HOURS` = 24 小時），
+重置前的紀錄屬舊規則 v2（① 收盤 ÷ 最低、② 只要本小時量追平前根、不限時）。
+v2 當時的校準數字（群組 1283 筆訊號、其中 46 筆以 1 分K 重算 100% 一致）只適用 v2；v3 **尚未校準**。
+
 - **1 分 K 只保留最近約 7 天**。策略5 有自己的起算時間 `BOOK_START_FROM["s5"]`，且首次回補最多
   `S5_MAX_BACKFILL_HOURS`（24 小時），避免第一次執行就打大量 API。排程若中斷超過約 7 天，
   那段期間的策略5 紀錄會補不回來
@@ -63,14 +76,20 @@ dry run 與回測用同一個換算式 `max(1, round(COOLDOWN_HOURS × 每小時
 - 不另外抽同期基準：1 分K 前視 48 根只有 48 分鐘，大部分樣本不會觸發止盈止損。止盈止損與 60M 帳本
   相同（3%／5%），直接共用 60M 那一桶（若在 `pionex_strategy5.py` 把止盈止損改成 60M 帳本沒有的組合，
   就沒有對應的基準可借，SUMMARY 會顯示「同期基準樣本不足」）
-- 每次執行會另外輸出 `output/s5_signals.csv`，格式與群組的 `signals.csv` 相同，給比對工具使用
+- 每次執行會另外輸出 `output/s5_signals.csv`，格式與群組的 `signals.csv` 相同，給比對工具使用；
+  另附診斷欄，其中 **「② 爆量分支」** 列出進場那一刻成立的**所有**分支（例如 `2倍`、`30分1倍`、`15分0.5倍`、
+  `30分1倍+15分0.5倍`，標籤由分支參數產生），方便和群組對照。`dryrun_s5.xlsx` 的交易明細也有同一欄
 - **要調策略5 請改 `pionex_strategy5.py`**，dry run 會跟著變。注意改 `S5` 的**任何一個鍵**（包括 dry run
-  用不到的，例如 `FAST_WINDOW_MIN`）或上述五個出場／費用參數，`s5` 的參數指紋都會變，`s5` 帳本會自動重置
+  用不到的）或上述五個出場／費用參數，`s5` 的參數指紋都會變，`s5` 帳本會自動重置
   （見下方「參數版本控管」）——只是想在本機試回測參數的話，別把改動 commit 上 main。
   刻意**不**統一的只有兩邊本質不同的設定：K 棒週期（dry run 1 分K、回測預設 15 分K）、同根雙觸的判定週期、暖機根數
-- **dry run 只實作 v2 組合**（訊號邏輯在 `pionex_dryrun.py` 的 `s5_indicators()`）。回測若把 `S5` 切到 dry run
-  沒實作的變體（關掉 `REQUIRE_VOL_BURST`／`REQUIRE_HIGHER_HIGH`、`HH_MODE` 不是 `"price"`、打開 `FAST_VOL_MULT`、
-  設了 `MIN_TURN24H`／`MAX_TURN24H`／`MAX_PRICE`，或 `CONFIG["EXIT_MODE"]` 不是 `"fixed"`），dry run 會在一開始
+- 回測（`pionex_strategy5.py`）在 `SUB_INTERVAL` 的小K收盤時判斷限時分支，所以每個分支的分鐘數都必須是
+  小K分鐘數的整數倍：`5M`、`15M` 可以；`30M` 看不到 15 分、`60M` 都看不到，回測會在開頭停下並說明是哪個分支
+- **dry run 只實作 v3 組合**（訊號邏輯在 `pionex_dryrun.py` 的 `s5_indicators()`）。門檻數值與 `EARLY_VOL_RULES`
+  可以直接改；但若把 `S5` 切到 dry run 沒實作的變體（關掉 `REQUIRE_VOL_BURST`／`REQUIRE_HIGHER_HIGH`、
+  `HH_MODE` 不是 `"price"`、設了 `MIN_TURN24H`／`MAX_TURN24H`／`MAX_PRICE`、`CONFIG["EXIT_MODE"]` 不是 `"fixed"`），
+  或 `EARLY_VOL_RULES` 格式不對（每個分支須為 1～60 的整數分鐘與大於 0 的倍數），
+  或留著已移除的舊鍵（`FAST_VOL_MULT`／`FAST_WINDOW_MIN`／`MIN_RISE_FROM_LOW`），dry run 會在一開始
   （任何網路請求與狀態檔寫入之前）**整個停下**，錯誤訊息寫明是哪個鍵、目前的值、dry run 支援什麼；
   GitHub Actions 會因此失敗並寄信通知。改回來（或先改好 `s5_indicators()`）之後，下次執行會自動補處理
   漏掉的 K 棒（1 分K 保留約 7 天，停超過就補不回來）
@@ -118,7 +137,7 @@ S5_MAX_BACKFILL_HOURS = 24                     # 策略5 首次最多往前回�
 | `pionex_backtest.py` | 策略1 回測程式，dry run 直接使用裡面的指標與出場邏輯 |
 | `pionex_reversal.py` | 策略2 回測程式，同上 |
 | `pionex_strategy4.py` | 策略4 回測程式，同上 |
-| `pionex_strategy5.py` | 策略5 回測程式（小時K條件、盤中觸發，含校準用的變體開關），**也是 dry run 策略5 參數的唯一來源**（`S5` 整份，與 `CONFIG` 的止盈止損／出場模式／最長持倉／手續費）。dry run 只取它的參數，1 分K 的訊號邏輯在 `pionex_dryrun.py` 的 `s5_indicators()`（只實作 v2） |
+| `pionex_strategy5.py` | 策略5 回測程式（小時K條件、盤中觸發，含校準用的變體開關），**也是 dry run 策略5 參數的唯一來源**（`S5` 整份，與 `CONFIG` 的止盈止損／出場模式／最長持倉／手續費）。dry run 只取它的參數，1 分K 的訊號邏輯在 `pionex_dryrun.py` 的 `s5_indicators()`（只實作 v3） |
 | `pionex_s5_compare.py` | 策略5 與群組訊號的逐筆比對工具，在自己電腦上跑，需要群組的 `signals.csv` |
 | `pionex_tpsl_sweep.py` | 策略4 的止盈/止損全組合掃描工具，用「首達根數」重放所有 TP/SL 組合，找參數用，不是 dry run 的一部分 |
 | `.github/workflows/dryrun.yml` | GitHub Actions 排程設定 |
@@ -129,7 +148,7 @@ S5_MAX_BACKFILL_HOURS = 24                     # 策略5 首次最多往前回�
 | `output/dryrun_rev_wide.xlsx` | 策略2 放寬版報表 |
 | `output/dryrun_s4.xlsx` | 策略4 報表 |
 | `output/dryrun_s5.xlsx` | 策略5 報表 |
-| `output/s5_signals.csv` | 策略5 的訊號與出場，格式同群組 `signals.csv`，給 `pionex_s5_compare.py` 用 |
+| `output/s5_signals.csv` | 策略5 的訊號與出場，格式同群組 `signals.csv`，給 `pionex_s5_compare.py` 用；另附診斷欄（含「② 爆量分支」） |
 | `state/dryrun_state.json` | 持倉與交易紀錄，**不要手動修改** |
 
 ## 方法 A：GitHub Actions（免費、免主機）
