@@ -15,7 +15,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30            # 策略5 每次多抓一輪 1 分K，放寬時限
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
