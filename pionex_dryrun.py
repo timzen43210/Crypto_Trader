@@ -34,6 +34,7 @@ from openpyxl.styles import Font
 import pionex_backtest as pb
 import pionex_reversal as rv
 import pionex_strategy4 as s4
+from strategy import s4_signal
 
 # ============================== 起算時間 ==============================
 # 第一次執行時，從這個時間開始回補統計（台北時間）。設 None = 只從執行當下開始。
@@ -92,8 +93,13 @@ S2_REV = dict(
 S4_CONFIG = dict(S2_CONFIG)
 S4_CONFIG.update(
     INTERVAL="5M", MAX_PRICE=None, ATR_MIN_PCT=0, ATR_MAX_PCT=None,
-    LIQ_MIN_USD=0, LIQ_MODE="sum24", RESOLVE_INTERVALS=["1M"],
-    TAKE_PROFIT=0.04, STOP_LOSS=0.05, EXIT_MODE="fixed",   # 2026-09-17 定為 4%/5%，理由見 pionex_strategy4.py
+    LIQ_MIN_USD=0, LIQ_MODE="sum24",
+    # 出場六鍵（EXIT_MODE / TAKE_PROFIT / STOP_LOSS / MAX_HOLD_HOURS / RESOLVE_SAME_BAR_WITH_5M /
+    # RESOLVE_INTERVALS）一律取自 strategy/s4_signal.py 的 EXIT_PARAMS，與回測同一份來源；
+    # 4%/5% 的選定依據也寫在那裡。exit_params() 回傳深拷貝，RESOLVE_INTERVALS 不與來源共用物件。
+    # MAX_HOLD_HOURS / RESOLVE_SAME_BAR_WITH_5M 在 G1b 之前是從上面的 S2_CONFIG 繼承（值剛好相同），
+    # 現在明確覆寫：改策略2 的持倉時限或判定方式，不該連帶改到策略4。
+    **s4_signal.exit_params(),
 )
 S4_RULE = dict(s4.S4)          # 條件沿用 pionex_strategy4.py 的 S4
 

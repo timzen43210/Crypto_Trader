@@ -14,14 +14,16 @@
   爆量       本根量 ÷ 前 24 小時每根均量 ≥ MIN_VOL_RATIO
   竭盡       收盤位置 ≤ MAX_CLOSE_POS（1=收最高、0=收最低）
   中小盤     近 24 小時成交額 ≤ MAX_TURN24H（大幣的拉抬比較不會回吐）
-出場：做空，跌 TAKE_PROFIT 止盈 / 漲 STOP_LOSS 止損。
+出場：做空，跌 TAKE_PROFIT 止盈 / 漲 STOP_LOSS 止損（值與選定依據在 strategy/s4_signal.py 的 EXIT_PARAMS）。
 
 同時會讀 signals.csv 比對跟單群組的真實訊號（有的話），輸出「訊號比對」分頁。
 用法：與 pionex_backtest.py 放同一資料夾，python pionex_strategy4.py
 
 訊號邏輯已抽到 strategy/s4_signal.py（零相依，實盤端也 import 它），本檔只負責回測用的
 診斷欄位與 Excel 輸出；ret2h / volr / cpos / turn / signal 五欄一律由 s4_signal 產生，
-這裡不可以再抄一份公式。6 個生效參數的值與選定依據也在 s4_signal.DEFAULT_PARAMS。
+這裡不可以再抄一份公式。6 個生效參數的值與選定依據也在 s4_signal.DEFAULT_PARAMS；
+出場參數（EXIT_MODE / TAKE_PROFIT / STOP_LOSS / MAX_HOLD_HOURS / RESOLVE_SAME_BAR_WITH_5M /
+RESOLVE_INTERVALS）的值與選定依據在 s4_signal.EXIT_PARAMS（G1b），CONFIG 只從那裡取值。
 """
 import os
 import time
@@ -50,33 +52,32 @@ S4 = {
 }
 EXPERIMENTAL_KEYS = ("MIN_VOL_VS_MAX24", "MIN_SPIKES_1H", "MIN_ATR", "MIN_RSI", "MAX_PRICE")
 
+# ============================== 出場條件 ==============================
+# 6 個出場參數（EXIT_MODE / TAKE_PROFIT / STOP_LOSS / MAX_HOLD_HOURS / RESOLVE_SAME_BAR_WITH_5M /
+# RESOLVE_INTERVALS）的值與 4%/5% 的選定依據都在 strategy/s4_signal.py 的 EXIT_PARAMS，這裡不另抄數字。
+# 鍵仍要留在 CONFIG 裡：main() 與 research/v2_*.py 都是 pb.CONFIG.update(CONFIG) 之後讀 pb.CONFIG。
+# 用 exit_params() 取深拷貝：RESOLVE_INTERVALS 這個 list 不能與 s4_signal 那一份共用物件。
+_EXIT = s4_signal.exit_params()
+
 CONFIG = {
     "MARKET_TYPE": "PERP",
     # K棒週期與可回溯天數（派網每個週期只保留約 10,000 根）：
     #   5M → 33 天（預設）　15M → 100 天　30M → 200 天
-    # 換週期時 LOOKBACK_DAYS / WARMUP_BARS / RESOLVE_INTERVALS 要一起改，其餘條件都是小時尺度，不用動。
+    # 換週期時 LOOKBACK_DAYS / WARMUP_BARS 與 s4_signal.EXIT_PARAMS 的 RESOLVE_INTERVALS 要一起改，
+    # 其餘條件都是小時尺度，不用動。
     "INTERVAL": "5M",
     "LOOKBACK_DAYS": 33,
     "FREEZE_END": None,          # 例 "2026-09-16 16:25"：固定區間結尾，之後重跑完全走快取
     "WARMUP_BARS": 300,          # 需涵蓋 24 小時（5M=288 根、15M=96 根）
 
-    "EXIT_MODE": "fixed",
-    # 止盈/止損 2026-09-17 定為 4%/5%（原始 3%/5%，中途曾短暫設為 5%/5%）。
-    # 依據：5分K 33天全組合掃描（144 組，pionex_tpsl_sweep.py）+ 三組實跑驗證。
-    #   3%/5%  勝率 72.8% 每筆EV +0.72% 每天EV +4.18% 回撤 36.6% 總報酬 138%
-    #   4%/4%  勝率 63.9% 每筆EV +1.01% 每天EV +5.85% 回撤 30.9% 總報酬 193%
-    #   4%/5%  勝率 68.3% 每筆EV +1.04% 每天EV +5.97% 回撤 39.9% 總報酬 197%  ← 採用
-    # 4%/4% 與 4%/5% 在報酬與風險上統計無法區分（每筆EV P=54%；回撤按日自助法
-    # 中位 21.3% vs 23.7%，95%區間幾乎重疊，實際 30.9/39.9 的差距是順序運氣），
-    # 兩者最大併發同為 2、最長連敗同為 3，差別只在勝率，故取勝率較高的 4%/5%。
-    # 更寬的組合（如 7%/8%，每天EV +12.3%）不採用：最大併發 8 筆、最壞同時虧損
-    # -64.8% 本金，且那 8 筆是同一波行情的相關空單；縮到同樣尾部風險後每天僅 +1.56%。
-    "TAKE_PROFIT": 0.04,
-    "STOP_LOSS": 0.05,
+    # ---- 出場：值一律取自 s4_signal.EXIT_PARAMS（見上方說明）；FEE_RATE 不是出場參數，留在本檔 ----
+    "EXIT_MODE": _EXIT["EXIT_MODE"],
+    "TAKE_PROFIT": _EXIT["TAKE_PROFIT"],
+    "STOP_LOSS": _EXIT["STOP_LOSS"],
     "FEE_RATE": 0.0005,
-    "MAX_HOLD_HOURS": None,
-    "RESOLVE_SAME_BAR_WITH_5M": True,
-    "RESOLVE_INTERVALS": ["1M"],   # 同根雙觸發用更小週期判定；15M 時改成 ["5M", "1M"]
+    "MAX_HOLD_HOURS": _EXIT["MAX_HOLD_HOURS"],
+    "RESOLVE_SAME_BAR_WITH_5M": _EXIT["RESOLVE_SAME_BAR_WITH_5M"],
+    "RESOLVE_INTERVALS": _EXIT["RESOLVE_INTERVALS"],
 
     "ATR_PERIOD": 14, "MA_PERIOD": 20, "OBV_LOOKBACK": 20, "HTF_MA_PERIOD": 100,
     "LIQ_MIN_USD": 0, "LIQ_MODE": "sum24",

@@ -13,7 +13,9 @@ requests、openpyxl——實盤端不能因為要算訊號就把整套回測程�
   爆量       本根量 ÷ 前 24 小時每根均量 ≥ MIN_VOL_RATIO
   竭盡       收盤位置 ≤ MAX_CLOSE_POS（1=收最高、0=收最低）
   中小盤     近 24 小時成交額 在 [MIN_TURN24H, MAX_TURN24H] 之間（MAX_TURN24H=None 表示不設上限）
-訊號值：-1 = 做空進場、0 = 無訊號。出場邏輯不在這裡（由呼叫端決定）。
+訊號值：-1 = 做空進場、0 = 無訊號。
+出場：出場**參數**（止盈 / 止損 / 同根雙觸發判定等）的唯一來源在本檔的 EXIT_PARAMS；
+出場**邏輯**不在這裡，仍由呼叫端實作（回測與 dry run 是 pionex_backtest.backtest）。
 
 輸入契約（呼叫端負責，本模組不檢查、不補洞、不排序）：
   * df 依 time 升冪、固定週期、無缺漏。缺漏時段要先補成 close=前值、open/high/low=close、volume=0
@@ -27,6 +29,7 @@ NaN 行為（與抽離前逐字等價）：
   * 暖機期（前 24 小時）ret2h / volr / turn 為 NaN；h == l 的 K 棒 cpos 為 NaN。
   * 任一比較遇到 NaN 視為 False，不會誤發訊號。
 """
+import copy
 import operator
 
 import numpy as np
@@ -55,6 +58,63 @@ DEFAULT_PARAMS = {
 }
 PARAM_KEYS = tuple(DEFAULT_PARAMS)          # 本模組認得的 6 個鍵；params 裡多出來的鍵一律忽略
 FEATURE_COLS = ("ret2h", "volr", "cpos", "turn")
+
+# ============================== 出場參數 ==============================
+# 策略4 出場參數的唯一來源（G1b）。回測（pionex_strategy4.CONFIG）與 dry run
+# （pionex_dryrun.S4_CONFIG）都從這裡取值；實盤端（A3 名目部位追蹤）判定出場也要從這裡取，
+# 任何地方都不可以再抄一份數字——兩邊不一致時不會有任何錯誤訊息，只會讓 A 頻道照舊的
+# 止盈 / 止損發訊息，而回測報表還是漂亮的。
+#
+# 刻意與 DEFAULT_PARAMS 分開，不可以併進去：
+#   * pionex_dryrun 的 s4 帳本指紋把整個 pionex_strategy4.S4（= DEFAULT_PARAMS + 實驗鍵）算進去，
+#     DEFAULT_PARAMS 多一個鍵，s4 指紋就變，dry run 會把策略4 的前瞻紀錄靜默清空重跑。
+#   * PARAM_KEYS 與 live.config.strategy_params() 的語意是「6 個進場參數」，不能跟著變。
+#   * 這些鍵由回測引擎讀（pb.CONFIG），本模組的 signal() / cooldown_bars() 完全用不到。
+#
+# 鍵名與 pionex_backtest.CONFIG 完全相同，呼叫端可以直接放進 pb.CONFIG。但請用 exit_params()
+# 取拷貝，不要直接拿這個字典去展開：RESOLVE_INTERVALS 是 list，pb.CONFIG.update() 會把同一個
+# 物件放進全域字典，之後任何一處就地修改都會改到這一份來源。
+#
+# 注意：這六個鍵都在 dry run 的帳本指紋（pionex_dryrun.FP_KEYS）裡。改這裡的任何值，
+# s4 帳本就會以新參數清空重跑（前瞻紀錄從當下重新開始）——真的要改參數時這是預期行為，
+# 但不可以為了「只是整理程式碼」而動到值、型別（list 不可改成 tuple）或鍵名。
+EXIT_PARAMS = {
+    # 固定比例出場：做空，跌 TAKE_PROFIT 止盈、漲 STOP_LOSS 止損。
+    # 日後若改成 "atr"（依 ATR 倍數出場），用到這份參數的地方（含實盤 A3）必須一起檢查，
+    # 不可以靜默沿用「固定比例」的假設。
+    "EXIT_MODE": "fixed",
+    # 止盈/止損 2026-09-17 定為 4%/5%（原始 3%/5%，中途曾短暫設為 5%/5%）。
+    # 依據：5分K 33天全組合掃描（144 組，pionex_tpsl_sweep.py）+ 三組實跑驗證。
+    #   3%/5%  勝率 72.8% 每筆EV +0.72% 每天EV +4.18% 回撤 36.6% 總報酬 138%
+    #   4%/4%  勝率 63.9% 每筆EV +1.01% 每天EV +5.85% 回撤 30.9% 總報酬 193%
+    #   4%/5%  勝率 68.3% 每筆EV +1.04% 每天EV +5.97% 回撤 39.9% 總報酬 197%  ← 採用
+    # 4%/4% 與 4%/5% 在報酬與風險上統計無法區分（每筆EV P=54%；回撤按日自助法
+    # 中位 21.3% vs 23.7%，95%區間幾乎重疊，實際 30.9/39.9 的差距是順序運氣），
+    # 兩者最大併發同為 2、最長連敗同為 3，差別只在勝率，故取勝率較高的 4%/5%。
+    # 更寬的組合（如 7%/8%，每天EV +12.3%）不採用：最大併發 8 筆、最壞同時虧損
+    # -64.8% 本金，且那 8 筆是同一波行情的相關空單；縮到同樣尾部風險後每天僅 +1.56%。
+    "TAKE_PROFIT": 0.04,
+    "STOP_LOSS": 0.05,
+    # 持倉時限（小時）。None = 沒有時間停損，只靠止盈 / 止損出場。
+    # 以前 dry run 的 s4 帳本是從策略2 的 S2_CONFIG 繼承這個值（剛好相同），G1b 起改為明確取自這裡。
+    "MAX_HOLD_HOURS": None,
+    # 同一根 K 棒同時碰到止盈與止損時，是否抓更小週期的 K 棒判斷哪個先發生。
+    # 鍵名是歷史遺留（最早只用 5 分 K 判定）：實際意思是「用更小週期判先後」，
+    # 用哪些週期看下面的 RESOLVE_INTERVALS。不要改名——鍵名在 pb.CONFIG 與帳本指紋裡，改名等於改指紋。
+    "RESOLVE_SAME_BAR_WITH_5M": True,
+    # 同根雙觸發依序嘗試的小週期。它跟著回測的 K 棒週期走（pionex_strategy4.CONFIG["INTERVAL"]）：
+    # 5M 回測用 ["1M"]；換成 15M 時改成 ["5M", "1M"]。派網 1 分 K 只保留約 7 天。
+    # 維持 list，不要改成 tuple：帳本指紋用 json 序列化，list 與 tuple 算出來一樣，
+    # 型別改了指紋看不出來，是由 tests/test_s4_exit_params.py 釘住生效型別。
+    "RESOLVE_INTERVALS": ["1M"],
+}
+
+
+def exit_params():
+    """回傳 EXIT_PARAMS 的深拷貝（RESOLVE_INTERVALS 也是新的 list 物件）。
+       要把出場參數放進 pb.CONFIG 或任何之後可能被就地修改的字典時一律用這個，
+       呼叫端怎麼改都不會汙染 EXIT_PARAMS 這份唯一來源。"""
+    return copy.deepcopy(EXIT_PARAMS)
 
 
 def _params(params):

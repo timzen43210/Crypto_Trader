@@ -21,12 +21,13 @@
 | 帳本 | 止盈 | 止損 | 盈虧平衡勝率 |
 |---|---|---|---|
 | `watch` / `rev` / `rev_wide` | 3% | 5% | 63.75% |
-| `s4` | 4%（2026-09-17 由 3% 調高，理由見 `pionex_strategy4.py` 註解） | 5% | 56.67% |
+| `s4` | 4%（2026-09-17 由 3% 調高，理由見 `strategy/s4_signal.py` 的 `EXIT_PARAMS` 註解） | 5% | 56.67% |
 
 也就是說：三個帳本要打平至少要贏 63.75%，`s4` 因為止盈調高，只要贏 56.67% 就打平。
 資金模擬槓桿：策略1、2、4 皆為 50 倍（改 `BASE_CONFIG` / `S2_CONFIG` / `S4_CONFIG`）。
 
-策略4 目前生效參數（2026-09-17 調整，理由與實測依據見 `pionex_strategy4.py` 對應行的註解）：
+策略4 目前生效參數（2026-09-17 調整，理由與實測依據見 `strategy/s4_signal.py` 的註解：
+`MIN_RET_2H` / `MAX_CLOSE_POS` 在 `DEFAULT_PARAMS`，`TAKE_PROFIT` / `STOP_LOSS` 在 `EXIT_PARAMS`）：
 `MIN_RET_2H=0.14`、`MAX_CLOSE_POS=0.60`、`TAKE_PROFIT=0.04`（`STOP_LOSS` 維持 0.05）。
 帳本表格 `s4` 那一格先前列的「33天155筆、勝率71.0%；15分K 99天310筆、67.7%」是
 2026-09-17 參數調整**之前**（`MIN_RET_2H=0.16`／`MAX_CLOSE_POS=0.70`／`TAKE_PROFIT=0.03`）
@@ -107,6 +108,7 @@ HTTP 取數在 `live/pionex_api.py`（原本叫 `live/http.py`，跟標準庫的
 | 層 | 放在哪裡 | 怎麼改 |
 | --- | --- | --- |
 | 策略參數（`MIN_RET_2H` 等六個） | `strategy/s4_signal.py` 的 `DEFAULT_PARAMS`，**唯一來源** | 改那裡。`live/` 只用 `config.strategy_params()` 引用，不可以抄一份數值過去 |
+| 策略4 出場參數（`TAKE_PROFIT` / `STOP_LOSS` 等六個） | `strategy/s4_signal.py` 的 `EXIT_PARAMS`，**唯一來源**（與 `DEFAULT_PARAMS` 刻意分開） | 改那裡，回測 `pionex_strategy4.CONFIG` 與 dry run `S4_CONFIG` 都從它取值；要放進會被修改的字典時用 `exit_params()` 取拷貝。改任何值都會讓 dry run 的 `s4` 帳本換指紋、前瞻紀錄重新開始（`tests/test_s4_exit_params.py` 會提醒）。不可以併進 `DEFAULT_PARAMS`，也不可以在 `live/` 抄一份 |
 | 執行參數（BASE URL、timeout、retries、快取逾時） | `live/config.py` 的模組層級常數 | 改檔案再 commit。沒有設定檔格式、沒有 parser、沒有 dev/prod 切換 |
 | 密鑰（TG bot token、A 頻道 channel id） | 環境變數 `CRYPTO_TRADER_TG_BOT_TOKEN`、`CRYPTO_TRADER_TG_CHANNEL_ID` | 啟動前 `export`，雲端主機用 systemd 的 `Environment=`。**絕不進版控**，不支援 `.env` 或任何檔案來源 |
 
