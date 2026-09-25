@@ -134,6 +134,12 @@ HTTP 取數在 `live/pionex_api.py`（原本叫 `live/http.py`，跟標準庫的
 `python -m live` 會報告日誌會寫到哪裡、能不能寫，但不會建立任何日誌檔。離線測試在
 `tests/test_logsetup.py`。
 
+A 頻道的訊號與名目部位存在 `live/store.py`（標準庫 SQLite，資料庫檔預設 `runtime/db/live.sqlite3`，
+路徑在 `live/config.py` 的 `LIVE_DB_PATH`），程式重啟後靠它找回還沒平倉的名目部位與還沒發布的訊號。
+**同一個資料庫檔同時只能有一個行程在寫**；旁邊的 `live.sqlite3-wal` / `-shm` 是 WAL 模式的檔案，
+當掉後留下的 `-wal` **不要手動刪**，下次開啟時 SQLite 會用它復原已提交的資料。離線測試在
+`tests/test_store.py`。
+
 ## 方法 A：GitHub Actions（免費、免主機）
 
 1. 在 GitHub 建立一個新的 repo（建議 Private），把這個資料夾的所有檔案上傳，

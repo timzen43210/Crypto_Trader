@@ -92,6 +92,19 @@ LOG_LEVEL = "INFO"
 LOG_MAX_BYTES = 10 * 1024 * 1024
 LOG_BACKUP_COUNT = 5
 
+# ---- SQLite 持久層（live.store）----
+# A 頻道訊號表與名目部位表的資料庫檔。跟 LOG_FILE 同理：一律在 runtime/ 底下（已 .gitignore），
+# 絕不可以放進 state/ 或 output/。多一層 db/ 是因為 WAL 模式會在旁邊產生 live.sqlite3-wal /
+# live.sqlite3-shm，跟日誌分開放。目錄由 live.store.open_store() 自己建（live.paths 刻意不建目錄）。
+LIVE_DB_PATH = os.path.join(RUNTIME_DIR, "db", "live.sqlite3")
+
+# A 頻道「策略層」紀錄的 user_id 保留值。A 頻道的名目部位不屬於任何一個訂閱者，但 user_id 又不能
+# 是 NULL —— NULL 在唯一索引裡彼此不算重複，「同 (user_id, strategy, symbol) 只能一筆 open」會
+# 形同虛設。第二階段每個訂閱者的紀錄才用真實 user_id。
+# 這是資料的身分，不是可調參數：改了它，資料庫裡既有的策略層紀錄就查不回來（重啟復原會以為
+# 沒有任何未平倉部位）。所以刻意不放進 execution_params()，免得看起來像是可以隨手調的旋鈕。
+STRATEGY_USER_ID = "strategy"
+
 
 def execution_params():
     """目前生效的執行參數，name -> value。給 `python -m live` 報告用。
@@ -109,6 +122,7 @@ def execution_params():
         "LOG_LEVEL": LOG_LEVEL,
         "LOG_MAX_BYTES": LOG_MAX_BYTES,
         "LOG_BACKUP_COUNT": LOG_BACKUP_COUNT,
+        "LIVE_DB_PATH": LIVE_DB_PATH,
     }
 
 
