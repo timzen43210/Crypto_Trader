@@ -1,6 +1,12 @@
 # 跟單群組真實訊號（pionex_strategy4.py 用來比對，屬於他人資料，不公開）
 signals.csv
 
+# 群組資料（聊天匯出、訊號、策略5 比對報表）：repo 是 Public，一律不進版控。
+# 用 / 錨定在根目錄：output/s5_signals.csv 是 dry run 自己的輸出，Actions 每小時要 commit，不可擋到。
+/signals*.csv
+/signals*.txt
+/s5_compare_*.xlsx
+
 # 回測快取（本機重跑用，不需要進版控）
 pionex_cache/
 __pycache__/

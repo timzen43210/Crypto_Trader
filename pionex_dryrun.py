@@ -3,7 +3,8 @@
 """
 派網策略 Dry Run（前瞻模擬，不下單）
 ===================================
-同時追蹤 watch（策略1已退役，續作ATR區間監控）、策略2（大戶提款）與策略4（爆量竭盡，5分K）
+同時追蹤 watch（策略1已退役，續作ATR區間監控）、策略2（大戶提款）、策略4（爆量竭盡，5分K）
+與策略5（群組訊號複製，1分K 逐根重播 ≈ 每分鐘掃描一次的機器人）
 每次執行：抓最新的 1h K棒 → 依序處理「上次執行之後新收完的每一根K棒」
          → 先檢查持倉是否止盈/止損，再檢查新訊號 → 寫入狀態檔、Excel、SUMMARY.md
 
@@ -34,12 +35,17 @@ from openpyxl.styles import Font
 import pionex_backtest as pb
 import pionex_reversal as rv
 import pionex_strategy4 as s4
+import pionex_strategy5 as strat5     # 別名刻意不用 s5，避免和檔內 s5_* 函式、帳本鍵 "s5" 混淆
 from strategy import s4_signal
 
 # ============================== 起算時間 ==============================
 # 第一次執行時，從這個時間開始回補統計（台北時間）。設 None = 只從執行當下開始。
 # 派網 1h K棒單次最多取 500 根（約 20.8 天），太舊的抓不到，請盡早開始跑。
 START_FROM = "2026-09-01 00:00"
+# 個別帳本另訂起算時間（沒列的沿用 START_FROM）。策略5 用 1 分K，派網只保留約 7 天，
+# 而且 1 分K 回補很花 API 次數，所以另外設，並限制首次最多回補 S5_MAX_BACKFILL_HOURS 小時。
+BOOK_START_FROM = {"s5": "2026-09-24 08:00"}     # 群組機器人 9/24 07:32 重啟
+S5_MAX_BACKFILL_HOURS = 24
 
 # ============================== 策略設定（固定，勿在測試途中修改） ==============================
 BASE_CONFIG = dict(
@@ -103,6 +109,36 @@ S4_CONFIG.update(
 )
 S4_RULE = dict(s4.S4)          # 條件沿用 pionex_strategy4.py 的 S4
 
+# ---- 策略5：群組訊號複製（1分K、只做空）----
+# 規則來自 pionex_strategy5.S5（整份，比照策略4 的 S4_RULE）；止盈、止損、出場模式、最長持倉、
+# 手續費來自 pionex_strategy5.CONFIG（見 S5_FROM_BACKTEST）。兩邊是同一份參數：要調請改
+# pionex_strategy5.py，dry run 會跟著變（參數指紋隨之改變 → 該帳本自動重置，見 book_fingerprint()）。
+# 目標是「複製群組機器人的訊號與出場」，不是追求勝率。規則 v3（2026-09-24 使用者指定，尚未用群組訊號校準）：
+#   ① 前一根 1h K（整點切）收盤 ÷ 開盤 − 1 ≥ MIN_RISE_FROM_OPEN
+#   ② 爆量，下列任一：
+#      A. 本小時到目前為止的累計量 ≥ MIN_VOL_MULT × 前一根 1h K 的量（不限時）
+#      EARLY_VOL_RULES 的每個 (N, k)：開盤 N 分鐘內（這根 1 分K 收盤分鐘 ≤ N）累計量曾 ≥ k × 前根量，
+#      成立後本小時剩下的時間都算（黏著）。例：第 20 分追平前根、第 40 分才突破前高 → 第 40 分進場。
+#   ③ 現價（這根 1 分K 收盤）> 前一根 1h K 最高價 × (1 + MIN_ABOVE_PH)
+#   三條件第一次同時成立的那根 1 分K 收盤進場；同幣每小時最多一次、持倉中不重複進場。
+#   門檻與分支的數值一律看 pionex_strategy5.S5，這裡不寫死。
+#   出場：止盈 TAKE_PROFIT（跌 3%）/ 止損 STOP_LOSS（漲 5% = 群組第 1 次加倉點，
+#   群組把有加倉的單記為止損）。出場後冷卻：COOLDOWN_HOURS 在 use_config() 換算成根數
+#   （0 → 1 根 = 出場的下一根 1 分K 起可再進場）。
+#   舊規則 v2（① 收盤 ÷ 最低、② 1 倍不限時）的校準數字（群組 1283 筆、46 筆 1 分K 重算 100% 一致等）
+#   只適用 v2，不適用 v3。s5 帳本 2026-09-24 因規則修改重置，重置前的紀錄屬 v2。
+# s5_indicators() 只實作 v3；S5 切到其他變體時 main() 會在開頭停下並說明原因（check_s5_variant()）。
+# 刻意不統一（兩邊本質不同）：INTERVAL（這裡 1M、回測 15M）、RESOLVE_*（1 分K 已是最小週期）、WARMUP。
+S5_RULE = dict(strat5.S5)
+S5_FROM_BACKTEST = ("TAKE_PROFIT", "STOP_LOSS", "EXIT_MODE", "MAX_HOLD_HOURS", "FEE_RATE")
+S5_CONFIG = dict(S2_CONFIG)
+S5_CONFIG.update(
+    INTERVAL="1M", MAX_PRICE=None, ATR_MIN_PCT=0, ATR_MAX_PCT=None, LIQ_MIN_USD=0, LIQ_MODE="sum24",
+    RESOLVE_SAME_BAR_WITH_5M=False, RESOLVE_INTERVALS=[],   # 1 分K 已是最小週期，同根雙觸保守計止損
+)
+S5_CONFIG.update({k: strat5.CONFIG[k] for k in S5_FROM_BACKTEST})
+S5_CONFIG.pop("COOLDOWN_BARS")    # 不沿用 S2_CONFIG 的值：由 use_config() 從 S5_RULE["COOLDOWN_HOURS"] 換算
+
 BOOKS = {
     # 策略1「延續」已於 2026-09-17 退役。理由：用 22.6 萬筆標註資料測其核心假設，
     # 做多 -0.1pt、做空 -0.0pt（相對同日同方向隨機進場），連反著做也是零 ——
@@ -115,12 +151,14 @@ BOOKS = {
     "rev_wide": {"s": 2, "label": "策略2 大戶提款 放寬版（啟動前漲幅不限）",
                  "overrides": {}, "rev": {"MAX_PRIOR_RET": None}},
     "s4": {"s": 4, "label": "策略4 爆量竭盡（5分K）", "overrides": {}},
+    "s5": {"s": 5, "label": "策略5 群組訊號複製（1分K 重播）", "overrides": {}},
 }
-BOOK_INTERVAL = {b: ("5M" if m["s"] == 4 else "60M") for b, m in BOOKS.items()}
+BOOK_INTERVAL = {b: {4: "5M", 5: "1M"}.get(m["s"], "60M") for b, m in BOOKS.items()}
 ATR_BANDS = [(0.02, 0.03), (0.03, 0.04), (0.04, 0.05), (0.05, 0.06), (0.06, 0.08), (0.08, None)]
 
 KLINE_LIMIT = 500
-WARMUP = {"60M": 150, "5M": 400}   # 指標暖機需要的根數（5M 要涵蓋 24 小時 = 288 根）
+WARMUP = {"60M": 150, "5M": 400, "1M": 150}   # 指標暖機需要的根數（5M 要涵蓋 24 小時 = 288 根；
+                                               # 1M 只需涵蓋「前一小時 + 本小時開頭」）
 WORKERS = 3
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATE_PATH = os.path.join(HERE, "state", "dryrun_state.json")
@@ -176,6 +214,16 @@ def _baseline_title(key):
 
 
 LEGACY_BASELINE_KEY = baseline_key("60M", BASE_CONFIG["TAKE_PROFIT"], BASE_CONFIG["STOP_LOSS"])
+
+# 1 分K 的帳本不另外抽基準：前視 48 根只有 48 分鐘，大部分樣本不會觸發止盈止損，抽了沒有意義。
+# 策略5 的止盈止損與 60M 帳本相同（3%/5%），直接共用 60M 那一桶（前視 48 小時，同日隨機做空）。
+NO_BASELINE_INTERVALS = {"1M"}
+
+
+def book_baseline_key(book):
+    if BOOK_INTERVAL[book] in NO_BASELINE_INTERVALS:
+        return baseline_key("60M", pb.CONFIG["TAKE_PROFIT"], pb.CONFIG["STOP_LOSS"])
+    return baseline_key(BOOK_INTERVAL[book], pb.CONFIG["TAKE_PROFIT"], pb.CONFIG["STOP_LOSS"])
 
 
 def _migrate_legacy_baseline(state):
@@ -339,6 +387,8 @@ def book_fingerprint(book):
         payload["REV"] = {kk: rv.REV.get(kk) for kk in sorted(rv.REV)}
     elif k == 4:
         payload["S4"] = {kk: s4.S4.get(kk) for kk in sorted(s4.S4)}
+    elif k == 5:
+        payload["S5"] = {kk: S5_RULE[kk] for kk in sorted(S5_RULE)}   # 整份 = pionex_strategy5.S5
     return hashlib.sha1(json.dumps(payload, sort_keys=True, default=str)
                         .encode("utf-8")).hexdigest()[:12]
 
@@ -379,18 +429,177 @@ def use_config(book):
         rv.REV.update(S2_REV)
         rv.REV.update(meta.get("rev", {}))
         pb.PARAM_ROWS_HOOK, pb.DIAG_COLUMNS_HOOK = rv.param_rows, s2_diag
-    else:
+    elif meta["s"] == 4:
         pb.CONFIG.update(S4_CONFIG)
         s4.S4.update(S4_RULE)
         pb.CONFIG["COOLDOWN_BARS"] = max(1, round(s4.S4["COOLDOWN_HOURS"] * s4.H()))
         pb.PARAM_ROWS_HOOK, pb.DIAG_COLUMNS_HOOK = s4.param_rows, s4.diag_columns
+    else:
+        pb.CONFIG.update(S5_CONFIG)
+        # 與回測 pionex_strategy5.main() 同一個換算式；strat5.H() 依 pb.CONFIG["INTERVAL"]（此時為 1M）
+        # 推導每小時根數，所以 COOLDOWN_HOURS=0 → 1 根、1.0 → 60 根
+        pb.CONFIG["COOLDOWN_BARS"] = max(1, round(S5_RULE["COOLDOWN_HOURS"] * strat5.H()))
+        pb.PARAM_ROWS_HOOK, pb.DIAG_COLUMNS_HOOK = s5_param_rows, s5_diag
     pb.CONFIG.update(meta["overrides"])
 
 
 def indicators(book, df, btc):
     k = BOOKS[book]["s"]
     return (pb.add_indicators if k == 1 else rv.add_indicators if k == 2
-            else s4.add_indicators)(df, btc)
+            else s4.add_indicators if k == 4 else s5_indicators)(df, btc)
+
+
+# ============================== 策略5：訊號與報表欄位 ==============================
+# "s5_branch" 在交易紀錄裡存的是文字標籤：進場那根當下成立的所有分支，用 "+" 連接，
+# 標籤由 pionex_strategy5.branch_label() 依分支參數產生（格式與例子見該函式）
+S5_DIAG = [("① 前根收盤比開盤", "s5_rise", 13, "0.00%"), ("② 觸發時量倍數", "s5_volx", 12, "0.00"),
+           ("② 爆量分支", "s5_branch", 18, "@"),
+           ("③ 進場價vs前高", "s5_above", 12, "0.00%"), ("觸發於第幾分鐘", "s5_minute", 12, "0")]
+
+
+class S5VariantError(ValueError):
+    """策略5 的設定是 dry run 沒實作的變體（見 check_s5_variant()）。"""
+
+
+# s5_indicators() 只實作 v3。pionex_strategy5.S5 其餘的開關 dry run 都沒有實作，打開了不會報錯、
+# 只會被靜默忽略（跑的其實是另一個策略），所以 main() 一開始先擋下。
+# 每列：(鍵, 是否支援, 支援的值, 鍵不存在時回測模組的行為)
+_MISSING = object()
+S5_SUPPORTED = [
+    ("REQUIRE_VOL_BURST", lambda v: v is True, "True", _MISSING),
+    ("REQUIRE_HIGHER_HIGH", lambda v: v is True, "True", _MISSING),
+    ("HH_MODE", lambda v: v == "price", "'price'", "high"),       # 回測 S5.get("HH_MODE", "high")
+    ("MIN_TURN24H", lambda v: v is None, "None", _MISSING),
+    ("MAX_TURN24H", lambda v: v is None, "None", _MISSING),
+    ("MAX_PRICE", lambda v: v is None, "None", _MISSING),
+]
+
+
+def check_s5_variant():
+    """策略5 必須是 dry run 支援的 v3 組合，否則拋 S5VariantError（訊息列出每個不符的鍵）。
+       EARLY_VOL_RULES 必須是 (1～60 的整數分鐘, 正數倍數) 的序列（空序列 = 只剩分支 A），
+       格式規則與回測共用 pionex_strategy5.early_rules_problems()；已移除的舊鍵
+       （FAST_VOL_MULT / FAST_WINDOW_MIN / MIN_RISE_FROM_LOW）出現也擋下，避免有人以為它還有作用。
+       由 main() 在任何網路請求與狀態檔寫入之前呼叫；刻意不放在 import 時，
+       因為 pionex_s5_compare.py 與測試會 import 本模組。
+       停下整個 dry run 而不是只跳過 s5：dry run 每次都會補處理上次之後的所有 K 棒，
+       一次失敗等於一次跳過，修好後自動補回（1 分K 保留約 7 天）；Actions 失敗會寄信通知，
+       「只跳過 s5」反而容易沒人發現。"""
+    books = [b for b, m in BOOKS.items() if m["s"] == 5]
+    if not books:
+        return
+    bad = []
+    for key, ok, want, default in S5_SUPPORTED:
+        v = S5_RULE.get(key, default)
+        if v is _MISSING:
+            bad.append(f"  pionex_strategy5.S5[{key!r}] 未設定（dry run 只支援 {want}）")
+        elif not ok(v):
+            src = "" if key in S5_RULE else "，未設定時回測的預設值"
+            bad.append(f"  pionex_strategy5.S5[{key!r}] = {v!r}{src}（dry run 只支援 {want}）")
+    for key, why in strat5.LEGACY_KEYS.items():
+        if key in S5_RULE:
+            bad.append(f"  pionex_strategy5.S5[{key!r}] 是已移除的舊鍵，不會有任何作用：{why}，並刪除這個鍵")
+    if "EARLY_VOL_RULES" not in S5_RULE:
+        bad.append("  pionex_strategy5.S5['EARLY_VOL_RULES'] 未設定（() = 關閉限時分支，只剩 A）")
+    else:
+        bad += [f"  pionex_strategy5.S5: {p}" for p in strat5.early_rules_problems(S5_RULE["EARLY_VOL_RULES"])]
+    for b in books:
+        v = {**S5_CONFIG, **BOOKS[b]["overrides"]}.get("EXIT_MODE")
+        if v != "fixed":
+            bad.append(f"  pionex_strategy5.CONFIG['EXIT_MODE'] = {v!r}（帳本 {b}；dry run 只支援 'fixed'）")
+    if bad:
+        raise S5VariantError(
+            "策略5 的設定不是 dry run 支援的組合，dry run 停止（尚未發出任何網路請求、未寫入狀態檔）：\n"
+            + "\n".join(bad) + "\n"
+            "dry run 的策略五只實作 v3，要改變體得先改 pionex_dryrun.py 的 s5_indicators()；"
+            "否則請把 pionex_strategy5.py 的上列設定改回。修好後下次執行會自動補處理漏掉的 K 棒"
+            "（1 分K 保留約 7 天）。")
+
+
+def s5_indicators(df, btc=None):
+    """1 分K：算出每一根的小時脈絡，標出每小時「三條件第一次同時成立」的那一根（signal = -1）。
+       ① 前一小時 收盤 ÷ 開盤 − 1（開盤 = 前一小時第一根 1 分K 的 open）
+       ② A：本小時累計量 ≥ MIN_VOL_MULT × 前根量；或 EARLY_VOL_RULES 任一分支（黏著，見下）
+       ③ 這根 1 分K 收盤 > 前根最高 × (1 + MIN_ABOVE_PH)
+       限時分支 (N, k)：這根 1 分K 收盤分鐘 ≤ N 且累計量 ≥ k × 前根量，第一次成立的那根起本小時都算成立。
+       s5_branch_code 記錄每根當下成立的分支（bit0 = A、bit(i+1) = EARLY_VOL_RULES[i]），
+       進場時由 snapshot5() 轉成文字標籤。
+       呼叫端抓的 1 分K 至少從「第一根要處理的 K 棒往前 WARMUP 根（150 根 > 2 小時）」開始，
+       所以本小時與前一小時都是從整點第一根算起，黏著狀態與累計量不會因為分批執行而斷掉。
+       step_symbol() 需要的共用欄位（ret1h、atr_pct…）策略5 用不到，填 NaN 即可。"""
+    for col in ("ret1h", "atr_pct", "ma_dev", "obv_chg", "liq24", "vol_ratio", "close_pos",
+                "htf_dev", "ret24", "btc_ret1h", "btc_ma_dev"):
+        df[col] = np.nan
+    bar = pb.INTERVAL_MS[BOOK_INTERVAL["s5"]]
+    per_hour = HOUR // bar
+    t = df["time"].to_numpy()
+    hid = t // HOUR
+    g = df.groupby(hid)
+    hr = pd.DataFrame({"O": g["open"].first(), "H": g["high"].max(), "C": g["close"].last(),
+                       "V": g["volume"].sum(), "N": g.size()})
+    prev = hr.reindex(hr.index - 1)
+    prev.index = hr.index
+    m = lambda col: pd.Series(hid).map(prev[col]).to_numpy(dtype=float)
+    pO, pH, pC, pV, pN = m("O"), m("H"), m("C"), m("V"), m("N")
+    cumv = df.groupby(hid)["volume"].cumsum().to_numpy(dtype=float)
+    c = df["close"].to_numpy(dtype=float)
+    minute = ((t % HOUR) + bar) // 60_000                  # 這根 1 分K 收盤時是該小時第幾分鐘（1～60）
+    with np.errstate(invalid="ignore", divide="ignore"):
+        rise = np.where(pO > 0, pC / pO - 1, np.nan)
+        volx = np.where(pV > 0, cumv / pV, np.nan)
+        above = c / pH - 1
+        burst_a = volx >= S5_RULE["MIN_VOL_MULT"]
+        code = burst_a.astype(np.int64)
+        for i, (n_min, mult) in enumerate(S5_RULE["EARLY_VOL_RULES"]):
+            hit = (minute <= n_min) & (volx >= mult)
+            stick = pd.Series(hit.astype(np.int64)).groupby(hid).cumsum().to_numpy() > 0
+            code |= stick.astype(np.int64) << (i + 1)
+        ok = ((pN == per_hour) & (rise >= S5_RULE["MIN_RISE_FROM_OPEN"])
+              & (code > 0) & (c > pH * (1 + S5_RULE["MIN_ABOVE_PH"])))
+    ok = np.nan_to_num(ok, nan=0).astype(bool)
+    first = ok & (pd.Series(ok.astype(int)).groupby(hid).cumsum().to_numpy() == 1)
+    df["signal"] = np.where(first, -1, 0)
+    df["s5_rise"], df["s5_volx"], df["s5_above"] = rise, volx, above
+    df["s5_branch_code"] = code
+    df["s5_minute"] = minute
+    return df
+
+
+def snapshot5(row):
+    out = {k: f(row[k]) for _, k, _, _ in S5_DIAG if k != "s5_branch"}
+    out["s5_branch"] = strat5.branch_label(row["s5_branch_code"], S5_RULE)
+    return out
+
+
+def s5_param_rows(rows):
+    """參數頁：前 6 列沿用，中間固定 8 列，讓「盈虧平衡勝率」落在第 16 列（總覽頁 I5:I7 引用 參數!$B$16）。"""
+    C = pb.CONFIG
+    head = list(rows[:6])
+    head[2] = ("K棒週期", "條件看 1 小時K（整點切）；進出場用 1 分K", "每根 1 分K 收盤檢查一次 ≈ 每分鐘掃描")
+    head[3] = ("止盈", C["TAKE_PROFIT"], "做空：價格下跌此比例")
+    head[4] = ("止損", C["STOP_LOSS"], "做空：價格上漲此比例（= 群組第 1 次加倉點）")
+    early = "、".join(f"{n} 分內 ≥ {k:g} 倍" for n, k in S5_RULE["EARLY_VOL_RULES"])
+    mid = [                     # 固定 8 列：規則列變多時用合併說明的方式塞進來，不可增加列數
+        ("策略", "策略5 — 群組訊號複製（只做空）", "目標是複製群組訊號，不是追求勝率"),
+        ("① 前根收盤比開盤漲", S5_RULE["MIN_RISE_FROM_OPEN"], "前一根 1h K：收盤 ÷ 開盤 − 1"),
+        ("②A 當根量 ÷ 前一根量", f'{S5_RULE["MIN_VOL_MULT"]:g} 倍',
+         "本小時到目前為止的累計量，不限時；A 與限時分支符合任一即可"),
+        ("② 限時分支", early or "關閉",
+         "開盤 N 分內（1 分K 收盤 ≤ 第 N 分）累計量曾達門檻，成立後本小時都算（黏著）"),
+        ("③ 現價 > 前高 ×", 1 + S5_RULE["MIN_ABOVE_PH"], "現價 = 那根 1 分K 收盤價"),
+        ("進場時機", "三條件第一次同時成立",
+         "以那根 1 分K 收盤價進場；同幣每小時最多一次；持倉中不重複進場（與群組機器人一致）"),
+        ("出場後冷卻", f'{C["COOLDOWN_BARS"]} 根',
+         "出場的下一根 1 分K 起可再進場（須不同小時）" if C["COOLDOWN_BARS"] == 1 else
+         f'出場後第 {C["COOLDOWN_BARS"]} 根 1 分K 起可再進場（COOLDOWN_HOURS = {S5_RULE["COOLDOWN_HOURS"]:g}）'),
+        ("同根雙觸發", "保守計止損", "1 分K 已是最小週期"),
+    ]
+    be = [r for r in rows if r[0] == "盈虧平衡勝率"]
+    return head + mid + be
+
+
+def s5_diag():
+    return [n for n, *_ in S5_DIAG], [w for _, _, w, _ in S5_DIAG], lambda tr: [tr.get(k) for _, k, _, _ in S5_DIAG]
 
 
 def s2_diag():
@@ -410,6 +619,17 @@ def start_ms(bar=None):
     dt = datetime.strptime(START_FROM, "%Y-%m-%d %H:%M").replace(tzinfo=pb.TPE)
     bar = bar or HOUR
     return int(dt.timestamp() * 1000) // bar * bar
+
+
+def book_start_ms(book, bar, t_now):
+    """這本帳首次執行的回補起點。策略5 另有起點，且最多回補 S5_MAX_BACKFILL_HOURS 小時。"""
+    txt = BOOK_START_FROM.get(book, START_FROM)
+    if not txt:
+        return None
+    ms = int(datetime.strptime(txt, "%Y-%m-%d %H:%M").replace(tzinfo=pb.TPE).timestamp() * 1000)
+    if BOOKS[book]["s"] == 5:
+        ms = max(ms, t_now - S5_MAX_BACKFILL_HOURS * HOUR)
+    return ms // bar * bar
 
 
 def now_ms():
@@ -577,6 +797,7 @@ def step_symbol(bk, sym, df, strategy=1, bar=None, backfill_from=None):
                 **snapshot(df.iloc[j], d),
                 **(snapshot2(df.iloc[j], int(t[j])) if strategy == 2 else {}),
                 **(snapshot4(df.iloc[j]) if strategy == 4 else {}),
+                **(snapshot5(df.iloc[j]) if strategy == 5 else {}),
             }
             opened += 1
     st["last"] = int(t[-1])
@@ -730,7 +951,7 @@ def write_outputs(state, t_now):
                 if len(fw) < 30:
                     lines += [f"_前進測試僅 {len(fw)} 筆，還不足以判斷；"
                               f"以下超額統計含回填段，僅供參考。_", ""]
-            bkey = baseline_key(BOOK_INTERVAL[book], pb.CONFIG["TAKE_PROFIT"], pb.CONFIG["STOP_LOSS"])
+            bkey = book_baseline_key(book)
             es = excess_stats(df, state.get("baseline", {}).get(bkey, {}))
             if es:
                 # 按日叢集自助法的有效樣本數是「天數」，不是「筆數」。天數太少時
@@ -763,6 +984,8 @@ def write_outputs(state, t_now):
             lines += [""]
         if book == "watch":
             lines += [f"**{monitor[1]}**", ""]
+        if meta["s"] == 5:
+            lines += s5_summary_lines(bk)
     # 每個簽章（interval/TP/SL/前視根數）各印一段，不能混在一起——s4 的 5M/4%/5% 跟
     # watch/rev/rev_wide 的 60M/3%/5% 是不同東西（見 baseline_key() 註解）。
     # 注意：以下 sv.mean()/.std()/.min()/.max() 沿用改動前既有寫法，未對空陣列防呆
@@ -799,6 +1022,62 @@ def write_outputs(state, t_now):
         lines += ["", "</details>", ""]
     with open(os.path.join(OUT_DIR, "SUMMARY.md"), "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines))
+    for book, meta in BOOKS.items():
+        if meta["s"] == 5:
+            write_s5_signals(state["books"][book])
+
+
+S5_CSV_COLUMNS = ["交易對", "進場時間", "進場價", "止盈價", "加倉價", "群組結果", "共加倉次數", "出場時間",
+                  "判定說明", "前根收盤比開盤", "觸發時量倍數", "② 爆量分支", "進場價vs前高", "觸發於第幾分鐘"]
+
+
+def s5_rows(bk):
+    """策略5 的紀錄轉成群組 signals.csv 同格式（給 pionex_s5_compare.py 比對用）。
+       欄位固定為 S5_CSV_COLUMNS：帳本剛重置、還沒有任何訊號時也照樣輸出表頭。"""
+    trades = bk["closed"] + open_as_trades(bk, pb.INTERVAL_MS[BOOK_INTERVAL["s5"]])
+    rows = []
+    for tr in sorted(trades, key=lambda x: (x["entry_time"], x["symbol"])):
+        done = tr["result"] in ("止盈", "止損")
+        rows.append({"交易對": tr["symbol"].replace("_USDT_PERP", ""),
+                     "進場時間": f"{pb.to_dt(tr['entry_time']):%Y-%m-%d %H:%M}",
+                     "進場價": tr["entry"], "止盈價": tr["tp"], "加倉價": tr["sl"],
+                     "群組結果": tr["result"] if done else None, "共加倉次數": None,
+                     "出場時間": f"{pb.to_dt(tr['exit_time']):%Y-%m-%d %H:%M}" if done else None,
+                     "判定說明": tr.get("note") or None,
+                     "前根收盤比開盤": tr.get("s5_rise"), "觸發時量倍數": tr.get("s5_volx"),
+                     "② 爆量分支": tr.get("s5_branch"),
+                     "進場價vs前高": tr.get("s5_above"), "觸發於第幾分鐘": tr.get("s5_minute")})
+    return pd.DataFrame(rows, columns=S5_CSV_COLUMNS)
+
+
+def write_s5_signals(bk):
+    s5_rows(bk).to_csv(os.path.join(OUT_DIR, "s5_signals.csv"), index=False,
+                       encoding="utf-8-sig", float_format="%.10g")
+
+
+def s5_summary_lines(bk):
+    R = s5_rows(bk)
+    L = ["策略5 的目標是**複製群組訊號**：勝率與超額只是對照，重點是和群組逐筆比對"
+         "（`python pionex_s5_compare.py`，用群組的 signals.csv 對 output/s5_signals.csv）。", ""]
+    if len(R):
+        R["日期"] = R["進場時間"].str[:10]
+        L += ["| 日期 | 訊號 | 止盈 | 止損 | 持倉中 |", "|---|---|---|---|---|"]
+        for d, x in list(R.groupby("日期"))[-14:]:
+            L.append(f"| {d} | {len(x)} | {(x['群組結果'] == '止盈').sum()} | "
+                     f"{(x['群組結果'] == '止損').sum()} | {int(x['群組結果'].isna().sum())} |")
+        last = R.tail(15).iloc[::-1]
+        L += ["", "<details><summary>最近 15 筆訊號</summary>", "",
+              "| 交易對 | 進場時間 | 進場價 | 結果 | 出場時間 | 前根漲 | 量倍數 | 高於前高 |",
+              "|---|---|---|---|---|---|---|---|"]
+        fmt = lambda v, s: (s.format(v) if v is not None and v == v else "—")
+        for r in last.itertuples():
+            L.append(f"| {r.交易對} | {r.進場時間[5:]} | {r.進場價:.6g} | "
+                     f"{r.群組結果 if isinstance(r.群組結果, str) else '持倉中'} | "
+                     f"{r.出場時間[5:] if isinstance(r.出場時間, str) else ''} | "
+                     f"{fmt(r.前根收盤比開盤, '{:.1%}')} | {fmt(r.觸發時量倍數, '{:.2f}')} | "
+                     f"{fmt(r.進場價vs前高, '{:+.1%}')} |")
+        L += ["", "</details>", ""]
+    return L
 
 
 def _step(state, books_iv, sym, df, err, interval, bar, need, btc, counts, errors, backfill_from, baseline_sigs):
@@ -827,13 +1106,17 @@ def _step(state, books_iv, sym, df, err, interval, bar, need, btc, counts, error
 
 # ============================== 主程式 ==============================
 def main():
+    check_s5_variant()          # 必須在任何網路請求與狀態檔寫入之前（見函式說明）
     t0 = time.time()
     t_now = now_ms()
     use_config(next(iter(BOOKS)))
     state = load_state()
     for book, why, n_old in apply_param_versioning(state, t_now):
+        s_txt = BOOK_START_FROM.get(book, START_FROM)
+        if BOOKS[book]["s"] == 5:
+            s_txt = f"{s_txt}（最多往前 {S5_MAX_BACKFILL_HOURS} 小時）"
         print(f"[{BOOKS[book]['label']}] {why} → 清空 {n_old} 筆舊紀錄，"
-              f"從 {START_FROM} 重新回填；{pb.to_dt(t_now):%m-%d %H:%M} 之後才算前進測試")
+              f"從 {s_txt} 重新回填；{pb.to_dt(t_now):%m-%d %H:%M} 之後才算前進測試")
     try:
         symbols = pb.get_symbols()
     except Exception as e:
@@ -864,14 +1147,25 @@ def main():
     fresh_books = [bk for bk in BOOKS if s0 and not state["books"][bk]["symbols"]]
     if fresh_books:
         earliest = int(b["time"].iloc[0]) if len(b) else None
-        print(f"首次執行（{'/'.join(fresh_books)}）：回補 {pb.to_dt(s0):%Y-%m-%d %H:%M} 起的K棒")
-        if earliest and earliest > s0:
+        others = [bk for bk in fresh_books if bk not in BOOK_START_FROM]
+        if others:
+            print(f"首次執行（{'/'.join(others)}）：回補 {pb.to_dt(s0):%Y-%m-%d %H:%M} 起的K棒")
+        if earliest and earliest > s0 and any(BOOK_INTERVAL[bk] == "60M" for bk in fresh_books):
             print(f"[警告] 60M K棒只能取到 {pb.to_dt(earliest):%Y-%m-%d %H:%M} 之後，"
                   f"{pb.to_dt(s0):%m-%d} ~ {pb.to_dt(earliest):%m-%d} 這段無法回補")
         lim5 = t_now - 10000 * pb.INTERVAL_MS["5M"]
-        if lim5 > s0:
+        if lim5 > s0 and any(BOOK_INTERVAL[bk] == "5M" for bk in fresh_books):
             print(f"[警告] 5M K棒只保留到 {pb.to_dt(lim5):%Y-%m-%d %H:%M}，"
                   f"策略4 只能從那時開始回補")
+        for bk in fresh_books:
+            if BOOKS[bk]["s"] == 5:
+                # 策略5 新帳本：回補段 = 回填（等同回測），這次執行之後才是前進測試 —— 和策略4 參數變更後的處理一致。
+                # （只套用在策略5；其他帳本維持原本行為，不因這次改動而多出 forward_from）
+                if state["books"][bk].get("forward_from") is None:
+                    state["books"][bk]["forward_from"] = t_now
+                s5_0 = book_start_ms(bk, pb.INTERVAL_MS["1M"], t_now)
+                state["books"][bk]["start_ms"] = s5_0        # pionex_s5_compare.py 用來界定比對期間
+                print(f"  策略5 從 {pb.to_dt(s5_0):%Y-%m-%d %H:%M} 起回補 1 分K（最多 {S5_MAX_BACKFILL_HOURS} 小時）")
 
     errors, last_bar = [], None
     counts = {bk: {"opened": 0, "closed": 0} for bk in BOOKS}
@@ -880,9 +1174,12 @@ def main():
         bar = pb.INTERVAL_MS[interval]
         warm = WARMUP.get(interval, 150)
         need = min(warm, 60 if interval == "60M" else 300)
-        s0i = start_ms(bar)
         # 這本帳本是否首次執行（state 內尚無任何交易對紀錄），才允許回補新幣
-        backfill_from = {bk: (s0i if s0i and not state["books"][bk]["symbols"] else None) for bk in books_iv}
+        backfill_from = {bk: (book_start_ms(bk, bar, t_now) if not state["books"][bk]["symbols"] else None)
+                         for bk in books_iv}
+        starts = [book_start_ms(bk, bar, t_now) for bk in books_iv]
+        starts = [x for x in starts if x]
+        s0i = min(starts) if starts else None
         # 每個幣要抓多早：新的幣從 START_FROM 起算，已在追蹤的只要補到上次處理的位置
         since_map = {}
         for sym in universe:
@@ -898,6 +1195,8 @@ def main():
         sigs = {}
         for bk_ in books_iv:
             use_config(bk_)
+            if interval in NO_BASELINE_INTERVALS:
+                continue                  # 1 分K 帳本共用 60M 那一桶，不另外抽樣（見 book_baseline_key）
             if pb.CONFIG.get("EXIT_MODE") == "fixed":
                 tp_, sl_ = pb.CONFIG["TAKE_PROFIT"], pb.CONFIG["STOP_LOSS"]
                 sigs.setdefault(baseline_key(interval, tp_, sl_), (tp_, sl_))
