@@ -115,6 +115,13 @@ HTTP 取數在 `live/pionex_api.py`（原本叫 `live/http.py`，跟標準庫的
 沒設密鑰不影響用不到它的元件 —— `import live.config` 不會失敗，要用的元件會在取用當下拋出
 說得出該設哪個環境變數的例外。`python -m live` 只報告每個密鑰「已設定 / 未設定」，不印值。
 
+訊號與推播 / 下單之間用事件匯流排解耦：`live/signal_events.py` 定義不可變的 `EntryEvent`（進場）
+與 `ExitEvent`（出場），每個事件都帶 `strategy`（名單只在 `live/config.py` 的 `STRATEGIES`，
+同一個幣 s4、s5 可以同時持倉），欄位不合法在建構時就拋例外；`live/bus.py` 的 `SignalBus`
+由進入點建一個，訂閱者在啟動時 `subscribe`，產生者 `publish` 後依訂閱順序**同步**呼叫每個 handler，
+一個 handler 出錯只記 ERROR、不影響其他人，回傳送達報告。會做 I/O 的訂閱者（TG、webhook）
+必須自己排佇列後立刻返回。不做持久化與重送。離線測試在 `tests/test_bus.py`。
+
 日誌在 `live/logsetup.py`（刻意不叫 `logging.py`，理由同上面 `http.py` 的改名）。進入點啟動時
 呼叫一次 `logsetup.setup()`，之後各模組照標準寫法 `logging.getLogger(__name__)` 即可；import 本身
 沒有副作用。日誌檔預設在 `runtime/logs/live.log`（UTF-8、依大小輪替，位置 / 等級 / 輪替參數都在

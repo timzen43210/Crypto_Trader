@@ -72,6 +72,12 @@ HTTP_RETRIES = 3
 # market_static.refresh_if_stale() 的預設逾時（秒）：距上次「成功」刷新超過這個秒數才再打
 MARKET_STATIC_STALE_SECONDS = 3600
 
+# ---- 訊號事件（A2，live.signal_events / live.bus）----
+# 實盤上線的策略代號，所有訊號事件的 strategy 欄位只能是其中之一。清單只在這裡，
+# 事件建構時才讀它（不在 import 時綁死），其他地方不可以再寫一份。
+# 這是「有哪些策略」的名單，不是策略參數；各策略的參數仍只在 strategy/ 底下。
+STRATEGIES = ("s4", "s5")
+
 # ---- 日誌（live.logsetup.setup() 的預設值）----
 # 日誌檔位置。一律在 runtime/ 底下（已 .gitignore），絕不可以放進 state/ 或 output/。
 # 多一層 logs/ 是為了讓輪替出來的 live.log.1 ... 跟日後的 SQLite 等檔案分開放。
@@ -98,6 +104,7 @@ def execution_params():
         "HTTP_TIMEOUT_SECONDS": HTTP_TIMEOUT_SECONDS,
         "HTTP_RETRIES": HTTP_RETRIES,
         "MARKET_STATIC_STALE_SECONDS": MARKET_STATIC_STALE_SECONDS,
+        "STRATEGIES": STRATEGIES,
         "LOG_FILE": LOG_FILE,
         "LOG_LEVEL": LOG_LEVEL,
         "LOG_MAX_BYTES": LOG_MAX_BYTES,
