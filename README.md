@@ -47,7 +47,7 @@
 進場參數在 `DEFAULT_PARAMS`，止盈、止損、出場模式、最長持倉在 `EXIT_PARAMS`；回測的 `pionex_strategy5.S5` /
 `CONFIG` 與 dry run 的 `S5_RULE`（= 整份 `pionex_strategy5.S5`）/ `S5_CONFIG` 都從它取值，手續費留在
 `pionex_strategy5.CONFIG`。回測的 `add_indicators()` 與 dry run 的 `s5_indicators()` 都呼叫 `s5_signal` 計算
-小時脈絡與 ①②③（`evaluate()` 是 v3 的一步到位版本，只 import numpy / pandas，實盤端也用它）。
+小時脈絡與 ①②③（`evaluate()` 是 v3 的一步到位版本，只 import numpy / pandas，日後實盤端也用它）。
 條件以 1 小時 K（整點切）為單位，進出場用 1 分 K（規則 v3，2026-09-24 起）：
 
 1. 前一根 1h K：收盤 ÷ **開盤** − 1 ≥ 6%（`MIN_RISE_FROM_OPEN`）

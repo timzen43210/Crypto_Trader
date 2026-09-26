@@ -5,9 +5,11 @@ G5 驗收測試 — 策略5 訊號核心只有 strategy/s5_signal.py 一份。
 釘住的是：
   1. 相依（AC-7）：s5_signal 只 import numpy / pandas / 標準庫；在全新的直譯器裡 import strategy.s5_signal
      之後，sys.modules 裡沒有 pionex_*、requests、openpyxl、live、research。
-  2. 參數：DEFAULT_PARAMS 的 11 個鍵、順序、值與**型別**（EARLY_VOL_RULES 是 tuple of tuple、
-     COOLDOWN_HOURS 是 int 0、MIN_ABOVE_PH 是 float 0.0）。dry run 的 s5 帳本指紋用 json 序列化，
-     看不出 tuple 與 list 的差別，型別只能在這裡擋；0 與 0.0 則會直接改變指紋。
+  2. 參數：DEFAULT_PARAMS 的 11 個鍵、順序與**型別**（EARLY_VOL_RULES 是 tuple of (int, float)、
+     COOLDOWN_HOURS 是 int）。dry run 的 s5 帳本指紋用 json 序列化，看不出 tuple 與 list 的差別，
+     型別只能在這裡擋。**數值不在測試裡重寫**（策略參數只有一份來源，包括測試的期望值）：
+     值由第 4 項的指紋守住，其他測試的期望一律取自 DEFAULT_PARAMS / EXIT_PARAMS、由合成資料推導，
+     或對顯式傳入的測試規則（CASE_RULES）下斷言——改參數時，只有指紋那條會提醒你。
      EXIT_PARAMS 是 4 個出場鍵、與 DEFAULT_PARAMS 不重疊、FEE_RATE 不在裡面；exit_params() 回傳深拷貝。
   3. 單一來源（AC-6，有鑑別力）：在全新子行程裡先改 s5_signal 的 DEFAULT_PARAMS / EXIT_PARAMS、再 import
      回測與 dry run，兩條路徑的參數、生效的 pb.CONFIG、訊號都跟著變；s5 帳本指紋改變、其他四本帳不變。
@@ -104,18 +106,39 @@ def _bars(t0, closes, vols, open0, high_at=None):
     return rows
 
 
-def synth_1m(prev_open=100.0, prev_close=106.0, prev_vol=10.0, drop_prev_minute=None):
-    """已知答案的 1 分K（與 TASK-010 的 c1 同型）：
-         P（前一小時）開 prev_open、線性漲到 prev_close、第 51 根最高 106.5、每分量 prev_vol（預設合計 600）
-         C（本小時）收盤分鐘 1～39 收 105（< 前高），40 起收 107（> 前高）；
-           累計量：第 15 分 285（< 0.5 倍 = 300）、第 20 分 600（= 1 倍 → B 成立並黏著）、之後每分 2（全小時 680 < 2 倍）
-       預設參數下：本小時唯一訊號在第 40 分，分支只有 B（code 2，標籤「30分1倍」）。"""
+# 合成資料的常數（行情本身，不是策略參數）
+P_OPEN, P_CLOSE, P_HIGH, P_VOL = 100.0, 105.5, 106.5, 10.0   # 前一小時：開、收、最高、每分量（合計 600）
+P_RISE = P_CLOSE / P_OPEN - 1                                # ① 的值（約 +5.5%）
+C_BELOW, C_ABOVE, BREAK_MIN = 105.0, 107.0, 40               # 本小時：第 40 分起收盤才高過前高
+C_VOLS = [19.0] * 15 + [63.0] * 5 + [2.0] * 40               # 累計：第 15 分 285、第 20 分 600、第 40 分 640、全小時 680
+
+# 合成案例用的規則（**測試輸入**，不是 DEFAULT_PARAMS 的拷貝）。數值刻意和出貨預設值不同：
+#   一來 DEFAULT_PARAMS 日後調整時這裡不必跟著改；二來可以證明函式真的用了傳入的參數（誤用預設值就會對不上）。
+# v3 開關與過濾鍵取自 s5_signal.V3_SWITCHES；COOLDOWN_HOURS 沿用 DEFAULT_PARAMS（evaluate() 用不到）。
+# 在這組規則下：① 5.5% ≥ 5%；② A = 680 < 3 × 600 不成立、第一個限時分支 (45, 1.0) 在第 20 分累計 600 成立並黏著、
+# 第二個 (15, 0.5) 第 15 分 285 < 300 不成立；③ 107 > 106.5 × 1.001 = 106.6065 從第 40 分起成立。
+# → 本小時唯一訊號在第 40 分（1M / 5M）或第 45 分（15M），分支 code 2，標籤 B_LABEL。
+CASE = {"MIN_RISE_FROM_OPEN": 0.05, "MIN_VOL_MULT": 3.0, "EARLY_VOL_RULES": ((45, 1.0), (15, 0.5)),
+        "MIN_ABOVE_PH": 0.001}
+CASE_RULES = {**s5_signal.DEFAULT_PARAMS, **s5_signal.V3_SWITCHES, **CASE}
+B_LABEL = "45分1倍"                                          # CASE 的第一個限時分支 (45, 1.0) 的標籤
+
+
+def close_minute_at(bar_minutes):
+    """用 bar_minutes 分K 表達合成資料時，第一根收盤分鐘 ≥ BREAK_MIN 的小K（= 進場那根）的收盤分鐘。"""
+    return -(-BREAK_MIN // bar_minutes) * bar_minutes
+
+
+def synth_1m(prev_open=P_OPEN, prev_close=P_CLOSE, prev_vol=P_VOL, drop_prev_minute=None):
+    """已知答案的 1 分K（與 TASK-010 的 c1 同型，行情常數見上方 P_* / C_*）：
+         P（前一小時）開 prev_open、線性漲到 prev_close、第 51 根最高 P_HIGH、每分量 prev_vol
+         C（本小時）收盤分鐘 1～39 收 C_BELOW（< 前高），BREAK_MIN 起收 C_ABOVE（> 前高）；量見 C_VOLS
+       CASE_RULES 下：本小時唯一訊號在第 40 分，分支只有 CASE 的第一個限時分支（code 2，標籤 B_LABEL）。"""
     w = _bars(T_C - 2 * HOUR, [100.0] * 60, [10.0] * 60, 100.0)
     closes = [100.0 + (prev_close - 100.0) * (i + 1) / 60 for i in range(60)]
     closes[-1] = prev_close
-    p = _bars(T_C - HOUR, closes, [prev_vol] * 60, prev_open, high_at={50: 106.5})
-    vols = [19.0] * 15 + [63.0] * 5 + [2.0] * 40
-    c = _bars(T_C, [107.0 if m >= 40 else 105.0 for m in range(1, 61)], vols, 105.0)
+    p = _bars(T_C - HOUR, closes, [prev_vol] * 60, prev_open, high_at={50: P_HIGH})
+    c = _bars(T_C, [C_ABOVE if m >= BREAK_MIN else C_BELOW for m in range(1, 61)], C_VOLS, C_BELOW)
     rows = w + p + c
     if drop_prev_minute is not None:
         rows = [r for r in rows if r["time"] != T_C - HOUR + (drop_prev_minute - 1) * MIN]
@@ -233,6 +256,14 @@ def _snap(v):
     return {"type": type(v).__name__, "repr": repr(v)}
 
 
+def _case_spec(params=None, **extra):
+    """子行程規格：先把合成案例的規則（v3 開關 + CASE）套進 s5_signal.DEFAULT_PARAMS，再疊上 params 的突變。
+       子行程的訊號期望因此只依賴 CASE 與合成資料，不依賴出貨的參數值。"""
+    p = {**s5_signal.V3_SWITCHES, **CASE, **(params or {})}
+    p = {k: ([list(r) for r in v] if k == "EARLY_VOL_RULES" else v) for k, v in p.items()}
+    return {"DEFAULT_PARAMS": p, **extra}
+
+
 # ============================== 1. 相依（AC-7）==============================
 def test_s5_signal_imports_only_numpy_pandas_stdlib():
     with open(os.path.join(REPO_ROOT, "strategy", "s5_signal.py"), encoding="utf-8") as f:
@@ -265,29 +296,33 @@ def test_import_in_fresh_interpreter_pulls_no_heavy_modules():
 
 
 # ============================== 2. 參數 ==============================
-def test_default_params_keys_values_and_types_are_pinned():
-    """鍵、順序、值、型別全部釘死。改任何一項 dry run 的 s5 帳本就會換指紋（tuple→list 除外：指紋看不出來，
-       所以型別只能在這裡擋）。真的要改參數時，確認接受 s5 帳本前瞻紀錄歸零後再更新這裡。"""
+_OPT_NUM = (type(None), int, float)          # None = 不限，或一個數字（bool 不算）
+
+
+def test_default_params_keys_and_types_are_pinned():
+    """鍵、順序、型別釘死；**數值不在這裡重寫**（值由 test_dryrun_book_fingerprints_are_pinned 的指紋守住，
+       改任何值或 0 / 0.0 指紋就變）。型別之所以要釘：指紋用 json 序列化，EARLY_VOL_RULES 從 tuple 改成 list
+       指紋看不出來。COOLDOWN_HOURS 固定為 int（0 改 0.0 會改變指紋；真的要改成小數小時時一併更新這裡）。"""
     P = s5_signal.DEFAULT_PARAMS
     assert tuple(P) == PARAM_KEYS and s5_signal.PARAM_KEYS == PARAM_KEYS, tuple(P)
-    expect = {"MIN_RISE_FROM_OPEN": ("float", "0.06"), "MIN_VOL_MULT": ("float", "2.0"),
-              "EARLY_VOL_RULES": ("tuple", "((30, 1.0), (15, 0.5))"), "REQUIRE_VOL_BURST": ("bool", "True"),
-              "REQUIRE_HIGHER_HIGH": ("bool", "True"), "HH_MODE": ("str", "'price'"),
-              "MIN_ABOVE_PH": ("float", "0.0"), "MIN_TURN24H": ("NoneType", "None"),
-              "MAX_TURN24H": ("NoneType", "None"), "MAX_PRICE": ("NoneType", "None"),
-              "COOLDOWN_HOURS": ("int", "0")}
-    got = {k: (type(v).__name__, repr(v)) for k, v in P.items()}
-    assert got == expect, {k: (got[k], expect[k]) for k in expect if got.get(k) != expect[k]}
+    expect = {"MIN_RISE_FROM_OPEN": (float,), "MIN_VOL_MULT": (float,), "EARLY_VOL_RULES": (tuple,),
+              "REQUIRE_VOL_BURST": (bool,), "REQUIRE_HIGHER_HIGH": (bool,), "HH_MODE": (str,),
+              "MIN_ABOVE_PH": (float,), "MIN_TURN24H": _OPT_NUM, "MAX_TURN24H": _OPT_NUM, "MAX_PRICE": _OPT_NUM,
+              "COOLDOWN_HOURS": (int,)}
+    bad = {k: type(v).__name__ for k, v in P.items() if type(v) not in expect[k]}
+    assert not bad, f"DEFAULT_PARAMS 的型別變了：{bad}"
     rules = P["EARLY_VOL_RULES"]
-    assert all(type(r) is tuple and type(r[0]) is int and type(r[1]) is float for r in rules), rules
+    assert all(type(r) is tuple and len(r) == 2 and type(r[0]) is int and type(r[1]) is float for r in rules), \
+        f"EARLY_VOL_RULES 必須是 tuple of (int, float)：{rules!r}"
 
 
 def test_exit_params_keys_and_separation():
+    """出場參數的鍵、順序、型別；數值不重寫（理由同上）。"""
     E = s5_signal.EXIT_PARAMS
     assert tuple(E) == EXIT_KEYS, tuple(E)
-    assert {k: (type(v).__name__, v) for k, v in E.items()} == {
-        "EXIT_MODE": ("str", "fixed"), "TAKE_PROFIT": ("float", 0.03), "STOP_LOSS": ("float", 0.05),
-        "MAX_HOLD_HOURS": ("NoneType", None)}
+    expect = {"EXIT_MODE": (str,), "TAKE_PROFIT": (float,), "STOP_LOSS": (float,), "MAX_HOLD_HOURS": _OPT_NUM}
+    bad = {k: type(v).__name__ for k, v in E.items() if type(v) not in expect[k]}
+    assert not bad, f"EXIT_PARAMS 的型別變了：{bad}"
     assert not set(E) & set(s5_signal.DEFAULT_PARAMS), "出場鍵混進了 DEFAULT_PARAMS（會改變 s5 指紋）"
     assert "FEE_RATE" not in E, "FEE_RATE 是回測帳務，留在 pionex_strategy5.CONFIG"
 
@@ -310,7 +345,9 @@ def test_callers_take_params_from_s5_signal():
     ex = {k: _snap(v) for k, v in s5_signal.EXIT_PARAMS.items()}
     assert res["CONFIG"] == ex, f"pionex_strategy5.CONFIG 的出場鍵不等於 EXIT_PARAMS：{res['CONFIG']}"
     assert res["S5_CONFIG"] == ex, f"pionex_dryrun.S5_CONFIG 的出場鍵不等於 EXIT_PARAMS：{res['S5_CONFIG']}"
-    assert res["FEE"] == [0.0005, 0.0005]
+    fee_backtest, fee_dryrun = res["FEE"]          # pionex_strategy5.CONFIG / pionex_dryrun.S5_CONFIG
+    assert type(fee_backtest) is float and fee_dryrun == fee_backtest, \
+        f"dry run 的手續費必須取自 pionex_strategy5.CONFIG['FEE_RATE']：{res['FEE']}"
     assert res["import_touched_pb_config"] is False
 
 
@@ -322,31 +359,40 @@ def _assert_only_s5_fp_changed(base, mut):
 
 
 def test_baseline_synthetic_case():
-    """未改參數時：dry run（1 分K）第 40 分、回測（15 分K）第 45 分進場，分支都只有 B。"""
-    base = _run_child()
-    assert base["dry_sig"] == [[40, "30分1倍"]], base["dry_sig"]
-    assert base["bt_sig"] == [[45, "30分1倍"]], base["bt_sig"]
+    """套入 CASE 規則後：dry run（1 分K）第 40 分、回測（15 分K）第 45 分進場，分支都只有 CASE 的第一個限時分支。"""
+    base = _run_child(_case_spec())
+    assert base["dry_sig"] == [[BREAK_MIN, B_LABEL]], base["dry_sig"]
+    assert base["bt_sig"] == [[close_minute_at(15), B_LABEL]], base["bt_sig"]
 
 
 def test_min_rise_change_follows_source():
-    base, mut = _run_child(), _run_child({"DEFAULT_PARAMS": {"MIN_RISE_FROM_OPEN": 0.0601}})
-    assert mut["S5"]["MIN_RISE_FROM_OPEN"] == mut["S5_RULE"]["MIN_RISE_FROM_OPEN"] == _snap(0.0601)
-    assert mut["dry_sig"] == [] and mut["bt_sig"] == [], "前根 +6.00% < 6.01%，兩條路徑都不該有訊號"
+    """① 門檻改成比合成資料的前根漲幅（P_RISE）高一點點：兩條路徑都要跟著不發訊號。"""
+    rise_mut = round(P_RISE + 0.0001, 6)
+    base, mut = _run_child(_case_spec()), _run_child(_case_spec({"MIN_RISE_FROM_OPEN": rise_mut}))
+    assert mut["S5"]["MIN_RISE_FROM_OPEN"] == mut["S5_RULE"]["MIN_RISE_FROM_OPEN"] == _snap(rise_mut)
+    assert mut["dry_sig"] == [] and mut["bt_sig"] == [], f"前根 {P_RISE:+.4%} < 門檻 {rise_mut:.4%}，兩條路徑都不該有訊號"
     _assert_only_s5_fp_changed(base, mut)
 
 
 def test_early_rules_change_follows_source():
-    base, mut = _run_child(), _run_child({"DEFAULT_PARAMS": {"EARLY_VOL_RULES": [[30, 1.2], [15, 0.5]]}})
-    assert mut["S5"]["EARLY_VOL_RULES"] == mut["S5_RULE"]["EARLY_VOL_RULES"] == _snap(((30, 1.2), (15, 0.5)))
-    assert mut["dry_sig"] == [] and mut["bt_sig"] == [], "第 30 分累計 620 < 1.2 倍前根 720，B 不成立"
+    """CASE 的第一個限時分支倍數 1.0 → 1.2：第 45 分內累計最多 650 < 1.2 × 600，分支不成立，兩條路徑都不發訊號。"""
+    (n1, _), second = CASE["EARLY_VOL_RULES"]
+    early_mut = ((n1, 1.2), second)
+    base, mut = _run_child(_case_spec()), _run_child(_case_spec({"EARLY_VOL_RULES": early_mut}))
+    assert mut["S5"]["EARLY_VOL_RULES"] == mut["S5_RULE"]["EARLY_VOL_RULES"] == _snap(early_mut)
+    assert mut["dry_sig"] == [] and mut["bt_sig"] == [], (mut["dry_sig"], mut["bt_sig"])
     _assert_only_s5_fp_changed(base, mut)
 
 
 def test_take_profit_change_follows_source():
-    base, mut = _run_child(), _run_child({"EXIT_PARAMS": {"TAKE_PROFIT": 0.035}})
+    """未改時四處的 TAKE_PROFIT 都等於 EXIT_PARAMS；改成另一個值（由來源推導，一定不同）後四處都跟著變。"""
+    tp_now = s5_signal.EXIT_PARAMS["TAKE_PROFIT"]
+    tp_mut = round(tp_now + 0.005, 6)
+    assert tp_mut != tp_now
+    base, mut = _run_child(_case_spec()), _run_child(_case_spec(EXIT_PARAMS={"TAKE_PROFIT": tp_mut}))
     for where in ("CONFIG", "S5_CONFIG", "dry_cfg", "bt_cfg"):
-        assert base[where]["TAKE_PROFIT"] == _snap(0.03), (where, base[where])
-        assert mut[where]["TAKE_PROFIT"] == _snap(0.035), f"{where} 的 TAKE_PROFIT 沒跟著 EXIT_PARAMS 變"
+        assert base[where]["TAKE_PROFIT"] == _snap(tp_now), (where, base[where])
+        assert mut[where]["TAKE_PROFIT"] == _snap(tp_mut), f"{where} 的 TAKE_PROFIT 沒跟著 EXIT_PARAMS 變"
     assert mut["dry_sig"] == base["dry_sig"] and mut["bt_sig"] == base["bt_sig"], "止盈不該影響進場訊號"
     _assert_only_s5_fp_changed(base, mut)
 
@@ -384,12 +430,12 @@ def test_callers_really_call_s5_signal_functions():
     """把 s5_signal 的函式換掉，兩條路徑的輸出都要跟著變——證明呼叫端沒有自己留一份公式。
          first_per_hour → 永遠 False：兩條路徑都不該有訊號
          rise_from_open → 常數 0.4242：dry run s5_rise 與回測 rise_open 都變成 0.4242"""
-    base = _run_child()
+    base = _run_child(_case_spec())
     assert base["dry_sig"] and base["bt_sig"]
-    fph = _run_child({"patch": "first_per_hour"})
+    fph = _run_child(_case_spec(patch="first_per_hour"))
     assert fph["dry_sig"] == [] and fph["bt_sig"] == [], (fph["dry_sig"], fph["bt_sig"])
-    rise = _run_child({"patch": "rise_from_open"})
-    assert abs(base["dry_rise_at_c"] - 0.06) < 1e-12 and abs(base["bt_rise_at_c"] - 0.06) < 1e-12
+    rise = _run_child(_case_spec(patch="rise_from_open"))
+    assert abs(base["dry_rise_at_c"] - P_RISE) < 1e-12 and abs(base["bt_rise_at_c"] - P_RISE) < 1e-12
     assert rise["dry_rise_at_c"] == 0.4242, f"dry run 沒有用 s5_signal.rise_from_open：{rise['dry_rise_at_c']}"
     assert rise["bt_rise_at_c"] == 0.4242, f"回測沒有用 s5_signal.rise_from_open：{rise['bt_rise_at_c']}"
 
@@ -412,37 +458,40 @@ def test_dryrun_book_fingerprints_are_pinned():
 
 # ============================== 5. evaluate() 本身 ==============================
 def test_evaluate_known_case():
+    """CASE_RULES（顯式傳入）下的已知答案；期望值全部由合成資料常數與 CASE 推導。"""
     with _offline():
         df = synth_1m()
-        ev = s5_signal.evaluate(df, MIN)
+        ev = s5_signal.evaluate(df, MIN, CASE_RULES)
         assert tuple(ev.columns) == s5_signal.EVALUATE_COLUMNS
-        assert _signals_in_c(ev) == [(40, 2)], _signals_in_c(ev)
-        assert s5_signal.branch_label(2) == "30分1倍"
-        row = ev[(ev["hid"] == T_C // HOUR) & (ev["minute"] == 40)].iloc[0]
-        assert abs(row["rise"] - 0.06) < 1e-12 and abs(row["volx"] - 640 / 600) < 1e-12
-        assert abs(row["above"] - (107.0 / 106.5 - 1)) < 1e-12
+        assert _signals_in_c(ev) == [(BREAK_MIN, 2)], _signals_in_c(ev)
+        assert s5_signal.branch_label(2, CASE_RULES) == B_LABEL
+        row = ev[(ev["hid"] == T_C // HOUR) & (ev["minute"] == BREAK_MIN)].iloc[0]
+        assert abs(row["rise"] - P_RISE) < 1e-12
+        assert abs(row["volx"] - sum(C_VOLS[:BREAK_MIN]) / (P_VOL * 60)) < 1e-12
+        assert abs(row["above"] - (C_ABOVE / P_HIGH - 1)) < 1e-12
         assert bool(row["rise_ok"]) and bool(row["burst_ok"]) and bool(row["break_ok"])
-        assert (s5_signal.signal(df, MIN) == ev["signal"]).all()
+        assert (s5_signal.signal(df, MIN, CASE_RULES) == ev["signal"]).all()
         assert int((ev["signal"] == -1).sum()) == 1, "每小時最多一次，且其他小時不該有訊號"
 
 
 def test_evaluate_is_bar_period_independent():
-    """同一段行情用 1M / 5M / 15M 表達：同一小時進場，分支相同；進場分鐘 = 第一根收盤 ≥ 40 分的小K。"""
+    """同一段行情用 1M / 5M / 15M 表達：同一小時進場，分支相同；進場分鐘 = 第一根收盤 ≥ BREAK_MIN 的小K。"""
     with _offline():
         df = synth_1m()
-        assert _signals_in_c(s5_signal.evaluate(df, MIN)) == [(40, 2)]
-        assert _signals_in_c(s5_signal.evaluate(agg(df, 5), 5 * MIN)) == [(40, 2)]
-        assert _signals_in_c(s5_signal.evaluate(agg(df, 15), 15 * MIN)) == [(45, 2)]
+        assert _signals_in_c(s5_signal.evaluate(df, MIN, CASE_RULES)) == [(close_minute_at(1), 2)]
+        assert _signals_in_c(s5_signal.evaluate(agg(df, 5), 5 * MIN, CASE_RULES)) == [(close_minute_at(5), 2)]
+        assert _signals_in_c(s5_signal.evaluate(agg(df, 15), 15 * MIN, CASE_RULES)) == [(close_minute_at(15), 2)]
 
 
 def test_evaluate_guard_paths():
     with _offline():
-        assert _signals_in_c(s5_signal.evaluate(synth_1m(drop_prev_minute=30), MIN)) == [], "前一小時缺一根 → 不完整"
-        ev = s5_signal.evaluate(synth_1m(prev_vol=0.0), MIN)
+        R = CASE_RULES
+        assert _signals_in_c(s5_signal.evaluate(synth_1m(drop_prev_minute=30), MIN, R)) == [], "前一小時缺一根 → 不完整"
+        ev = s5_signal.evaluate(synth_1m(prev_vol=0.0), MIN, R)
         assert _signals_in_c(ev) == [] and ev.loc[ev["hid"] == T_C // HOUR, "volx"].isna().all(), "前一小時量 0 → NaN"
-        ev = s5_signal.evaluate(synth_1m(prev_open=0.0), MIN)
+        ev = s5_signal.evaluate(synth_1m(prev_open=0.0), MIN, R)
         assert _signals_in_c(ev) == [] and ev.loc[ev["hid"] == T_C // HOUR, "rise"].isna().all(), "前一小時開盤 0 → NaN"
-        ev = s5_signal.evaluate(synth_1m(), MIN)
+        ev = s5_signal.evaluate(synth_1m(), MIN, R)
         first = ev[ev["hid"] == ev["hid"].min()]
         assert first["rise"].isna().all() and not first["complete"].any() and (first["signal"] == 0).all()
 
@@ -452,15 +501,24 @@ def test_evaluate_does_not_mutate_input_and_keeps_index():
         df = synth_1m()
         df.index = df.index + 1000
         before = df.copy()
-        ev = s5_signal.evaluate(df, MIN)
+        ev = s5_signal.evaluate(df, MIN, CASE_RULES)
         assert df.equals(before) and list(df.columns) == list(before.columns)
         assert ev.index.equals(df.index)
+
+
+def test_shipped_defaults_are_supported_by_evaluate():
+    """出貨的 DEFAULT_PARAMS 必須是 evaluate() / dry run 支援的 v3 組合（不比對數值，只檢查「可用」）；
+       params=None 等於傳入 DEFAULT_PARAMS。"""
+    with _offline():
+        assert s5_signal.params_problems(s5_signal.DEFAULT_PARAMS, MIN) == []
+        df = synth_1m()
+        assert s5_signal.evaluate(df, MIN).equals(s5_signal.evaluate(df, MIN, s5_signal.DEFAULT_PARAMS))
 
 
 def test_evaluate_rejects_unsupported_params():
     with _offline():
         df = synth_1m()
-        P = s5_signal.DEFAULT_PARAMS
+        P = CASE_RULES
         for bad in ({"REQUIRE_VOL_BURST": False}, {"REQUIRE_HIGHER_HIGH": 1}, {"HH_MODE": "high"},
                     {"MIN_TURN24H": 20_000}, {"MAX_PRICE": 1.0}, {"FAST_VOL_MULT": 1.0},
                     {"EARLY_VOL_RULES": ((0, 1.0),)}, {"EARLY_VOL_RULES": "x"}):
@@ -481,12 +539,12 @@ def test_evaluate_rejects_unsupported_params():
             pass
         for bar in (90_000, 7_200_000, 0):
             try:
-                s5_signal.evaluate(df, bar)
+                s5_signal.evaluate(df, bar, P)
                 raise AssertionError(f"bar_ms={bar} 沒有拒絕")
             except ValueError:
                 pass
         try:
-            s5_signal.evaluate(df, 60_000.0)
+            s5_signal.evaluate(df, 60_000.0, P)
             raise AssertionError("float 的 bar_ms 沒有拒絕")
         except TypeError:
             pass
@@ -494,16 +552,25 @@ def test_evaluate_rejects_unsupported_params():
 
 
 def test_helpers_examples():
-    assert s5_signal.branch_label(0) == "-"
-    assert s5_signal.branch_label(1) == "2倍"
-    assert s5_signal.branch_label(4) == "15分0.5倍"
-    assert s5_signal.branch_label(7) == "2倍+30分1倍+15分0.5倍"
-    assert s5_signal.early_rules_problems(((30, 1.0), (15, 0.5))) == []
+    """標籤與冷卻換算對**顯式傳入**的規則下斷言；預設行為只驗證「預設 = DEFAULT_PARAMS」，不比對預設的數值。"""
+    R = CASE_RULES                                 # A = 3 倍、限時分支 (45, 1.0)、(15, 0.5)
+    assert s5_signal.branch_label(0, R) == "-"
+    assert s5_signal.branch_label(1, R) == "3倍"
+    assert s5_signal.branch_label(2, R) == B_LABEL
+    assert s5_signal.branch_label(4, R) == "15分0.5倍"
+    assert s5_signal.branch_label(7, R) == "3倍+45分1倍+15分0.5倍"
+    assert all(s5_signal.branch_label(c) == s5_signal.branch_label(c, s5_signal.DEFAULT_PARAMS) for c in range(8))
+    assert s5_signal.early_rules_problems(CASE["EARLY_VOL_RULES"]) == []
     assert s5_signal.early_rules_problems(()) == []
     assert len(s5_signal.early_rules_problems(((61, 1.0), (True, 1.0), (15, 0.0), (15,)))) == 4
-    assert s5_signal.early_rules_window_problems(((30, 1.0), (15, 0.5)), 30 * MIN) == [(1, 15, 0.5, 30)]
+    assert s5_signal.early_rules_window_problems(CASE["EARLY_VOL_RULES"], 15 * MIN) == []
+    assert s5_signal.early_rules_window_problems(CASE["EARLY_VOL_RULES"], 30 * MIN) == [(0, 45, 1.0, 30),
+                                                                                       (1, 15, 0.5, 30)]
     assert s5_signal.bar_minutes(15 * MIN) == 15 and s5_signal.bars_in_hour(5 * MIN) == 12
-    assert s5_signal.cooldown_bars(60) == 1 and s5_signal.cooldown_bars(60, {"COOLDOWN_HOURS": 1.0}) == 60
+    assert s5_signal.cooldown_bars(60, {"COOLDOWN_HOURS": 0}) == 1          # 0 小時 → 至少 1 根
+    assert s5_signal.cooldown_bars(60, {"COOLDOWN_HOURS": 1.0}) == 60
+    assert s5_signal.cooldown_bars(12, {"COOLDOWN_HOURS": 0.5}) == 6
+    assert s5_signal.cooldown_bars(60) == s5_signal.cooldown_bars(60, s5_signal.DEFAULT_PARAMS)
 
 
 # ============================== F4 ==============================
