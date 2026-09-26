@@ -191,6 +191,13 @@ HTTP 取數在 `live/pionex_api.py`（原本叫 `live/http.py`，跟標準庫的
 沒設密鑰不影響用不到它的元件 —— `import live.config` 不會失敗，要用的元件會在取用當下拋出
 說得出該設哪個環境變數的例外。`python -m live` 只報告每個密鑰「已設定 / 未設定」，不印值。
 
+訊號與推播 / 下單之間用事件匯流排解耦：`live/signal_events.py` 定義不可變的 `EntryEvent`（進場）
+與 `ExitEvent`（出場），每個事件都帶 `strategy`（名單只在 `live/config.py` 的 `STRATEGIES`，
+同一個幣 s4、s5 可以同時持倉），欄位不合法在建構時就拋例外；`live/bus.py` 的 `SignalBus`
+由進入點建一個，訂閱者在啟動時 `subscribe`，產生者 `publish` 後依訂閱順序**同步**呼叫每個 handler，
+一個 handler 出錯只記 ERROR、不影響其他人，回傳送達報告。會做 I/O 的訂閱者（TG、webhook）
+必須自己排佇列後立刻返回。不做持久化與重送。離線測試在 `tests/test_bus.py`。
+
 日誌在 `live/logsetup.py`（刻意不叫 `logging.py`，理由同上面 `http.py` 的改名）。進入點啟動時
 呼叫一次 `logsetup.setup()`，之後各模組照標準寫法 `logging.getLogger(__name__)` 即可；import 本身
 沒有副作用。日誌檔預設在 `runtime/logs/live.log`（UTF-8、依大小輪替，位置 / 等級 / 輪替參數都在
@@ -202,6 +209,25 @@ HTTP 取數在 `live/pionex_api.py`（原本叫 `live/http.py`，跟標準庫的
 **同一個日誌檔同時只能有一個行程在寫**（Windows 上別的行程開著檔案會讓輪替失敗）。
 `python -m live` 會報告日誌會寫到哪裡、能不能寫，但不會建立任何日誌檔。離線測試在
 `tests/test_logsetup.py`。
+
+A 頻道的訊號與名目部位存在 `live/store.py`（標準庫 SQLite，資料庫檔預設 `runtime/db/live.sqlite3`，
+路徑在 `live/config.py` 的 `LIVE_DB_PATH`），程式重啟後靠它找回還沒平倉的名目部位與還沒發布的訊號。
+**同一個資料庫檔同時只能有一個行程在寫**；旁邊的 `live.sqlite3-wal` / `-shm` 是 WAL 模式的檔案，
+當掉後留下的 `-wal` **不要手動刪**，下次開啟時 SQLite 會用它復原已提交的資料。離線測試在
+`tests/test_store.py`。
+
+A 頻道資料層在 `live/signal_feed.py`（A1）：每 10 秒打一次 tickers 維護 2 小時價格序列，K 棒收盤時以
+近似 ret2h 粗篩（門檻 = `MIN_RET_2H - SCREEN_RET2H_MARGIN`，現場推導），只對候選打 klines，並且只在
+「剛收完的那根」上跑 `strategy/s4_signal`（候選 klines 等到收盤後 `BAR_FINALIZE_WAIT_SECONDS` 才取，
+避開派網收盤後改寫 K 棒）。它每根 K 棒交出一個結果物件，本身不發 TG、不追蹤部位；行程停頓或輪詢卡住
+而錯過的收盤也會交出結果（`missed_close`，degraded，不補判），不會有哪一根悄悄消失。
+所有派網 REST 請求都經過 `live/rest_gate.py` 的共用閘門（整個行程一份：任何 1 秒最多
+`A1_REST_RATE_PER_SECOND` 個請求，收到 429 就整個行程停送 `REST_BAN_COOLDOWN_SECONDS` 秒），
+之後的元件要打 REST 也請走 `rest_gate.shared_gate()`。觀察用：
+`python -m live.signal_feed --duration 900 --record`（jsonl 預設寫到 `runtime/signal_feed/`，
+不可以指到 `state/` 或 `output/`；`--force-candidates N` 是壓測用；`--finality-probe` 是驗證用，
+收盤後 5 / 15 / 60 秒各重抓一次候選的 K 棒寫進 jsonl，用來校正定稿等待秒數）。離線測試在
+`tests/test_signal_feed.py`、`tests/test_rest_gate.py`。
 
 ## 方法 A：GitHub Actions（免費、免主機）
 
