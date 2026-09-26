@@ -37,6 +37,7 @@ import pionex_reversal as rv
 import pionex_strategy4 as s4
 import pionex_strategy5 as strat5     # 別名刻意不用 s5，避免和檔內 s5_* 函式、帳本鍵 "s5" 混淆
 from strategy import s4_signal
+from strategy import s5_signal
 
 # ============================== 起算時間 ==============================
 # 第一次執行時，從這個時間開始回補統計（台北時間）。設 None = 只從執行當下開始。
@@ -110,9 +111,11 @@ S4_CONFIG.update(
 S4_RULE = dict(s4.S4)          # 條件沿用 pionex_strategy4.py 的 S4
 
 # ---- 策略5：群組訊號複製（1分K、只做空）----
-# 規則來自 pionex_strategy5.S5（整份，比照策略4 的 S4_RULE）；止盈、止損、出場模式、最長持倉、
-# 手續費來自 pionex_strategy5.CONFIG（見 S5_FROM_BACKTEST）。兩邊是同一份參數：要調請改
-# pionex_strategy5.py，dry run 會跟著變（參數指紋隨之改變 → 該帳本自動重置，見 book_fingerprint()）。
+# 規則來自 pionex_strategy5.S5（整份，比照策略4 的 S4_RULE；S5 = strategy/s5_signal.py 的 DEFAULT_PARAMS）；
+# 止盈、止損、出場模式、最長持倉、手續費來自 pionex_strategy5.CONFIG（見 S5_FROM_BACKTEST；前四個的值
+# 在 s5_signal.EXIT_PARAMS，手續費在 pionex_strategy5.CONFIG）。兩邊是同一份參數：要調請改
+# strategy/s5_signal.py，回測與 dry run 會一起變（參數指紋隨之改變 → 該帳本自動重置，見 book_fingerprint()）。
+# 訊號計算本身也在 s5_signal（s5_indicators() 只呼叫 s5_signal.evaluate()），這裡不另寫公式。
 # 目標是「複製群組機器人的訊號與出場」，不是追求勝率。規則 v3（2026-09-24 使用者指定，尚未用群組訊號校準）：
 #   ① 前一根 1h K（整點切）收盤 ÷ 開盤 − 1 ≥ MIN_RISE_FROM_OPEN
 #   ② 爆量，下列任一：
@@ -121,7 +124,7 @@ S4_RULE = dict(s4.S4)          # 條件沿用 pionex_strategy4.py 的 S4
 #      成立後本小時剩下的時間都算（黏著）。例：第 20 分追平前根、第 40 分才突破前高 → 第 40 分進場。
 #   ③ 現價（這根 1 分K 收盤）> 前一根 1h K 最高價 × (1 + MIN_ABOVE_PH)
 #   三條件第一次同時成立的那根 1 分K 收盤進場；同幣每小時最多一次、持倉中不重複進場。
-#   門檻與分支的數值一律看 pionex_strategy5.S5，這裡不寫死。
+#   門檻與分支的數值一律看 strategy/s5_signal.py 的 DEFAULT_PARAMS（= pionex_strategy5.S5），這裡不寫死。
 #   出場：止盈 TAKE_PROFIT（跌 3%）/ 止損 STOP_LOSS（漲 5% = 群組第 1 次加倉點，
 #   群組把有加倉的單記為止損）。出場後冷卻：COOLDOWN_HOURS 在 use_config() 換算成根數
 #   （0 → 1 根 = 出場的下一根 1 分K 起可再進場）。
@@ -436,9 +439,9 @@ def use_config(book):
         pb.PARAM_ROWS_HOOK, pb.DIAG_COLUMNS_HOOK = s4.param_rows, s4.diag_columns
     else:
         pb.CONFIG.update(S5_CONFIG)
-        # 與回測 pionex_strategy5.main() 同一個換算式；strat5.H() 依 pb.CONFIG["INTERVAL"]（此時為 1M）
-        # 推導每小時根數，所以 COOLDOWN_HOURS=0 → 1 根、1.0 → 60 根
-        pb.CONFIG["COOLDOWN_BARS"] = max(1, round(S5_RULE["COOLDOWN_HOURS"] * strat5.H()))
+        # 與回測 pionex_strategy5.main() 同一個換算式（s5_signal.cooldown_bars()）；strat5.H() 依
+        # pb.CONFIG["INTERVAL"]（此時為 1M）推導每小時根數，所以 COOLDOWN_HOURS=0 → 1 根、1.0 → 60 根
+        pb.CONFIG["COOLDOWN_BARS"] = s5_signal.cooldown_bars(strat5.H(), S5_RULE)
         pb.PARAM_ROWS_HOOK, pb.DIAG_COLUMNS_HOOK = s5_param_rows, s5_diag
     pb.CONFIG.update(meta["overrides"])
 
@@ -451,7 +454,7 @@ def indicators(book, df, btc):
 
 # ============================== 策略5：訊號與報表欄位 ==============================
 # "s5_branch" 在交易紀錄裡存的是文字標籤：進場那根當下成立的所有分支，用 "+" 連接，
-# 標籤由 pionex_strategy5.branch_label() 依分支參數產生（格式與例子見該函式）
+# 標籤由 s5_signal.branch_label() 依分支參數產生（格式與例子見該函式）
 S5_DIAG = [("① 前根收盤比開盤", "s5_rise", 13, "0.00%"), ("② 觸發時量倍數", "s5_volx", 12, "0.00"),
            ("② 爆量分支", "s5_branch", 18, "@"),
            ("③ 進場價vs前高", "s5_above", 12, "0.00%"), ("觸發於第幾分鐘", "s5_minute", 12, "0")]
@@ -461,24 +464,20 @@ class S5VariantError(ValueError):
     """策略5 的設定是 dry run 沒實作的變體（見 check_s5_variant()）。"""
 
 
-# s5_indicators() 只實作 v3。pionex_strategy5.S5 其餘的開關 dry run 都沒有實作，打開了不會報錯、
-# 只會被靜默忽略（跑的其實是另一個策略），所以 main() 一開始先擋下。
+# s5_indicators() 只實作 v3（s5_signal.evaluate()）。pionex_strategy5.S5 其餘的開關 dry run 都沒有實作，
+# 所以 main() 一開始先擋下，並說清楚是哪個鍵（evaluate() 本身也會拒絕，但訊息不如這裡完整）。
+# 「支援哪些值」只有一份定義：s5_signal.V3_SWITCHES（True / None 用 is 比較，字串用 ==）。
 # 每列：(鍵, 是否支援, 支援的值, 鍵不存在時回測模組的行為)
 _MISSING = object()
-S5_SUPPORTED = [
-    ("REQUIRE_VOL_BURST", lambda v: v is True, "True", _MISSING),
-    ("REQUIRE_HIGHER_HIGH", lambda v: v is True, "True", _MISSING),
-    ("HH_MODE", lambda v: v == "price", "'price'", "high"),       # 回測 S5.get("HH_MODE", "high")
-    ("MIN_TURN24H", lambda v: v is None, "None", _MISSING),
-    ("MAX_TURN24H", lambda v: v is None, "None", _MISSING),
-    ("MAX_PRICE", lambda v: v is None, "None", _MISSING),
-]
+_BACKTEST_DEFAULT = {"HH_MODE": "high"}       # 回測 S5.get("HH_MODE", "high")；其他鍵回測直接 S5[k]
+S5_SUPPORTED = [(k, (lambda v, k=k: s5_signal.v3_switch_ok(k, v)), repr(want), _BACKTEST_DEFAULT.get(k, _MISSING))
+                for k, want in s5_signal.V3_SWITCHES.items()]
 
 
 def check_s5_variant():
     """策略5 必須是 dry run 支援的 v3 組合，否則拋 S5VariantError（訊息列出每個不符的鍵）。
        EARLY_VOL_RULES 必須是 (1～60 的整數分鐘, 正數倍數) 的序列（空序列 = 只剩分支 A），
-       格式規則與回測共用 pionex_strategy5.early_rules_problems()；已移除的舊鍵
+       格式規則與舊鍵清單都與回測共用 strategy/s5_signal.py（early_rules_problems() / LEGACY_KEYS）；已移除的舊鍵
        （FAST_VOL_MULT / FAST_WINDOW_MIN / MIN_RISE_FROM_LOW）出現也擋下，避免有人以為它還有作用。
        由 main() 在任何網路請求與狀態檔寫入之前呼叫；刻意不放在 import 時，
        因為 pionex_s5_compare.py 與測試會 import 本模組。
@@ -496,13 +495,13 @@ def check_s5_variant():
         elif not ok(v):
             src = "" if key in S5_RULE else "，未設定時回測的預設值"
             bad.append(f"  pionex_strategy5.S5[{key!r}] = {v!r}{src}（dry run 只支援 {want}）")
-    for key, why in strat5.LEGACY_KEYS.items():
+    for key, why in s5_signal.LEGACY_KEYS.items():
         if key in S5_RULE:
             bad.append(f"  pionex_strategy5.S5[{key!r}] 是已移除的舊鍵，不會有任何作用：{why}，並刪除這個鍵")
     if "EARLY_VOL_RULES" not in S5_RULE:
         bad.append("  pionex_strategy5.S5['EARLY_VOL_RULES'] 未設定（() = 關閉限時分支，只剩 A）")
     else:
-        bad += [f"  pionex_strategy5.S5: {p}" for p in strat5.early_rules_problems(S5_RULE["EARLY_VOL_RULES"])]
+        bad += [f"  pionex_strategy5.S5: {p}" for p in s5_signal.early_rules_problems(S5_RULE["EARLY_VOL_RULES"])]
     for b in books:
         v = {**S5_CONFIG, **BOOKS[b]["overrides"]}.get("EXIT_MODE")
         if v != "fixed":
@@ -511,8 +510,9 @@ def check_s5_variant():
         raise S5VariantError(
             "策略5 的設定不是 dry run 支援的組合，dry run 停止（尚未發出任何網路請求、未寫入狀態檔）：\n"
             + "\n".join(bad) + "\n"
-            "dry run 的策略五只實作 v3，要改變體得先改 pionex_dryrun.py 的 s5_indicators()；"
-            "否則請把 pionex_strategy5.py 的上列設定改回。修好後下次執行會自動補處理漏掉的 K 棒"
+            "dry run 的策略五只實作 v3，要改變體得先改 strategy/s5_signal.py 的 evaluate()；"
+            "否則請把上列設定改回（值在 strategy/s5_signal.py 的 DEFAULT_PARAMS / EXIT_PARAMS，"
+            "pionex_strategy5.S5 / CONFIG 取自那裡）。修好後下次執行會自動補處理漏掉的 K 棒"
             "（1 分K 保留約 7 天）。")
 
 
@@ -526,48 +526,24 @@ def s5_indicators(df, btc=None):
        進場時由 snapshot5() 轉成文字標籤。
        呼叫端抓的 1 分K 至少從「第一根要處理的 K 棒往前 WARMUP 根（150 根 > 2 小時）」開始，
        所以本小時與前一小時都是從整點第一根算起，黏著狀態與累計量不會因為分批執行而斷掉。
-       step_symbol() 需要的共用欄位（ret1h、atr_pct…）策略5 用不到，填 NaN 即可。"""
+       step_symbol() 需要的共用欄位（ret1h、atr_pct…）策略5 用不到，填 NaN 即可。
+       訊號與診斷值全部由 s5_signal.evaluate() 計算（與回測、實盤同一份實作），這裡只負責對應欄位名稱：
+       s5_rise = rise、s5_volx = volx、s5_above = above、s5_branch_code = branch_code、s5_minute = minute。"""
     for col in ("ret1h", "atr_pct", "ma_dev", "obv_chg", "liq24", "vol_ratio", "close_pos",
                 "htf_dev", "ret24", "btc_ret1h", "btc_ma_dev"):
         df[col] = np.nan
-    bar = pb.INTERVAL_MS[BOOK_INTERVAL["s5"]]
-    per_hour = HOUR // bar
-    t = df["time"].to_numpy()
-    hid = t // HOUR
-    g = df.groupby(hid)
-    hr = pd.DataFrame({"O": g["open"].first(), "H": g["high"].max(), "C": g["close"].last(),
-                       "V": g["volume"].sum(), "N": g.size()})
-    prev = hr.reindex(hr.index - 1)
-    prev.index = hr.index
-    m = lambda col: pd.Series(hid).map(prev[col]).to_numpy(dtype=float)
-    pO, pH, pC, pV, pN = m("O"), m("H"), m("C"), m("V"), m("N")
-    cumv = df.groupby(hid)["volume"].cumsum().to_numpy(dtype=float)
-    c = df["close"].to_numpy(dtype=float)
-    minute = ((t % HOUR) + bar) // 60_000                  # 這根 1 分K 收盤時是該小時第幾分鐘（1～60）
-    with np.errstate(invalid="ignore", divide="ignore"):
-        rise = np.where(pO > 0, pC / pO - 1, np.nan)
-        volx = np.where(pV > 0, cumv / pV, np.nan)
-        above = c / pH - 1
-        burst_a = volx >= S5_RULE["MIN_VOL_MULT"]
-        code = burst_a.astype(np.int64)
-        for i, (n_min, mult) in enumerate(S5_RULE["EARLY_VOL_RULES"]):
-            hit = (minute <= n_min) & (volx >= mult)
-            stick = pd.Series(hit.astype(np.int64)).groupby(hid).cumsum().to_numpy() > 0
-            code |= stick.astype(np.int64) << (i + 1)
-        ok = ((pN == per_hour) & (rise >= S5_RULE["MIN_RISE_FROM_OPEN"])
-              & (code > 0) & (c > pH * (1 + S5_RULE["MIN_ABOVE_PH"])))
-    ok = np.nan_to_num(ok, nan=0).astype(bool)
-    first = ok & (pd.Series(ok.astype(int)).groupby(hid).cumsum().to_numpy() == 1)
-    df["signal"] = np.where(first, -1, 0)
-    df["s5_rise"], df["s5_volx"], df["s5_above"] = rise, volx, above
-    df["s5_branch_code"] = code
-    df["s5_minute"] = minute
+    ev = s5_signal.evaluate(df, pb.INTERVAL_MS[BOOK_INTERVAL["s5"]], S5_RULE)
+    df["signal"] = ev["signal"].to_numpy()
+    df["s5_rise"], df["s5_volx"], df["s5_above"] = (ev["rise"].to_numpy(), ev["volx"].to_numpy(),
+                                                    ev["above"].to_numpy())
+    df["s5_branch_code"] = ev["branch_code"].to_numpy()
+    df["s5_minute"] = ev["minute"].to_numpy()          # 這根 1 分K 收盤時是該小時第幾分鐘（1～60）
     return df
 
 
 def snapshot5(row):
     out = {k: f(row[k]) for _, k, _, _ in S5_DIAG if k != "s5_branch"}
-    out["s5_branch"] = strat5.branch_label(row["s5_branch_code"], S5_RULE)
+    out["s5_branch"] = s5_signal.branch_label(row["s5_branch_code"], S5_RULE)
     return out
 
 

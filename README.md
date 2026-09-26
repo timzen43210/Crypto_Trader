@@ -43,8 +43,11 @@
 
 ### 策略5（群組訊號複製）
 
-參數只有一份，在 `pionex_strategy5.py`：dry run 的 `S5_RULE` 就是整份 `pionex_strategy5.S5`，
-止盈、止損、出場模式、最長持倉、手續費取 `pionex_strategy5.CONFIG`（比照策略4 取 `pionex_strategy4.S4`）。
+參數與訊號邏輯都只有一份，在 `strategy/s5_signal.py`（G5 起，比照策略4 的 `strategy/s4_signal.py`）：
+進場參數在 `DEFAULT_PARAMS`，止盈、止損、出場模式、最長持倉在 `EXIT_PARAMS`；回測的 `pionex_strategy5.S5` /
+`CONFIG` 與 dry run 的 `S5_RULE`（= 整份 `pionex_strategy5.S5`）/ `S5_CONFIG` 都從它取值，手續費留在
+`pionex_strategy5.CONFIG`。回測的 `add_indicators()` 與 dry run 的 `s5_indicators()` 都呼叫 `s5_signal` 計算
+小時脈絡與 ①②③（`evaluate()` 是 v3 的一步到位版本，只 import numpy / pandas，實盤端也用它）。
 條件以 1 小時 K（整點切）為單位，進出場用 1 分 K（規則 v3，2026-09-24 起）：
 
 1. 前一根 1h K：收盤 ÷ **開盤** − 1 ≥ 6%（`MIN_RISE_FROM_OPEN`）
@@ -75,24 +78,25 @@ v2 當時的校準數字（群組 1283 筆訊號、其中 46 筆以 1 分K 重�
   那段期間的策略5 紀錄會補不回來
 - 1 分K 已是最小週期，同一根同時碰到止盈與止損時**保守計止損**（其他帳本會再抓更細的K棒判先後）
 - 不另外抽同期基準：1 分K 前視 48 根只有 48 分鐘，大部分樣本不會觸發止盈止損。止盈止損與 60M 帳本
-  相同（3%／5%），直接共用 60M 那一桶（若在 `pionex_strategy5.py` 把止盈止損改成 60M 帳本沒有的組合，
+  相同（3%／5%），直接共用 60M 那一桶（若在 `strategy/s5_signal.py` 把止盈止損改成 60M 帳本沒有的組合，
   就沒有對應的基準可借，SUMMARY 會顯示「同期基準樣本不足」）
 - 每次執行會另外輸出 `output/s5_signals.csv`，格式與群組的 `signals.csv` 相同，給比對工具使用；
   另附診斷欄，其中 **「② 爆量分支」** 列出進場那一刻成立的**所有**分支（例如 `2倍`、`30分1倍`、`15分0.5倍`、
   `30分1倍+15分0.5倍`，標籤由分支參數產生），方便和群組對照。`dryrun_s5.xlsx` 的交易明細也有同一欄
-- **要調策略5 請改 `pionex_strategy5.py`**，dry run 會跟著變。注意改 `S5` 的**任何一個鍵**（包括 dry run
+- **要調策略5 請改 `strategy/s5_signal.py`**（`DEFAULT_PARAMS` / `EXIT_PARAMS`；手續費在 `pionex_strategy5.CONFIG`），
+  回測與 dry run 會一起變。注意改 `S5` 的**任何一個鍵**（包括 dry run
   用不到的）或上述五個出場／費用參數，`s5` 的參數指紋都會變，`s5` 帳本會自動重置
   （見下方「參數版本控管」）——只是想在本機試回測參數的話，別把改動 commit 上 main。
   刻意**不**統一的只有兩邊本質不同的設定：K 棒週期（dry run 1 分K、回測預設 15 分K）、同根雙觸的判定週期、暖機根數
 - 回測（`pionex_strategy5.py`）在 `SUB_INTERVAL` 的小K收盤時判斷限時分支，所以每個分支的分鐘數都必須是
   小K分鐘數的整數倍：`5M`、`15M` 可以；`30M` 看不到 15 分、`60M` 都看不到，回測會在開頭停下並說明是哪個分支
-- **dry run 只實作 v3 組合**（訊號邏輯在 `pionex_dryrun.py` 的 `s5_indicators()`）。門檻數值與 `EARLY_VOL_RULES`
+- **dry run 只實作 v3 組合**（訊號邏輯在 `strategy/s5_signal.py` 的 `evaluate()`，`s5_indicators()` 只呼叫它）。門檻數值與 `EARLY_VOL_RULES`
   可以直接改；但若把 `S5` 切到 dry run 沒實作的變體（關掉 `REQUIRE_VOL_BURST`／`REQUIRE_HIGHER_HIGH`、
   `HH_MODE` 不是 `"price"`、設了 `MIN_TURN24H`／`MAX_TURN24H`／`MAX_PRICE`、`CONFIG["EXIT_MODE"]` 不是 `"fixed"`），
   或 `EARLY_VOL_RULES` 格式不對（每個分支須為 1～60 的整數分鐘與大於 0 的倍數），
   或留著已移除的舊鍵（`FAST_VOL_MULT`／`FAST_WINDOW_MIN`／`MIN_RISE_FROM_LOW`），dry run 會在一開始
   （任何網路請求與狀態檔寫入之前）**整個停下**，錯誤訊息寫明是哪個鍵、目前的值、dry run 支援什麼；
-  GitHub Actions 會因此失敗並寄信通知。改回來（或先改好 `s5_indicators()`）之後，下次執行會自動補處理
+  GitHub Actions 會因此失敗並寄信通知。改回來（或先在 `strategy/s5_signal.py` 實作該變體）之後，下次執行會自動補處理
   漏掉的 K 棒（1 分K 保留約 7 天，停超過就補不回來）
 
 **和群組逐筆比對**（在自己電腦上跑，不在 GitHub Actions 上）：把群組訊號轉成 `signals.csv`、
@@ -138,7 +142,8 @@ S5_MAX_BACKFILL_HOURS = 24                     # 策略5 首次最多往前回�
 | `pionex_backtest.py` | 策略1 回測程式，dry run 直接使用裡面的指標與出場邏輯 |
 | `pionex_reversal.py` | 策略2 回測程式，同上 |
 | `pionex_strategy4.py` | 策略4 回測程式，同上 |
-| `pionex_strategy5.py` | 策略5 回測程式（小時K條件、盤中觸發，含校準用的變體開關），**也是 dry run 策略5 參數的唯一來源**（`S5` 整份，與 `CONFIG` 的止盈止損／出場模式／最長持倉／手續費）。dry run 只取它的參數，1 分K 的訊號邏輯在 `pionex_dryrun.py` 的 `s5_indicators()`（只實作 v3） |
+| `pionex_strategy5.py` | 策略5 回測程式（小時K條件、盤中觸發，含校準用的變體開關、條件拆解與驗證頁）。參數與共用的訊號計算取自 `strategy/s5_signal.py`；dry run 經由它的 `S5` / `CONFIG` 取參數 |
+| `strategy/s5_signal.py` | 策略5 訊號核心與參數的唯一來源（`DEFAULT_PARAMS`、`EXIT_PARAMS`、小時脈絡、①②③、分支編碼與標籤、`evaluate()`），只 import numpy / pandas；回測、dry run、實盤共用。離線測試在 `tests/test_s5_signal.py` |
 | `pionex_s5_compare.py` | 策略5 與群組訊號的逐筆比對工具，在自己電腦上跑，需要群組的 `signals.csv` |
 | `pionex_tpsl_sweep.py` | 策略4 的止盈/止損全組合掃描工具，用「首達根數」重放所有 TP/SL 組合，找參數用，不是 dry run 的一部分 |
 | `.github/workflows/dryrun.yml` | GitHub Actions 排程設定 |
@@ -179,6 +184,7 @@ HTTP 取數在 `live/pionex_api.py`（原本叫 `live/http.py`，跟標準庫的
 | --- | --- | --- |
 | 策略參數（`MIN_RET_2H` 等六個） | `strategy/s4_signal.py` 的 `DEFAULT_PARAMS`，**唯一來源** | 改那裡。`live/` 只用 `config.strategy_params()` 引用，不可以抄一份數值過去 |
 | 策略4 出場參數（`TAKE_PROFIT` / `STOP_LOSS` 等六個） | `strategy/s4_signal.py` 的 `EXIT_PARAMS`，**唯一來源**（與 `DEFAULT_PARAMS` 刻意分開） | 改那裡，回測 `pionex_strategy4.CONFIG` 與 dry run `S4_CONFIG` 都從它取值；要放進會被修改的字典時用 `exit_params()` 取拷貝。改任何值都會讓 dry run 的 `s4` 帳本換指紋、前瞻紀錄重新開始（`tests/test_s4_exit_params.py` 會提醒）。不可以併進 `DEFAULT_PARAMS`，也不可以在 `live/` 抄一份 |
+| 策略5 參數（進場 11 個、出場 4 個） | `strategy/s5_signal.py` 的 `DEFAULT_PARAMS` / `EXIT_PARAMS`，**唯一來源**（兩者刻意分開；手續費不在這裡） | 改那裡，回測 `pionex_strategy5.S5` / `CONFIG` 與 dry run `S5_RULE` / `S5_CONFIG` 都從它取值。改任何鍵、值或數值型別都會讓 dry run 的 `s5` 帳本換指紋、前瞻紀錄重新開始（`tests/test_s5_signal.py` 會提醒）。`live/` 目前還沒用到策略5，日後要用時直接引用，不可以抄一份 |
 | 執行參數（BASE URL、timeout、retries、快取逾時） | `live/config.py` 的模組層級常數 | 改檔案再 commit。沒有設定檔格式、沒有 parser、沒有 dev/prod 切換 |
 | 密鑰（TG bot token、A 頻道 channel id） | 環境變數 `CRYPTO_TRADER_TG_BOT_TOKEN`、`CRYPTO_TRADER_TG_CHANNEL_ID` | 啟動前 `export`，雲端主機用 systemd 的 `Environment=`。**絕不進版控**，不支援 `.env` 或任何檔案來源 |
 
