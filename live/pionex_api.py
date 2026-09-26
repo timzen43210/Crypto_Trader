@@ -3,8 +3,13 @@
 live.pionex_api — 對派網公開端點的最小 HTTP 取數
 ===============================================
 只做四件事：GET、解 result/code/message 信封、短暫重試（含 429 退避）、把 SSL 憑證錯誤
-講清楚。沒有簽章、沒有認證、沒有 rate limiter、沒有連線池、沒有 class。live/ 目前
-每小時只打兩個公開端點，這樣就夠了；哪天真的需要簽章端點再由那個任務加。
+講清楚。沒有簽章、沒有認證、沒有 rate limiter、沒有連線池、沒有 class。哪天真的需要簽章端點
+再由那個任務加。
+
+速率上限與 429 封鎖冷卻不在這裡，在 live.rest_gate（整個行程一份）。經過閘門的呼叫一律用
+retries=1：這裡的重試是閘門看不到的額外請求，而 429 的重試在派網封鎖期間每打一次就再加
+10 秒封鎖。錯誤帶 HTTP 狀態碼（ApiError.status_code），閘門據此分辨 429。
+market_static 每小時只打兩次，沿用預設的重試行為。
 
 BASE URL、timeout、retries 這三個是設定，放在 live.config（執行參數那一層），這裡只取用。
 端點路徑不是設定，留在各自的模組裡 —— 換掉端點路徑等於換一支 API。
@@ -37,7 +42,17 @@ _HEADERS = {"User-Agent": "crypto-trader-live/1.0"}
 
 
 class ApiError(Exception):
-    """派網回了錯誤（HTTP 非 200、result=false、重試用盡、SSL 驗證失敗）。"""
+    """派網回了錯誤（HTTP 非 200、result=false、重試用盡、SSL 驗證失敗）。
+
+    status_code：錯誤來自某個 HTTP 狀態碼時帶那個數字（429、403、5xx…）；result=false、連線錯誤、
+    逾時、SSL、非 JSON 則是 None。重試用盡時帶「最後一次失敗」的狀態碼。
+    給需要分辨 429 的呼叫端用（A1 的 live.rest_gate：429 = 整個行程停止送請求），不必解析訊息字串。
+    建構時不給就是 None，既有的 `ApiError("訊息")` 寫法與訊息文字都不變。
+    """
+
+    def __init__(self, message, status_code=None):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 def api_get(path, params=None, retries=config.HTTP_RETRIES, timeout=config.HTTP_TIMEOUT_SECONDS):
@@ -75,19 +90,20 @@ def api_get(path, params=None, retries=config.HTTP_RETRIES, timeout=config.HTTP_
             continue
 
         if r.status_code == 429:
-            last = ApiError(f"{path}: HTTP 429 請求過於頻繁")
+            last = ApiError(f"{path}: HTTP 429 請求過於頻繁", status_code=429)
             if k < retries - 1:
                 time.sleep(2 ** k)
             continue
         if r.status_code in (403, 451):
-            raise ApiError(f"{path}: HTTP {r.status_code} 連線被拒，可能是所在地區或 IP 被派網封鎖")
+            raise ApiError(f"{path}: HTTP {r.status_code} 連線被拒，可能是所在地區或 IP 被派網封鎖",
+                           status_code=r.status_code)
         if r.status_code >= 500:
-            last = ApiError(f"{path}: HTTP {r.status_code} {r.text[:200]}")
+            last = ApiError(f"{path}: HTTP {r.status_code} {r.text[:200]}", status_code=r.status_code)
             if k < retries - 1:
                 time.sleep(1.0 * (k + 1))
             continue
         if r.status_code != 200:
-            raise ApiError(f"{path}: HTTP {r.status_code} {r.text[:200]}")
+            raise ApiError(f"{path}: HTTP {r.status_code} {r.text[:200]}", status_code=r.status_code)
 
         try:
             js = r.json()
@@ -99,4 +115,4 @@ def api_get(path, params=None, retries=config.HTTP_RETRIES, timeout=config.HTTP_
             raise ApiError(f"{path}: result=false code={code} message={message}")
         return js
 
-    raise ApiError(f"{path}: 重試 {retries} 次仍失敗：{last}")
+    raise ApiError(f"{path}: 重試 {retries} 次仍失敗：{last}", status_code=getattr(last, "status_code", None))

@@ -140,6 +140,19 @@ A 頻道的訊號與名目部位存在 `live/store.py`（標準庫 SQLite，資�
 當掉後留下的 `-wal` **不要手動刪**，下次開啟時 SQLite 會用它復原已提交的資料。離線測試在
 `tests/test_store.py`。
 
+A 頻道資料層在 `live/signal_feed.py`（A1）：每 10 秒打一次 tickers 維護 2 小時價格序列，K 棒收盤時以
+近似 ret2h 粗篩（門檻 = `MIN_RET_2H - SCREEN_RET2H_MARGIN`，現場推導），只對候選打 klines，並且只在
+「剛收完的那根」上跑 `strategy/s4_signal`（候選 klines 等到收盤後 `BAR_FINALIZE_WAIT_SECONDS` 才取，
+避開派網收盤後改寫 K 棒）。它每根 K 棒交出一個結果物件，本身不發 TG、不追蹤部位；行程停頓或輪詢卡住
+而錯過的收盤也會交出結果（`missed_close`，degraded，不補判），不會有哪一根悄悄消失。
+所有派網 REST 請求都經過 `live/rest_gate.py` 的共用閘門（整個行程一份：任何 1 秒最多
+`A1_REST_RATE_PER_SECOND` 個請求，收到 429 就整個行程停送 `REST_BAN_COOLDOWN_SECONDS` 秒），
+之後的元件要打 REST 也請走 `rest_gate.shared_gate()`。觀察用：
+`python -m live.signal_feed --duration 900 --record`（jsonl 預設寫到 `runtime/signal_feed/`，
+不可以指到 `state/` 或 `output/`；`--force-candidates N` 是壓測用；`--finality-probe` 是驗證用，
+收盤後 5 / 15 / 60 秒各重抓一次候選的 K 棒寫進 jsonl，用來校正定稿等待秒數）。離線測試在
+`tests/test_signal_feed.py`、`tests/test_rest_gate.py`。
+
 ## 方法 A：GitHub Actions（免費、免主機）
 
 1. 在 GitHub 建立一個新的 repo（建議 Private），把這個資料夾的所有檔案上傳，

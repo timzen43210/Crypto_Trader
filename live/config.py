@@ -105,6 +105,98 @@ LIVE_DB_PATH = os.path.join(RUNTIME_DIR, "db", "live.sqlite3")
 # 沒有任何未平倉部位）。所以刻意不放進 execution_params()，免得看起來像是可以隨手調的旋鈕。
 STRATEGY_USER_ID = "strategy"
 
+# ---- A 頻道資料層（A1：tickers 輪詢 → ret2h 粗篩 → 候選 klines，live/signal_feed.py）----
+# 判定用的 K 棒週期。K 棒毫秒數與 bars_per_hour 一律由它推導（live.klines），別處不要寫死 12 或 300000。
+KLINE_INTERVAL = "5M"
+
+# tickers 輪詢間隔（秒）。輪詢時刻對齊「伺服器時間」的這個秒數整數倍；K 棒週期必須是它的整數倍，
+# 這樣「收盤當下」與「2 小時前」都剛好各有一次輪詢（ret2h 的分子與分母）。
+TICKERS_POLL_SECONDS = 10
+
+# 收盤當下那次 tickers 失敗（非 429）時總共試幾次。429 不重試（見 REST_BAN_COOLDOWN_SECONDS）。
+TICKERS_CLOSE_ATTEMPTS = 2
+
+# 整個行程共用的 REST 速率上限：任何 1 秒窗口內最多送出幾個請求。派網單 IP 是 10 req/s，
+# A0 審查 3.2 取 6 留距離。tickers、klines、冷啟動補種子、背景對帳、日後 A3 的取數全部共用這一份
+# （live.rest_gate.shared_gate()），不是各自一份。
+A1_REST_RATE_PER_SECOND = 6
+
+# 收到 429 之後，整個行程停止送出任何 REST 請求的秒數。派網的 429 是封鎖 60 秒、
+# 封鎖期間每多打一次再加 10 秒，所以這段期間一個請求都不可以送。
+REST_BAN_COOLDOWN_SECONDS = 70
+
+# A1 單一請求的連線 + 讀取上限（秒）。比 HTTP_TIMEOUT_SECONDS 短：K 棒收盤後的預算只有 3–5 秒，
+# 卡 20 秒的請求等於這根 K 棒白做。
+A1_HTTP_TIMEOUT_SECONDS = 5
+
+# 粗篩門檻 = strategy_params()["MIN_RET_2H"] - SCREEN_RET2H_MARGIN。門檻一律現場推導，任何地方都
+# 不可以寫死門檻值：寫死的話日後 MIN_RET_2H 下調，兩者之間的訊號會被粗篩靜默丟掉。
+SCREEN_RET2H_MARGIN = 0.02
+
+# 找「2 小時前」價格樣本時，可接受的樣本時間誤差（秒）。取 1 個輪詢間隔：剛好漏掉一次輪詢，
+# 前後鄰居還找得到；再寬就不叫 2 小時漲幅了。
+SCREEN_BASE_TOLERANCE_SECONDS = 10
+
+# 沒有合格 2 小時前樣本的 symbol（非冷啟動），每根 K 棒最多幾個升格為候選。
+# 寧可多打不要漏，但 tickers 曾中斷時整個標的池都會缺樣本，不設上限會一次打爆速率。
+SCREEN_NO_BASE_MAX_CANDIDATES = 10
+
+# 收盤當下那次 tickers 的伺服器時間最多可以比收盤晚幾秒；再晚就不算「收盤價」，該根記 degraded。
+CLOSE_SAMPLE_MAX_LAG_SECONDS = 3
+
+# 價格緩衝在「2 小時 + 樣本誤差」之外多留的秒數。
+PRICE_BUFFER_EXTRA_SECONDS = 600
+
+# 候選取 klines 的 limit。features() 要在目標列算出 ret2h / volr / turn，需要等距網格上至少
+# 289 根；派網上限 500（1000 會回 limit error），與回測一樣取 500。
+KLINES_LIMIT = 500
+
+# 候選 klines 等到「收盤 + 這個秒數」（伺服器時間）之後才送出。粗篩照舊在收盤當下用 tickers 做，
+# 只有 klines 延後。理由（captain 裁決 2026-09-25）：實盤見過收盤後 0.33 秒取到的 K 棒之後被派網改寫
+# （NOM_USDT_PERP 14:30，close 差 1 tick、volume +0.04%，cpos 0.3056→0.2778）；「收盤後 0.3 秒已定稿」
+# 的前提只來自單一邊界、兩個 symbol 的實測，不成立。2 秒是暫定值，由 --finality-probe 的量測校正。
+BAR_FINALIZE_WAIT_SECONDS = 2.0
+
+# --finality-probe（驗證用，不是正式行為）：收盤後這幾個秒數各重抓一次候選的目標 K 棒，
+# 把每個時點的 OHLCV 寫進 --record 的 jsonl，事後算「最後一次變動在收盤後多久」。
+FINALITY_PROBE_OFFSETS_SECONDS = (5, 15, 60)
+# 定稿量測重抓的 klines limit：只需要目標 K 棒（和它後面那一根）
+FINALITY_PROBE_KLINES_LIMIT = 5
+
+# 收盤時刻已過才輪到處理它（行程停頓、輪詢卡住）：延誤不超過這個秒數照常判定，超過就標
+# missed_close（degraded、不打 REST、不事後補判）。5 秒內 tickers 樣本對近似 ret2h 的影響遠小於
+# 0.02 的餘裕，而且 klines 仍在定稿等待之後才取（captain 裁決 2026-09-25）。
+MISSED_CLOSE_TOLERANCE_SECONDS = 5
+
+# 目標 K 棒（剛收完那根）不在回應裡時：總共嘗試幾次、兩次之間等幾秒。用盡就記「目標 K 棒未到」，
+# 絕不拿前一根或未收完的那根頂替。
+TARGET_BAR_ATTEMPTS = 4
+TARGET_BAR_RETRY_WAIT_SECONDS = 0.5
+
+# 候選 klines 並發取數的 worker 數。每秒送幾個由 A1_REST_RATE_PER_SECOND 管，這裡只決定同時有幾個在飛。
+A1_FETCH_CONCURRENCY = 6
+
+# 冷啟動補種子：每個 symbol 打一次 klines 取幾根（要涵蓋 2 小時 + 餘裕），失敗時總共試幾次。
+SEED_KLINES_LIMIT = 40
+SEED_ATTEMPTS = 2
+
+# K 棒收盤前幾秒起，把 REST 額度只留給前景取數，直到該根判定完成（補種子、背景對帳在這段期間不送）。
+# 取 1 秒 = 速率窗口的長度：收盤那一刻，最近 1 秒內沒有任何背景請求佔著額度。
+FOREGROUND_GUARD_SECONDS = 1
+
+# 背景對帳（FR-10）：每隔多久對一批（秒）、請求攤平在區間的多少比例內、每個 symbol 取幾根、
+# 批次在區間結束後多久開始（讓區間最後一根 K 棒先判定完）。
+RECONCILE_INTERVAL_SECONDS = 3600
+RECONCILE_SPREAD_FRACTION = 0.8
+RECONCILE_KLINES_LIMIT = 100
+RECONCILE_START_DELAY_SECONDS = 30
+
+# 本機時鐘與伺服器時鐘的偏移（毫秒）超過這個值就記 WARNING。
+CLOCK_OFFSET_WARN_MS = 1000
+
+# python -m live.signal_feed --record 不給目錄時的預設位置（runtime/ 底下，不進版控）。
+SIGNAL_FEED_RECORD_DIR = os.path.join(RUNTIME_DIR, "signal_feed")
+
 
 def execution_params():
     """目前生效的執行參數，name -> value。給 `python -m live` 報告用。
@@ -123,6 +215,34 @@ def execution_params():
         "LOG_MAX_BYTES": LOG_MAX_BYTES,
         "LOG_BACKUP_COUNT": LOG_BACKUP_COUNT,
         "LIVE_DB_PATH": LIVE_DB_PATH,
+        "KLINE_INTERVAL": KLINE_INTERVAL,
+        "TICKERS_POLL_SECONDS": TICKERS_POLL_SECONDS,
+        "TICKERS_CLOSE_ATTEMPTS": TICKERS_CLOSE_ATTEMPTS,
+        "A1_REST_RATE_PER_SECOND": A1_REST_RATE_PER_SECOND,
+        "REST_BAN_COOLDOWN_SECONDS": REST_BAN_COOLDOWN_SECONDS,
+        "A1_HTTP_TIMEOUT_SECONDS": A1_HTTP_TIMEOUT_SECONDS,
+        "SCREEN_RET2H_MARGIN": SCREEN_RET2H_MARGIN,
+        "SCREEN_BASE_TOLERANCE_SECONDS": SCREEN_BASE_TOLERANCE_SECONDS,
+        "SCREEN_NO_BASE_MAX_CANDIDATES": SCREEN_NO_BASE_MAX_CANDIDATES,
+        "CLOSE_SAMPLE_MAX_LAG_SECONDS": CLOSE_SAMPLE_MAX_LAG_SECONDS,
+        "PRICE_BUFFER_EXTRA_SECONDS": PRICE_BUFFER_EXTRA_SECONDS,
+        "KLINES_LIMIT": KLINES_LIMIT,
+        "BAR_FINALIZE_WAIT_SECONDS": BAR_FINALIZE_WAIT_SECONDS,
+        "FINALITY_PROBE_OFFSETS_SECONDS": FINALITY_PROBE_OFFSETS_SECONDS,
+        "FINALITY_PROBE_KLINES_LIMIT": FINALITY_PROBE_KLINES_LIMIT,
+        "MISSED_CLOSE_TOLERANCE_SECONDS": MISSED_CLOSE_TOLERANCE_SECONDS,
+        "TARGET_BAR_ATTEMPTS": TARGET_BAR_ATTEMPTS,
+        "TARGET_BAR_RETRY_WAIT_SECONDS": TARGET_BAR_RETRY_WAIT_SECONDS,
+        "A1_FETCH_CONCURRENCY": A1_FETCH_CONCURRENCY,
+        "SEED_KLINES_LIMIT": SEED_KLINES_LIMIT,
+        "SEED_ATTEMPTS": SEED_ATTEMPTS,
+        "FOREGROUND_GUARD_SECONDS": FOREGROUND_GUARD_SECONDS,
+        "RECONCILE_INTERVAL_SECONDS": RECONCILE_INTERVAL_SECONDS,
+        "RECONCILE_SPREAD_FRACTION": RECONCILE_SPREAD_FRACTION,
+        "RECONCILE_KLINES_LIMIT": RECONCILE_KLINES_LIMIT,
+        "RECONCILE_START_DELAY_SECONDS": RECONCILE_START_DELAY_SECONDS,
+        "CLOCK_OFFSET_WARN_MS": CLOCK_OFFSET_WARN_MS,
+        "SIGNAL_FEED_RECORD_DIR": SIGNAL_FEED_RECORD_DIR,
     }
 
 
