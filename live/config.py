@@ -197,6 +197,43 @@ CLOCK_OFFSET_WARN_MS = 1000
 # python -m live.signal_feed --record 不給目錄時的預設位置（runtime/ 底下，不進版控）。
 SIGNAL_FEED_RECORD_DIR = os.path.join(RUNTIME_DIR, "signal_feed")
 
+# ---- Telegram Channel 發送（live.tg_channel）----
+# 設計理由與各參數之間的交互作用寫在 live/tg_channel.py 的 docstring，這裡只放值。
+# Bot API 的根位址。端點路徑（/bot<token>/sendMessage）是程式邏輯，不放這裡。
+TG_API_BASE_URL = "https://api.telegram.org"
+
+# 限速：同一個 channel 任何 60 秒視窗內最多送出幾次請求（429 之後的重送也算一次）。
+# 20 是 Telegram 官方 FAQ 對群組 / 頻道的建議上限，保守取用。
+TG_MAX_MESSAGES_PER_MINUTE = 20
+
+# 限速：同一個 chat 相鄰兩次請求至少隔幾秒。官方 FAQ 另一條建議「單一 chat 避免每秒超過
+# 一則」—— 只有每分鐘上限的話，一次湧進 20 則會在 1 秒內全部送出，照樣可能吃 429。設 0 可關閉。
+TG_MIN_INTERVAL_SECONDS = 1.0
+
+# 5xx / 連線錯誤 / 逾時的總嘗試次數（不是額外重試次數）。429 不計入這裡，另見下面。
+TG_SEND_MAX_ATTEMPTS = 5
+
+# 上面那種錯誤的退避：第 k 次失敗後等 BASE * 2**(k-1) 秒，最多等 MAX 秒。
+# 預設 5 次嘗試之間依序等 2、4、8、16 秒，一則最多耽擱約 30 秒就放棄、換下一則。
+TG_RETRY_BACKOFF_BASE_SECONDS = 2.0
+TG_RETRY_BACKOFF_MAX_SECONDS = 30.0
+
+# 同一則訊息最多因為 HTTP 429 重送幾次；再收到 429 就記 ERROR 放棄這一則，換下一則。
+# 429 一定照 retry_after 等滿才重送，這個上限只是防止單一則訊息把整條佇列無限期卡住。
+TG_MAX_RATE_LIMITED_RETRIES = 5
+
+# 429 的回應裡找不到可用的 retry_after（JSON 與 Retry-After 標頭都沒有）時，保底等幾秒。
+TG_RETRY_AFTER_FALLBACK_SECONDS = 30
+
+# 單一 HTTP 請求的連線 + 讀取上限（秒）
+TG_HTTP_TIMEOUT_SECONDS = 10
+
+# Telegram 單則訊息的長度上限，以 UTF-16 code units 計（見 tg_channel docstring）。超過就拒收，不切段。
+TG_MAX_MESSAGE_CHARS = 4096
+
+# stop() 沒有指定 timeout 時，最多花幾秒把佇列送完；逾時就放棄剩下的並記 ERROR。
+TG_STOP_TIMEOUT_SECONDS = 30
+
 
 def execution_params():
     """目前生效的執行參數，name -> value。給 `python -m live` 報告用。
@@ -243,6 +280,18 @@ def execution_params():
         "RECONCILE_START_DELAY_SECONDS": RECONCILE_START_DELAY_SECONDS,
         "CLOCK_OFFSET_WARN_MS": CLOCK_OFFSET_WARN_MS,
         "SIGNAL_FEED_RECORD_DIR": SIGNAL_FEED_RECORD_DIR,
+        # ---- Telegram Channel 發送（live.tg_channel）----
+        "TG_API_BASE_URL": TG_API_BASE_URL,
+        "TG_MAX_MESSAGES_PER_MINUTE": TG_MAX_MESSAGES_PER_MINUTE,
+        "TG_MIN_INTERVAL_SECONDS": TG_MIN_INTERVAL_SECONDS,
+        "TG_SEND_MAX_ATTEMPTS": TG_SEND_MAX_ATTEMPTS,
+        "TG_RETRY_BACKOFF_BASE_SECONDS": TG_RETRY_BACKOFF_BASE_SECONDS,
+        "TG_RETRY_BACKOFF_MAX_SECONDS": TG_RETRY_BACKOFF_MAX_SECONDS,
+        "TG_MAX_RATE_LIMITED_RETRIES": TG_MAX_RATE_LIMITED_RETRIES,
+        "TG_RETRY_AFTER_FALLBACK_SECONDS": TG_RETRY_AFTER_FALLBACK_SECONDS,
+        "TG_HTTP_TIMEOUT_SECONDS": TG_HTTP_TIMEOUT_SECONDS,
+        "TG_MAX_MESSAGE_CHARS": TG_MAX_MESSAGE_CHARS,
+        "TG_STOP_TIMEOUT_SECONDS": TG_STOP_TIMEOUT_SECONDS,
     }
 
 
