@@ -100,6 +100,10 @@ UNSCREENED_TICKERS_FAILED = "tickers_failed"     # 收盤那次 tickers 失敗�
 UNSCREENED_BANNED = "banned"                     # 收盤那次 tickers 因 429 封鎖冷卻沒送
 UNSCREENED_MISSED_CLOSE = "missed_close"         # 收盤時行程沒在處理（停頓 / 輪詢卡住），延誤超過容忍
 DEGRADED_MISSED_CLOSE = "missed_close"
+# 只出現在 degraded_reasons、沒有對應未篩原因的兩種（字串值與以前的字面值相同，只是提成常數；
+# live.reconcile 依原因決定漏失統計的排除範圍，兩邊的字串由 tests/test_a1f_followups.py 斷言一致）
+DEGRADED_LATE_CLOSE_SAMPLE = "late_close_sample"  # 收盤那次 tickers 的伺服器時間太晚，不算收盤價
+DEGRADED_NO_BASE_OVER_CAP = "no_base_over_cap"    # 沒有 2 小時前樣本的 symbol 超過升格上限，其餘沒篩到
 
 # ---- 取數失敗原因（FR-8：候選數 = 取數成功 + Σ 各原因的取數失敗數）----
 FETCH_TARGET_MISSING = "target_missing"          # 重試用盡，回應裡仍沒有剛收完的那根
@@ -365,9 +369,13 @@ class UniverseUnavailable(RuntimeError):
 class MarketUniverse:
     """標的池 = live.market_static.trading_symbols(quote="USDT")，依 B5 既有機制刷新。
 
-    market_static 直接呼叫 api_get（不經閘門、429 會自己重試），它不在 A1 的修改範圍內。
-    這裡的補救：真的要刷新時先向閘門領 2 個額度（它一次刷新打 2 個請求），封鎖冷卻中就不刷；
-    刷新失敗且原因是 429 時，讓閘門進入冷卻。每小時 2 個請求，剩下的風險可以接受。
+    刷新請求經過共用閘門（A1-f）：把 gate.get（PRIORITY_NORMAL）注入 market_static 當取數函式。
+      * 每一個刷新請求都受速率上限約束、計入閘門統計（gate.stats() / recent_requests()）
+      * 閘門一律以 retries=1 呼叫 api_get：收到 429 時閘門自己進入整個行程的封鎖冷卻、拋 RestBanned，
+        market_static 接住回 False —— 不會再多送任何一個請求（以前 api_get 會在裡面退避重試）
+      * 封鎖冷卻中不嘗試刷新（看閘門的冷卻狀態，不看錯誤訊息字串）；啟動時的重試（STARTUP_ATTEMPTS）
+        落在冷卻期間也一樣不送
+    非 429 的失敗（5xx、連線錯誤）這裡也不重試：舊清單繼續用，下一根 K 棒再試（逾時看的是上次成功）。
     """
 
     STARTUP_ATTEMPTS = 3
@@ -396,18 +404,19 @@ class MarketUniverse:
         import time as _t   # market_static 自己用 time.monotonic() 記刷新時刻，這裡必須用同一個時鐘比
         return ms.last_refresh_mono is None or _t.monotonic() - ms.last_refresh_mono >= ms.STALE_SECONDS
 
+    def fetch(self, path, params):
+        """注入 market_static 的取數：經過共用閘門、PRIORITY_NORMAL（不搶收盤前後的前景額度）。
+        例外照閘門的規則往外拋（RestBanned / ApiError），由 market_static.refresh() 接住。"""
+        return self.gate.get(path, params, priority=rest_gate.PRIORITY_NORMAL)
+
     def _refresh(self, ms, force):
-        try:
-            for _ in range(2):
-                self.gate.limiter.acquire(rest_gate.PRIORITY_NORMAL)
-        except rest_gate.RestBanned:
-            logger.warning("標的池刷新延後：REST 封鎖冷卻中")
+        banned = self.gate.limiter.ban_remaining()
+        if banned > 0:
+            logger.warning("標的池刷新延後：REST 封鎖冷卻中（還剩 %.0f 秒），沿用舊清單", banned)
             return False
-        ok = ms.refresh() if force else ms.refresh_if_stale()
+        ok = ms.refresh(fetch=self.fetch) if force else ms.refresh_if_stale(fetch=self.fetch)
         if not ok:
-            if "HTTP 429" in str(ms.last_error or ""):
-                self.gate.limiter.trip_ban()
-                logger.error("標的池刷新收到 429，整個行程停止送出 REST 請求 %.0f 秒", self.gate.limiter.ban_cooldown)
+            # 429 已經由閘門記過 ERROR（含當下的請求序列）並進入冷卻，這裡不必、也不從訊息字串判斷
             logger.warning("標的池刷新失敗，沿用舊清單：%s", ms.last_error)
         return ok
 
@@ -702,7 +711,7 @@ class SignalFeed:
         if lags:
             res.ticker_row_lag_ms = {"min": lags[0], "p50": lags[len(lags) // 2], "max": lags[-1]}
         if res.close_sample_lag_ms > config.CLOSE_SAMPLE_MAX_LAG_SECONDS * 1000:
-            res.add_degraded("late_close_sample")
+            res.add_degraded(DEGRADED_LATE_CLOSE_SAMPLE)
             logger.warning("K 棒 %s：收盤 tickers 的伺服器時間比收盤晚 %.1f 秒，不算收盤當下的價格",
                            _taipei(close_ms), res.close_sample_lag_ms / 1000.0)
 
@@ -745,7 +754,7 @@ class SignalFeed:
             res.promoted_no_base = order[:cap]
             cands += [Candidate(s, None, "no_base") for s in res.promoted_no_base]
             if len(no_base) > cap:
-                res.add_degraded("no_base_over_cap")
+                res.add_degraded(DEGRADED_NO_BASE_OVER_CAP)
                 logger.warning("K 棒 %s：%d 個 symbol 沒有合格的 2 小時前樣本，只升格 %d 個為候選，其餘沒有篩到",
                                _taipei(close_ms), len(no_base), cap)
         if res.unscreened.get(UNSCREENED_COLD_START):

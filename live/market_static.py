@@ -24,10 +24,19 @@ live.market_static — 全市場交易對規格 + 槓桿上限的記憶體快取
 刷新由呼叫者觸發（refresh / refresh_if_stale），沒有背景執行緒。查詢函式絕不自己打 API，
 從沒載入過就拋 NotLoadedError。刷新失敗保留舊快取、記 last_error，不拋例外。
 
+取數可注入（A1-f）：refresh() / refresh_if_stale() 收一個 fetch(path, params) → 回應信封 dict 的函式。
+    不給 fetch  → 行為與以前完全相同：直接呼叫 live.pionex_api.api_get（沿用它的預設重試，429 會退避重試）。
+                  api_get 是在呼叫當下才從本模組的全域查的，所以 `ms.api_get = fake` 的 monkeypatch 照樣有效
+    給 fetch    → 兩個端點都改走它，本模組不做任何重試。A1（live.signal_feed.MarketUniverse）注入的是
+                  「經過共用閘門 live.rest_gate、retries=1」的取數：刷新請求計入閘門統計，收到 429 由閘門進入
+                  整個行程的封鎖冷卻並拋 RestBanned（這裡接住、記 last_error、回 False），不會再多送任何一個
+                  fetch 拋的任何例外（ApiError、RestBanned…）都跟預設路徑一樣接住：保留舊快取、回 False
+
 用法：
     from live import market_static as ms
     ms.refresh()                              # 啟動時強制載入一次；回傳 True/False
     ms.refresh_if_stale()                     # 每根 K 棒呼叫一次；超過 1 小時才會真的打 API
+    ms.refresh(fetch=my_fetch)                # 取數經過呼叫者給的函式（例如共用閘門）
     ms.trading_symbols(quote="USDT")          # ['BTC_USDT_PERP', ...]
     ms.max_leverage("BTC_USDT_PERP")          # 100；查不到回 None
     ms.symbol_spec("BTC_USDT_PERP")["baseStep"]
@@ -71,14 +80,24 @@ last_error_at = None     # 最近一次失敗的時間
 
 
 # ---------------- 取數與解析 ----------------
-def fetch_symbols():
-    """打 symbols 端點，回傳 data.symbols 那個 list（原始元素）。失敗拋 live.pionex_api.ApiError。"""
-    return api_get(SYMBOLS_PATH, SYMBOLS_PARAMS)["data"]["symbols"]
+def _api_fetch(path, params):
+    """預設取數：live.pionex_api.api_get（預設的 retries / timeout）。
+
+    api_get 在呼叫當下才從本模組的全域查（不是定義時綁死），tests/test_market_static.py 用
+    `ms.api_get = fake` 換掉它仍然有效。"""
+    return api_get(path, params)
 
 
-def fetch_risk_table():
-    """打 riskTable 端點，回傳 data.symbols 那個 list（原始元素）。失敗拋 live.pionex_api.ApiError。"""
-    return api_get(RISK_TABLE_PATH, RISK_TABLE_PARAMS)["data"]["symbols"]
+def fetch_symbols(fetch=None):
+    """打 symbols 端點，回傳 data.symbols 那個 list（原始元素）。
+
+    fetch 不給 = 預設取數（失敗拋 live.pionex_api.ApiError）；給了就用它，它拋什麼就往外拋什麼。"""
+    return (fetch or _api_fetch)(SYMBOLS_PATH, SYMBOLS_PARAMS)["data"]["symbols"]
+
+
+def fetch_risk_table(fetch=None):
+    """打 riskTable 端點，回傳 data.symbols 那個 list（原始元素）。fetch 同 fetch_symbols()。"""
+    return (fetch or _api_fetch)(RISK_TABLE_PATH, RISK_TABLE_PARAMS)["data"]["symbols"]
 
 
 def tier1_max_leverage(entry):
@@ -121,20 +140,24 @@ def build_cache(symbols, risk_table):
 
 
 # ---------------- 刷新 ----------------
-def refresh():
+def refresh(fetch=None):
     """強制刷新：打兩個端點、整理、整包換掉舊快取。回傳 True 成功 / False 失敗，不拋例外。
 
     兩個端點都成功、且都不是空清單，才算成功；任一失敗就整包不換（不會出現 symbols 是新的、
     槓桿是舊的這種半套狀態），舊快取繼續服務，失敗原因記在 last_error / last_error_at。
-    這裡接住的是 Exception（含 ApiError 與解析時的 KeyError 等），不接 KeyboardInterrupt。
+    symbols 失敗就不會再打 riskTable（每次刷新最多 2 個請求，失敗時更少）。
+    這裡接住的是 Exception（含 ApiError、注入的取數拋的 RestBanned、解析時的 KeyError 等），
+    不接 KeyboardInterrupt。
+
+    fetch：取數函式 fetch(path, params) → 回應信封 dict；不給 = 預設（見模組 docstring「取數可注入」）。
     """
     global _specs, _leverage, _loaded
     global last_refresh_at, last_refresh_mono, last_attempt_at, last_refresh_ok, last_error, last_error_at
 
     last_attempt_at = time.time()
     try:
-        symbols = fetch_symbols()
-        risk_table = fetch_risk_table()
+        symbols = fetch_symbols(fetch)
+        risk_table = fetch_risk_table(fetch)
         specs, leverage = build_cache(symbols, risk_table)
         if not specs:
             raise ValueError(f"{SYMBOLS_PATH} 回傳空清單，不拿它蓋掉舊快取")
@@ -154,8 +177,8 @@ def refresh():
     return True
 
 
-def refresh_if_stale(max_age=STALE_SECONDS):
-    """距上次成功刷新不到 max_age 秒 → 不發任何請求、回傳 True；否則呼叫 refresh() 並回傳其結果。
+def refresh_if_stale(max_age=STALE_SECONDS, fetch=None):
+    """距上次成功刷新不到 max_age 秒 → 不發任何請求、回傳 True；否則呼叫 refresh(fetch) 並回傳其結果。
 
     逾時是看「上次成功」的時間，所以刷新失敗之後下一次呼叫會再試，直到成功為止；
     呼叫節奏由呼叫者控制（預期是每根 K 棒一次）。
@@ -166,7 +189,7 @@ def refresh_if_stale(max_age=STALE_SECONDS):
     """
     if last_refresh_mono is not None and time.monotonic() - last_refresh_mono < max_age:
         return True
-    return refresh()
+    return refresh(fetch)
 
 
 # ---------------- 查詢 ----------------

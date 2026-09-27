@@ -172,6 +172,9 @@ GitHub Actions 與 `run.sh` 只裝後者，實盤主機才裝前者，兩份不�
 `live/market_static.py` 是全市場交易對規格 + 槓桿上限的記憶體快取（`/common/symbols` 與
 `/common/riskTable` 兩個公開端點，每次刷新共 2 個請求，只取 tier1 `maxLeverage`）。刷新由呼叫者
 觸發（`refresh()` / `refresh_if_stale()`），沒有背景執行緒；刷新失敗保留舊資料、記 `last_error`。
+取數可以注入（`refresh(fetch=...)` / `refresh_if_stale(fetch=...)`）：不給就跟以前一樣直接呼叫
+`live/pionex_api.py` 的 `api_get`（含它的重試）；A 頻道（A1）注入的是經過共用閘門 `live/rest_gate.py` 的取數，
+刷新請求計入閘門統計，收到 429 由閘門進入冷卻、不再重試。
 `python -m live.market_static` 會真實連線印出兩端點的結構、槓桿分布與抽樣，離線測試在
 `tests/test_market_static.py`（不需要 pytest，直接 `python tests/test_market_static.py`）。
 HTTP 取數在 `live/pionex_api.py`（原本叫 `live/http.py`，跟標準庫的 `http` 同名，被遮蔽時症狀會長成
@@ -233,11 +236,16 @@ A 頻道資料層在 `live/signal_feed.py`（A1）：每 10 秒打一次 tickers
 而錯過的收盤也會交出結果（`missed_close`，degraded，不補判），不會有哪一根悄悄消失。
 所有派網 REST 請求都經過 `live/rest_gate.py` 的共用閘門（整個行程一份：任何 1 秒最多
 `A1_REST_RATE_PER_SECOND` 個請求，收到 429 就整個行程停送 `REST_BAN_COOLDOWN_SECONDS` 秒），
-之後的元件要打 REST 也請走 `rest_gate.shared_gate()`。觀察用：
+標的池（`market_static`）的刷新也經過它；之後的元件要打 REST 也請走 `rest_gate.shared_gate()`。
+A1 另有背景對帳（`live/reconcile.py`）：每小時用 klines 重算上一小時每根 K 棒的真實 ret2h，和當時的粗篩逐一比對，
+漏失記 ERROR。degraded 的根依原因決定排除範圍：影響粗篩的（收盤 tickers 失敗 / 被封鎖、冷卻中、missed_close…）
+整根不算漏失；只有個別候選 klines 沒拿到的，只排除那幾個候選，同一根其他 symbol 照算。行程停頓醒來後，
+錯過的整點批次會補做（還在 klines 涵蓋內的合併成一輪取數、照常攤平），超出涵蓋（約 5 小時前的窗口）的合併成
+一行 WARNING，不會誤報「完全沒有紀錄」。觀察用：
 `python -m live.signal_feed --duration 900 --record`（jsonl 預設寫到 `runtime/signal_feed/`，
 不可以指到 `state/` 或 `output/`；`--force-candidates N` 是壓測用；`--finality-probe` 是驗證用，
 收盤後 5 / 15 / 60 秒各重抓一次候選的 K 棒寫進 jsonl，用來校正定稿等待秒數）。離線測試在
-`tests/test_signal_feed.py`、`tests/test_rest_gate.py`。
+`tests/test_signal_feed.py`、`tests/test_rest_gate.py`、`tests/test_a1f_followups.py`。
 
 A 頻道名目部位追蹤在 `live/notional_tracker.py`（A3）：收 A1 的原始訊號（策略五資料層日後接
 `submit_signal()`），排除「同策略同幣持倉中」與「冷卻中」，以訊號價算止盈 / 止損、寫庫、發進場事件；
