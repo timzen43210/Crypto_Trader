@@ -105,6 +105,25 @@ LIVE_DB_PATH = os.path.join(RUNTIME_DIR, "db", "live.sqlite3")
 # 沒有任何未平倉部位）。所以刻意不放進 execution_params()，免得看起來像是可以隨手調的旋鈕。
 STRATEGY_USER_ID = "strategy"
 
+# ---- 資料格式常數（A2 事件 live.signal_events 與 B4′ 持久層 live.store 共用；A3 前置小修 FR-0）----
+# 以前兩邊各寫一份（store 的 SIDES / EXIT_REASONS、事件的 DIRECTIONS / EXIT_REASONS，epoch 範圍
+# 一邊 1e14、一邊 1e13），值剛好相同，但改了一邊另一邊不會跟著變，就會出現「事件收、資料庫拒」
+# 或反過來的落差。比照 STRATEGIES 收斂成這一份，兩個模組都在呼叫當下讀。
+# 這些是資料格式本身的語意，不是可調的執行參數（改了它們等於改 schema 與事件契約），所以跟
+# STRATEGY_USER_ID 一樣刻意不放進 execution_params()。
+# 方向：目前只做空。store 的欄位叫 side、事件的欄位叫 direction，值是同一組（欄位名的對應由 A3 負責）。
+DIRECTION_SHORT = "short"
+DIRECTIONS = (DIRECTION_SHORT,)
+# 出場原因：store 的欄位叫 exit_reason、事件的欄位叫 reason，值是同一組。
+EXIT_TAKE_PROFIT = "take_profit"
+EXIT_STOP_LOSS = "stop_loss"
+EXIT_REASONS = (EXIT_TAKE_PROFIT, EXIT_STOP_LOSS)
+# UTC epoch 毫秒的合理範圍 [EPOCH_MS_MIN, EPOCH_MS_MAX) = 2001-09-09 ～ 2286-11-20。
+# 不是業務規則，是用來抓「把秒 / 微秒當成毫秒傳進來」這種單位錯誤：秒數當毫秒看會落在 1970 年，
+# 微秒當毫秒看會落在 5 萬年後。
+EPOCH_MS_MIN = 10 ** 12
+EPOCH_MS_MAX = 10 ** 13
+
 # ---- A 頻道資料層（A1：tickers 輪詢 → ret2h 粗篩 → 候選 klines，live/signal_feed.py）----
 # 判定用的 K 棒週期。K 棒毫秒數與 bars_per_hour 一律由它推導（live.klines），別處不要寫死 12 或 300000。
 KLINE_INTERVAL = "5M"
@@ -234,6 +253,25 @@ TG_MAX_MESSAGE_CHARS = 4096
 # stop() 沒有指定 timeout 時，最多花幾秒把佇列送完；逾時就放棄剩下的並記 ERROR。
 TG_STOP_TIMEOUT_SECONDS = 30
 
+# ---- A 頻道名目部位追蹤（A3，live/notional_tracker.py；執行入口 live/a_channel.py）----
+# 策略5 的主週期（訊號所在 K 棒的週期）。策略4 的主週期是上面的 KLINE_INTERVAL（A1 的判定週期）。
+# 與 dry run 的 s5 帳本相同（pionex_dryrun.BOOK_INTERVAL）；日後策略五資料層接線時也用這一個。
+# 出場監控週期不寫在這裡：由主週期與 strategy/ 的 RESOLVE_* 出場參數推導（見 notional_tracker）。
+S5_KLINE_INTERVAL = "1M"
+
+# A3 取 K 棒（出場監控、重啟重判）每個請求的 limit。派網上限 500（1000 會回 limit error）；
+# 需要的根數超過就用 endTime 分頁往後取。
+A3_KLINES_PAGE_LIMIT = 500
+
+# A3 的工作執行緒在啟動時開資料庫；執行入口最多等這麼多秒確認開成功，才啟動 A1。
+A3_STORE_READY_TIMEOUT_SECONDS = 30
+
+# 結束時等 A3 工作執行緒收尾（把手上那一件做完）最多幾秒。
+A3_JOIN_TIMEOUT_SECONDS = 30
+
+# python -m live.a_channel --events-jsonl 不給目錄時，事件紀錄 jsonl 的預設位置（runtime/ 底下，不進版控）。
+A3_EVENTS_RECORD_DIR = os.path.join(RUNTIME_DIR, "a_channel")
+
 
 def execution_params():
     """目前生效的執行參數，name -> value。給 `python -m live` 報告用。
@@ -292,6 +330,12 @@ def execution_params():
         "TG_HTTP_TIMEOUT_SECONDS": TG_HTTP_TIMEOUT_SECONDS,
         "TG_MAX_MESSAGE_CHARS": TG_MAX_MESSAGE_CHARS,
         "TG_STOP_TIMEOUT_SECONDS": TG_STOP_TIMEOUT_SECONDS,
+        # ---- A 頻道名目部位追蹤（A3，live.notional_tracker / live.a_channel）----
+        "S5_KLINE_INTERVAL": S5_KLINE_INTERVAL,
+        "A3_KLINES_PAGE_LIMIT": A3_KLINES_PAGE_LIMIT,
+        "A3_STORE_READY_TIMEOUT_SECONDS": A3_STORE_READY_TIMEOUT_SECONDS,
+        "A3_JOIN_TIMEOUT_SECONDS": A3_JOIN_TIMEOUT_SECONDS,
+        "A3_EVENTS_RECORD_DIR": A3_EVENTS_RECORD_DIR,
     }
 
 

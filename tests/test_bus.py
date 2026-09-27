@@ -154,7 +154,9 @@ def _exit_kwargs():
     return dict(strategy="s4", signal_id="s4-TEST_USDT-%d" % T0, symbol="TEST_USDT",
                 direction=DIRECTION_SHORT, reason=EXIT_TAKE_PROFIT, exit_price=91.0,
                 entry_price=100.0, opened_ms=T0 + BAR_MS, closed_ms=T0 + 5 * BAR_MS,
-                created_ms=T0 + 5 * BAR_MS + 999)
+                created_ms=T0 + 5 * BAR_MS + 999,
+                # A3（FR-4）起 ExitEvent 多一個必填的 features（出場稽核旗標），規則同 EntryEvent.features
+                features={"gap_open": False, "same_bar_both": False})
 
 
 def _entry(**overrides):

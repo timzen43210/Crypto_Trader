@@ -184,8 +184,9 @@ HTTP 取數在 `live/pionex_api.py`（原本叫 `live/http.py`，跟標準庫的
 | --- | --- | --- |
 | 策略參數（`MIN_RET_2H` 等六個） | `strategy/s4_signal.py` 的 `DEFAULT_PARAMS`，**唯一來源** | 改那裡。`live/` 只用 `config.strategy_params()` 引用，不可以抄一份數值過去 |
 | 策略4 出場參數（`TAKE_PROFIT` / `STOP_LOSS` 等六個） | `strategy/s4_signal.py` 的 `EXIT_PARAMS`，**唯一來源**（與 `DEFAULT_PARAMS` 刻意分開） | 改那裡，回測 `pionex_strategy4.CONFIG` 與 dry run `S4_CONFIG` 都從它取值；要放進會被修改的字典時用 `exit_params()` 取拷貝。改任何值都會讓 dry run 的 `s4` 帳本換指紋、前瞻紀錄重新開始（`tests/test_s4_exit_params.py` 會提醒）。不可以併進 `DEFAULT_PARAMS`，也不可以在 `live/` 抄一份 |
-| 策略5 參數（進場 11 個、出場 4 個） | `strategy/s5_signal.py` 的 `DEFAULT_PARAMS` / `EXIT_PARAMS`，**唯一來源**（兩者刻意分開；手續費不在這裡） | 改那裡，回測 `pionex_strategy5.S5` / `CONFIG` 與 dry run `S5_RULE` / `S5_CONFIG` 都從它取值。改任何鍵、值或數值型別都會讓 dry run 的 `s5` 帳本換指紋、前瞻紀錄重新開始（`tests/test_s5_signal.py` 會提醒）。`live/` 目前還沒用到策略5，日後要用時直接引用，不可以抄一份 |
+| 策略5 參數（進場 11 個、出場 4 個） | `strategy/s5_signal.py` 的 `DEFAULT_PARAMS` / `EXIT_PARAMS`，**唯一來源**（兩者刻意分開；手續費不在這裡） | 改那裡，回測 `pionex_strategy5.S5` / `CONFIG` 與 dry run `S5_RULE` / `S5_CONFIG` 都從它取值。改任何鍵、值或數值型別都會讓 dry run 的 `s5` 帳本換指紋、前瞻紀錄重新開始（`tests/test_s5_signal.py` 會提醒）。`live/notional_tracker.py`（A3）的出場判定直接引用 `exit_params()` / `cooldown_bars()`，不可以在 `live/` 抄一份 |
 | 執行參數（BASE URL、timeout、retries、快取逾時） | `live/config.py` 的模組層級常數 | 改檔案再 commit。沒有設定檔格式、沒有 parser、沒有 dev/prod 切換 |
+| 資料格式常數（方向 `DIRECTIONS`、出場原因 `EXIT_REASONS`、epoch 毫秒合理範圍 `EPOCH_MS_MIN` / `EPOCH_MS_MAX`） | `live/config.py`，事件（`live/signal_events.py`）與持久層（`live/store.py`）共用這一份、呼叫當下讀 | 這是 schema 與事件契約本身，不是可調旋鈕，所以跟 `STRATEGY_USER_ID` 一樣不列在 `execution_params()` |
 | 密鑰（TG bot token、A 頻道 channel id） | 環境變數 `CRYPTO_TRADER_TG_BOT_TOKEN`、`CRYPTO_TRADER_TG_CHANNEL_ID` | 啟動前 `export`，雲端主機用 systemd 的 `Environment=`。**絕不進版控**，不支援 `.env` 或任何檔案來源 |
 
 沒設密鑰不影響用不到它的元件 —— `import live.config` 不會失敗，要用的元件會在取用當下拋出
@@ -196,7 +197,11 @@ HTTP 取數在 `live/pionex_api.py`（原本叫 `live/http.py`，跟標準庫的
 同一個幣 s4、s5 可以同時持倉），欄位不合法在建構時就拋例外；`live/bus.py` 的 `SignalBus`
 由進入點建一個，訂閱者在啟動時 `subscribe`，產生者 `publish` 後依訂閱順序**同步**呼叫每個 handler，
 一個 handler 出錯只記 ERROR、不影響其他人，回傳送達報告。會做 I/O 的訂閱者（TG、webhook）
-必須自己排佇列後立刻返回。不做持久化與重送。離線測試在 `tests/test_bus.py`。
+必須自己排佇列後立刻返回。匯流排本身不做持久化與重送；重送由 A3 依資料庫的「未發布」紀錄做，
+採 at-least-once，所以**訂閱者一律以 `(signal_id, 事件種類)` 去重**（同一個 signal_id 保證先進場、後出場）。
+`ExitEvent` 帶 `features`（出場稽核旗標：是否開盤跳空、是否同根兩碰保守計止損、是否為重啟補判……，
+鍵見 `live/notional_tracker.py` 的 `EXIT_FEATURE_KEYS`）。`signal_id` / `symbol` 不可含 lone surrogate
+（與 store 一致）。離線測試在 `tests/test_bus.py`。
 
 日誌在 `live/logsetup.py`（刻意不叫 `logging.py`，理由同上面 `http.py` 的改名）。進入點啟動時
 呼叫一次 `logsetup.setup()`，之後各模組照標準寫法 `logging.getLogger(__name__)` 即可；import 本身
@@ -213,8 +218,13 @@ HTTP 取數在 `live/pionex_api.py`（原本叫 `live/http.py`，跟標準庫的
 A 頻道的訊號與名目部位存在 `live/store.py`（標準庫 SQLite，資料庫檔預設 `runtime/db/live.sqlite3`，
 路徑在 `live/config.py` 的 `LIVE_DB_PATH`），程式重啟後靠它找回還沒平倉的名目部位與還沒發布的訊號。
 **同一個資料庫檔同時只能有一個行程在寫**；旁邊的 `live.sqlite3-wal` / `-shm` 是 WAL 模式的檔案，
-當掉後留下的 `-wal` **不要手動刪**，下次開啟時 SQLite 會用它復原已提交的資料。離線測試在
-`tests/test_store.py`。
+當掉後留下的 `-wal` **不要手動刪**，下次開啟時 SQLite 會用它復原已提交的資料。
+schema 版本記在 `PRAGMA user_version`，目前是 2（A3 在名目部位表加了出場稽核旗標 `exit_features_json`
+與出場事件「已發布」時刻 `exit_published_ms`）。**舊的 v1 資料庫開啟時會自動升級**（同一個交易裡
+`ALTER TABLE ADD COLUMN`，既有資料一格不動；失敗整段 ROLLBACK，停在 v1）。v1 沒有記錄出場事件是否
+發布過，所以升級後既有的已平倉部位一律當成「出場未發布」，A3 第一次啟動會補發（寧可重送、不可漏發）。
+ROLLBACK 本身失敗時 store 會「中毒」（關閉連線，之後的操作拋 `StorePoisonedError`），呼叫端要重新
+`open_store()`。離線測試在 `tests/test_store.py`。
 
 A 頻道資料層在 `live/signal_feed.py`（A1）：每 10 秒打一次 tickers 維護 2 小時價格序列，K 棒收盤時以
 近似 ret2h 粗篩（門檻 = `MIN_RET_2H - SCREEN_RET2H_MARGIN`，現場推導），只對候選打 klines，並且只在
@@ -228,6 +238,34 @@ A 頻道資料層在 `live/signal_feed.py`（A1）：每 10 秒打一次 tickers
 不可以指到 `state/` 或 `output/`；`--force-candidates N` 是壓測用；`--finality-probe` 是驗證用，
 收盤後 5 / 15 / 60 秒各重抓一次候選的 K 棒寫進 jsonl，用來校正定稿等待秒數）。離線測試在
 `tests/test_signal_feed.py`、`tests/test_rest_gate.py`。
+
+A 頻道名目部位追蹤在 `live/notional_tracker.py`（A3）：收 A1 的原始訊號（策略五資料層日後接
+`submit_signal()`），排除「同策略同幣持倉中」與「冷卻中」，以訊號價算止盈 / 止損、寫庫、發進場事件；
+之後**每一根 1 分K** 收盤 + `BAR_FINALIZE_WAIT_SECONDS` 檢查所有未平倉的名目部位，碰止盈 / 止損就平倉寫庫、
+發出場事件。判定語意對齊 dry run（`pionex_dryrun.step_symbol()` + `resolve_with_5m()`）：結果、出場價、
+出場所屬的主週期 K 棒與冷卻逐筆相同，只有出場時刻會更早（1 分K 觸價就判定，不等 5 分K 收盤）；
+跳空穿越止損一律用**主週期 K 棒的開盤**判斷。所有參數取自 `strategy/`（s4 / s5 的 `exit_params()`、
+`cooldown_bars()`），主週期是 `KLINE_INTERVAL`（s4）與 `S5_KLINE_INTERVAL`（s5），監控週期由出場參數推導；
+`MAX_HOLD_HOURS` 不是 None 或 `EXIT_MODE` 不是 `"fixed"` 時拒絕啟動。取數走共用閘門（`PRIORITY_NORMAL`，
+低於 A1 的收盤前景取數），失敗就下一分鐘再試、不臆測。所有狀態以 `(strategy, symbol)` 區分，s4、s5
+同一個幣可以同時持倉。`signal_id` 格式是 `#<幣名>-<S4|S5>-<YYYYMMDD>-<HHMM>`（台北時間、訊號 K 棒收盤）。
+
+**重啟會從資料庫復原**：載入未平倉部位、從進場後第一根 1 分K 重新判定到現在（停機期間已觸價的，以歷史
+出場時刻與價格平倉，事件標 `recovered`）、從最後一筆已平倉部位重建冷卻、補發所有已寫庫未發布的事件
+（進場先於出場）。1 分K 只保留約 7 天，停機超過保留期的區段改用 dry run 的原始做法（5 分K 判定、兩碰再找
+1 分K、找不到 → 止損）；5 分K 也拿不到（約 34 天）就記 ERROR、保持 open 繼續監控。停機期間 A1 沒有交出的
+訊號不會補（沒寫過庫、也沒發過事件）。
+
+執行入口（**不在** `python -m live` 裡）：
+
+    python -m live.a_channel --duration 3600 [--events-jsonl [DIR]]
+
+它把 `logsetup.setup()`、共用閘門、A2 匯流排、A3、A1（標的池由 `market_static` 載入）接起來；T2 上線前
+匯流排只掛一個記錄事件的訂閱者（寫 INFO 日誌，加 `--events-jsonl` 時另外寫 jsonl，預設
+`runtime/a_channel/`，不可以指到 `state/` 或 `output/`）。啟動時印接線自檢（每種事件幾個訂閱者，有 0 個就不跑）。
+A3 相關的執行參數：`S5_KLINE_INTERVAL`、`A3_KLINES_PAGE_LIMIT`（分頁取 K 棒的 limit）、
+`A3_STORE_READY_TIMEOUT_SECONDS`、`A3_JOIN_TIMEOUT_SECONDS`、`A3_EVENTS_RECORD_DIR`（都在 `live/config.py`，
+`python -m live` 會列出）。離線測試在 `tests/test_notional_tracker.py`（含拿 dry run 真正的程式逐筆對照）。
 
 ## 方法 A：GitHub Actions（免費、免主機）
 

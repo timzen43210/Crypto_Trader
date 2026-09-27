@@ -8,7 +8,8 @@ webhook 下單端……）。這裡只定義「事件長什麼樣、什麼樣的
   EntryEvent   進場：某策略在某個幣發出做空訊號
   ExitEvent    出場：該筆名目部位止盈或止損
 
-兩者共用 SignalEvent 的五個欄位（strategy / signal_id / symbol / direction / created_ms）。
+兩者共用 SignalEvent 的五個欄位（strategy / signal_id / symbol / direction / created_ms），
+並各有一份 features（進場 = 判定特徵；出場 = 稽核旗標，例如是否開盤跳空、是否經小週期判定）。
 SignalEvent 本身不可以直接建構，也不能拿去 publish。
 
 ──────────────────────────────────────────────────────────────────────
@@ -16,18 +17,37 @@ SignalEvent 本身不可以直接建構，也不能拿去 publish。
 ──────────────────────────────────────────────────────────────────────
   *_ms       UTC epoch 毫秒，int。numpy / pandas 的整數（例如 K 棒 time 欄）可以直接給，
              存進來會轉成 Python int；float 一律拒收（毫秒不該有小數，有就是單位弄錯了）。
-             合理範圍 [10**12, 10**13)，也就是 2001–2286 年 —— 這不是業務規則，是用來抓
-             「傳了秒 / 微秒」這種單位錯誤：秒數當毫秒看會落在 1970 年 1 月。
+             合理範圍 [config.EPOCH_MS_MIN, config.EPOCH_MS_MAX)，也就是 2001–2286 年 —— 這不是
+             業務規則，是用來抓「傳了秒 / 微秒」這種單位錯誤：秒數當毫秒看會落在 1970 年 1 月。
+             範圍與 live.store 共用 live/config.py 那一份（A3 前置小修 FR-0），建構當下才讀。
   *_price    有限的正實數，存成 float。NaN、inf、0、負數、bool、字串、Decimal 都拒收。
   strategy   必須在 live.config.STRATEGIES 裡（建構當下才讀，不在 import 時綁死）。
              同一個幣兩個策略可以同時持倉，所以訂閱者一律用 strategy 區分，不能只看 symbol。
   signal_id  非空字串，格式由 A3 決定。注意：同一個幣、同一根 K 棒，s4 與 s5 可能同時發
              訊號，signal_id 要跨策略唯一（建議把 strategy 編進去）。這裡無從檢查唯一性。
+  文字欄位   signal_id / symbol（以及 strategy / direction / reason）不可含 lone surrogate
+             （U+D800～U+DFFF 單獨出現，例如 surrogateescape 解碼出來的字元）：這些欄位在 live.store
+             是一般 TEXT 欄，sqlite3 綁定時要編成 UTF-8，lone surrogate 在那一步會失敗。兩邊都在
+             建構 / 寫入前就擋下（ValueError），不會出現「事件收、資料庫拒」。features 的鍵與值照收
+             （store 把 features 存成純 ASCII 的 JSON，存得進去）。
   created_ms 事件產生時刻，**由產生者傳入**，本模組不讀時鐘。產生者（A3）本來就要有自己
              的時鐘（可注入、可在測試裡換成假時鐘），事件是純值，建構不該偷看牆上時鐘。
-  direction  目前只有 DIRECTION_SHORT。出場事件也帶方向：訂閱者（例如 webhook 要送「平空單」）
-             不必回頭查進場事件就知道要平哪一邊。
-  reason     出場原因，EXIT_TAKE_PROFIT 或 EXIT_STOP_LOSS。
+  direction  config.DIRECTIONS 之一（目前只有 DIRECTION_SHORT）。出場事件也帶方向：訂閱者（例如
+             webhook 要送「平空單」）不必回頭查進場事件就知道要平哪一邊。
+  reason     出場原因，config.EXIT_REASONS 之一（EXIT_TAKE_PROFIT / EXIT_STOP_LOSS）。
+  方向與出場原因的合法值只有 live/config.py 一份（與 live.store 共用，A3 前置小修 FR-0），
+  建構當下才讀；本模組的 DIRECTION_SHORT / EXIT_TAKE_PROFIT / EXIT_STOP_LOSS 只是轉手那一份的值，
+  讓既有的 import 寫法不用改。
+
+──────────────────────────────────────────────────────────────────────
+重送與去重（A3 的約定，訂閱者必須照做）
+──────────────────────────────────────────────────────────────────────
+A3 採 at-least-once 發布：先寫庫、再 publish，送達報告 ok 才標記「已發布」。report.ok 只要有一個
+訂閱者失敗就是 False，匯流排又沒有「只重送給某些訂閱者」的 API，所以重送時已經收過的訂閱者
+**會再收到一次同一個事件**；程式重啟後補發未標記的事件也一樣。
+**訂閱者一律以 (signal_id, 事件種類) 去重**（事件種類 = EntryEvent / ExitEvent）。重送的事件由
+資料庫裡同一筆紀錄重建，內容與第一次相同。同一個 signal_id，A3 保證「進場先於出場」：
+進場還沒成功送達之前，出場事件不會發布。
 
 事件本身**不計算**任何價格或報酬。止盈價 / 止損價由 A3 依 strategy/ 的出場參數算好放進來，
 本模組不 import 策略參數。唯一的價格關係檢查是「止盈價與止損價在訊號價的哪一側」：做空時
@@ -77,19 +97,15 @@ from dataclasses import dataclass, field, fields
 
 from live import config
 
-# 方向 -> 止盈價是否在訊號價下方。DIRECTIONS 由這張表導出：日後要加做多，一定得在這裡
-# 寫清楚止盈在哪一側，不會出現「方向合法、價格關係卻沒人檢查」的空窗。
-DIRECTION_SHORT = "short"
-_TAKE_PROFIT_BELOW_PRICE = {DIRECTION_SHORT: True}
-DIRECTIONS = tuple(_TAKE_PROFIT_BELOW_PRICE)
+# 方向與出場原因的值只有 live/config.py 一份（見模組說明）；這三個名稱只是轉手同一個值。
+DIRECTION_SHORT = config.DIRECTION_SHORT
+EXIT_TAKE_PROFIT = config.EXIT_TAKE_PROFIT
+EXIT_STOP_LOSS = config.EXIT_STOP_LOSS
 
-EXIT_TAKE_PROFIT = "take_profit"
-EXIT_STOP_LOSS = "stop_loss"
-EXIT_REASONS = (EXIT_TAKE_PROFIT, EXIT_STOP_LOSS)
-
-# UTC 毫秒的合理範圍：2001-09-09 ~ 2286-11-20。只用來抓單位錯誤，見模組說明。
-_MIN_EPOCH_MS = 10 ** 12
-_MAX_EPOCH_MS = 10 ** 13
+# 方向 -> 止盈價是否在訊號價下方。config.DIRECTIONS 日後要加做多，一定得在這裡寫清楚止盈在
+# 哪一側：方向合法、但這張表沒有它時，建構會拋 ValueError（不會出現「方向合法、價格關係卻
+# 沒人檢查」的空窗）。
+_TAKE_PROFIT_BELOW_PRICE = {config.DIRECTION_SHORT: True}
 
 
 # ============================== 欄位檢查 ==============================
@@ -102,11 +118,19 @@ def _set(event, name, value):
     object.__setattr__(event, name, value)
 
 
+def _has_lone_surrogate(text):
+    """字串裡有沒有 U+D800～U+DFFF（Python 的 str 只有 lone surrogate 會落在這一段）。"""
+    return any(0xD800 <= ord(ch) <= 0xDFFF for ch in text)
+
+
 def _text(event, name, value):
     if not isinstance(value, str):
         raise _error(TypeError, event, name, "必須是字串", value)
     if not value or value != value.strip():
         raise _error(ValueError, event, name, "不可為空字串，前後也不可有空白", value)
+    if _has_lone_surrogate(value):
+        # 與 live.store 一致：這些欄位存成一般 TEXT，lone surrogate 編不成 UTF-8（見模組說明）
+        raise _error(ValueError, event, name, "不可含 lone surrogate（U+D800～U+DFFF）", value)
     return str(value)
 
 
@@ -138,9 +162,10 @@ def _epoch_ms(event, name, value):
         number = operator.index(value)      # 收 int 與 numpy 整數，float 直接 TypeError
     except TypeError:
         raise _error(TypeError, event, name, "必須是整數的 UTC 毫秒", value) from None
-    if not _MIN_EPOCH_MS <= number < _MAX_EPOCH_MS:
+    if not config.EPOCH_MS_MIN <= number < config.EPOCH_MS_MAX:
         raise _error(ValueError, event, name,
-                     "不像 UTC 毫秒（合理範圍是 2001–2286 年；秒 / 微秒是不是弄錯了）", value)
+                     "不像 UTC 毫秒（合理範圍 [%d, %d)，2001–2286 年；秒 / 微秒是不是弄錯了）"
+                     % (config.EPOCH_MS_MIN, config.EPOCH_MS_MAX), value)
     return number
 
 
@@ -174,7 +199,7 @@ def _feature_value(event, key, value):
                  "只收純量（None / bool / str / 整數 / 實數），可變容器會破壞唯讀", value)
 
 
-def _features(event, name, value):
+def _features(event, name, value, allow_empty=False):
     if not isinstance(value, Mapping):
         raise _error(TypeError, event, name, "必須是 dict（或其他 Mapping）", value)
     frozen = {}
@@ -182,7 +207,7 @@ def _features(event, name, value):
         if not isinstance(key, str) or not key:
             raise _error(TypeError, event, name, "的鍵必須是非空字串", key)
         frozen[key] = _feature_value(event, key, item)
-    if not frozen:
+    if not frozen and not allow_empty:
         raise _error(ValueError, event, name, "不可為空（判定特徵是訊號的依據）", value)
     return types.MappingProxyType(frozen)
 
@@ -204,7 +229,7 @@ class SignalEvent:
         _set(self, "strategy", _choice(self, "strategy", self.strategy, config.STRATEGIES))
         _set(self, "signal_id", _text(self, "signal_id", self.signal_id))
         _set(self, "symbol", _text(self, "symbol", self.symbol))
-        _set(self, "direction", _choice(self, "direction", self.direction, DIRECTIONS))
+        _set(self, "direction", _choice(self, "direction", self.direction, config.DIRECTIONS))
         _set(self, "created_ms", _epoch_ms(self, "created_ms", self.created_ms))
 
     def __copy__(self):
@@ -252,6 +277,9 @@ class EntryEvent(SignalEvent):
         for name in ("signal_price", "take_profit_price", "stop_loss_price"):
             _set(self, name, _price(self, name, getattr(self, name)))
         price, tp, sl = self.signal_price, self.take_profit_price, self.stop_loss_price
+        if self.direction not in _TAKE_PROFIT_BELOW_PRICE:
+            raise ValueError("EntryEvent 方向 %r 在 config.DIRECTIONS 裡，但本模組不知道它的止盈在訊號價"
+                             "哪一側（_TAKE_PROFIT_BELOW_PRICE 要一起補）" % (self.direction,))
         if _TAKE_PROFIT_BELOW_PRICE[self.direction]:
             ok, rule = tp < price < sl, "止盈價 < 訊號價 < 止損價"
         else:
@@ -266,11 +294,14 @@ class EntryEvent(SignalEvent):
 class ExitEvent(SignalEvent):
     """出場事件。
 
-    reason       EXIT_TAKE_PROFIT / EXIT_STOP_LOSS
+    reason       config.EXIT_REASONS 之一（EXIT_TAKE_PROFIT / EXIT_STOP_LOSS）
     exit_price   出場價
     entry_price  進場價
     opened_ms    名目部位的開倉時刻（UTC 毫秒，取法由 A3 定義）
     closed_ms    名目部位的平倉時刻（UTC 毫秒），不可早於 opened_ms
+    features     出場的稽核旗標（唯讀映射，值的規則同 EntryEvent.features，但可以是空的）。
+                 A3 放的鍵見 live.notional_tracker.EXIT_FEATURE_KEYS（是否開盤跳空、是否經小週期判定、
+                 是否為重啟後補判……），T2 自己決定要不要呈現。A3（FR-4）新增的必填欄位。
     """
 
     reason: str
@@ -278,10 +309,12 @@ class ExitEvent(SignalEvent):
     entry_price: float
     opened_ms: int
     closed_ms: int
+    # mappingproxy 不可雜湊，不列入 hash；相等比較照樣會比 features
+    features: Mapping = field(hash=False)
 
     def __post_init__(self):
         super().__post_init__()
-        _set(self, "reason", _choice(self, "reason", self.reason, EXIT_REASONS))
+        _set(self, "reason", _choice(self, "reason", self.reason, config.EXIT_REASONS))
         for name in ("exit_price", "entry_price"):
             _set(self, name, _price(self, name, getattr(self, name)))
         for name in ("opened_ms", "closed_ms"):
@@ -289,6 +322,7 @@ class ExitEvent(SignalEvent):
         if self.closed_ms < self.opened_ms:
             raise ValueError("ExitEvent.closed_ms 不可早於 opened_ms，收到 opened %r、closed %r"
                              % (self.opened_ms, self.closed_ms))
+        _set(self, "features", _features(self, "features", self.features, allow_empty=True))
 
 
 # live.bus 只接受這兩種（精確型別，不收子類）

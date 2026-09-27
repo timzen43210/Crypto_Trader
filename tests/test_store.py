@@ -207,6 +207,11 @@ def _run_child(body, **consts):
             r.stderr.decode("ascii", "backslashreplace"))
 
 
+# schema v2（A3）起 positions 多兩欄（exit_features_json / exit_published_ms）。直接下 SQL 寫 positions 的
+# 測試明確列出 v1 的 12 欄（新的兩欄留 NULL），測的東西與 v1 時完全相同。
+V1_POSITION_COLUMNS = '(signal_id, user_id, strategy, symbol, entry_price, take_profit_price, stop_loss_price, opened_ms, status, exit_reason, exit_price, closed_ms)'
+
+
 # ============================== AC-1：建表冪等、值與型別 ==============================
 def test_ac1_init_is_idempotent():
     with _tempdir() as tmp:
@@ -370,7 +375,7 @@ def test_ac1_database_itself_refuses_wrong_types():
                 row = list(good)
                 row[i] = bad
                 _expect(sqlite3.IntegrityError, lambda row=row: c.execute(sig_sql, row))
-            pos_sql = "INSERT INTO positions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            pos_sql = "INSERT INTO positions " + V1_POSITION_COLUMNS + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             c.execute(sig_sql, good)
             base = ["x", "strategy", "s4", "B_USDT", 2.5, 2.4, 2.6, T0, "open", None, None, None]
             for i, bad in ((8, "pending"), (9, "take_profit"), (4, "abc")):
@@ -427,12 +432,12 @@ def test_ac2_partial_unique_index_is_enforced_by_the_database():
                       "bar_open_ms, signal_price, take_profit_price, stop_loss_price, "
                       "features_json, created_ms, NULL FROM signals WHERE signal_id = 's4-a'")
             _expect(sqlite3.IntegrityError, lambda: c.execute(
-                "INSERT INTO positions SELECT 'raw-2', user_id, strategy, symbol, entry_price, "
+                "INSERT INTO positions " + V1_POSITION_COLUMNS + " SELECT 'raw-2', user_id, strategy, symbol, entry_price, "
                 "take_profit_price, stop_loss_price, opened_ms, 'open', NULL, NULL, NULL "
                 "FROM positions WHERE signal_id = 's4-a'"),
                 "UNIQUE constraint failed: positions.user_id, positions.strategy, positions.symbol")
             # 同一個鍵寫成 closed 就不受限制
-            c.execute("INSERT INTO positions SELECT 'raw-2', user_id, strategy, symbol, entry_price, "
+            c.execute("INSERT INTO positions " + V1_POSITION_COLUMNS + " SELECT 'raw-2', user_id, strategy, symbol, entry_price, "
                       "take_profit_price, stop_loss_price, opened_ms, 'closed', 'stop_loss', 2.7, "
                       "opened_ms + 1 FROM positions WHERE signal_id = 's4-a'")
             c.execute("ROLLBACK")

@@ -23,9 +23,14 @@ A 頻道發出進場訊號之後，要一路追蹤那筆「名目部位」直到
     ...判定出場之後...
     db.close_position(signal_id, exit_reason="take_profit", exit_price=..., closed_ms=...)
 
+    ...出場事件發布成功之後（schema v2）...
+    db.mark_exit_published(signal_id)
+
     # 重啟復原
     db.open_positions(user_id=config.STRATEGY_USER_ID)          # 還開著的名目部位
     db.unpublished_signals(user_id=config.STRATEGY_USER_ID)     # 寫了庫、還沒發布的訊號
+    db.unpublished_exits(user_id=config.STRATEGY_USER_ID)       # 平了倉、出場事件還沒發布的部位
+    db.last_closed_positions(user_id=config.STRATEGY_USER_ID)   # 每個 (strategy, symbol) 最後一筆已平倉（重建冷卻）
 
 檔名刻意叫 store 而不是 sqlite3 / db：跟標準庫同名的模組只要 live/ 落到 sys.path 上就會把
 標準庫遮蔽掉（B2 的 live/http.py、B3 的 logsetup 都是同一個理由）。
@@ -41,6 +46,12 @@ A 頻道發出進場訊號之後，要一路追蹤那筆「名目部位」直到
   positions  每一筆訊號對應的策略層名目部位，與 signals 一對一（signal_id 是主鍵也是外鍵）。
              status 只有 open / closed；closed 時出場原因、出場價、平倉時刻三者必須齊全，
              open 時三者必須全空（表層 CHECK 擋住半套狀態）。
+             schema v2（A3）加兩欄，只有 closed 的部位可以有值（欄位 CHECK 擋住）：
+               exit_features_json  出場的稽核旗標（A3 的 ExitEvent.features），格式同 features_json；
+                                   重啟補發出場事件時用它重建出一模一樣的事件
+               exit_published_ms   出場事件的「已發布」時刻。平倉寫庫後、出場事件發布前當掉的話，
+                                   重啟時 unpublished_exits() 找得出來補發（訊號表的 published_ms
+                                   只管進場事件）
 
 核心約束：同一個 (user_id, strategy, symbol) **同時最多一筆 open**，用部分唯一索引
 `... ON positions (user_id, strategy, symbol) WHERE status = 'open'` 由資料庫自己擋。
@@ -54,8 +65,12 @@ user_id 不可以是 NULL：NULL 在 SQLite 的唯一索引裡彼此不算重複
 型別：所有時間一律 UTC epoch 毫秒整數（台北時間的轉換是呈現層的事）；價格一律 REAL。
 表層 CHECK (typeof(...) = 'real' / 'integer') 讓資料庫本身拒收錯型別的值，本模組在寫入前
 也會先驗：價格必須是有限的正實數（bool、字串、NaN、inf 都拒收）；時間必須是整數且落在
-[MIN_EPOCH_MS, MAX_EPOCH_MS) —— 這個範圍擋的是「把秒當成毫秒傳進來」這種最常見的單位錯誤。
+[config.EPOCH_MS_MIN, config.EPOCH_MS_MAX) —— 這個範圍擋的是「把秒當成毫秒傳進來」這種最常見的
+單位錯誤（範圍與 live.signal_events 共用 live/config.py 那一份，A3 前置小修 FR-0）。
 做空時另外檢查 止盈價 < 訊號價 < 止損價，擋掉止盈止損兩個參數傳反。
+文字欄位（signal_id / user_id / symbol 等）不可含 lone surrogate：一般 TEXT 欄綁定時要編成 UTF-8，
+lone surrogate 在那一步會拋 UnicodeEncodeError。寫入前就以 ValueError 擋下，與 live.signal_events
+的建構檢查一致（A3 前置小修 FR-0）。
 
 沒有用 STRICT table：STRICT 要 SQLite 3.37+，雲端主機的系統 SQLite 版本還沒定（Ubuntu 20.04
 內建 3.31）。typeof 的 CHECK 在所有版本上效果相同。
@@ -65,8 +80,10 @@ user_id 不可以是 NULL：NULL 在 SQLite 的唯一索引裡彼此不算重複
                掃描 live/ 底下有沒有第二份）。每次驗證都在呼叫當下讀 config.STRATEGIES，不在
                import 時綁死 —— 跟 live.signal_events 建構事件時的讀法一致，改了名單，事件與
                持久層同時跟著變，不會出現「事件收、資料庫拒」的落差。
-  side         本模組的 SIDES
-  exit_reason  本模組的 EXIT_REASONS
+  side         live.config.DIRECTIONS（事件的 direction 用同一份，值相同；欄位名的對應由 A3 負責）
+  exit_reason  live.config.EXIT_REASONS（事件的 reason 用同一份）
+side / exit_reason 在 A3 前置小修（FR-0）之前是本模組自己的 SIDES / EXIT_REASONS，現在收斂到
+live/config.py 一份，同樣在呼叫當下讀。
 這幾個都只在 Python 端驗，不寫成表層 CHECK：SQLite 不能 ALTER 一條 CHECK，日後加一個策略或
 一種出場原因就得整張表重建。本模組是唯一的寫入者，在這裡擋效果相同。status 的兩個值是
 schema 本身的語意，所以寫在表層。
@@ -96,8 +113,8 @@ schema 本身的語意，所以寫在表層。
     UnicodeEncodeError —— 又是「A2 收、store 拒」、訊號卡住。跳脫之後整段都是 ASCII，編碼這一步
     不可能失敗；而且同樣的內容永遠只有一種落地文字（刻意不做「編碼失敗才改用跳脫」的雙軌）。
     代價：用 sqlite 命令列直接看這一欄時，中文是跳脫序列；get_signal() 讀回的內容不受影響。
-    注意這只涵蓋 features_json：signal_id / symbol 等一般 TEXT 欄位照原字元存，含 lone surrogate
-    的話寫入時仍會拋 UnicodeEncodeError（交易所的 symbol 與 A3 產生的 signal_id 不會有這種字元）。
+    注意這只涵蓋 features_json（與 v2 的 exit_features_json）：signal_id / symbol 等一般 TEXT 欄位
+    照原字元存，含 lone surrogate 的話在寫入前就以 ValueError 擋下（見上面「型別」一段）。
 
 ──────────────────────────────────────────────────────────────────────
 交易與原子性
@@ -133,7 +150,17 @@ BEGIN IMMEDIATE 一開始就拿寫入鎖，交易裡先查再寫之間不會被�
   TypeError / ValueError   參數驗證失敗（型別錯 / 值不合法）。驗證全部在開交易之前做，
                            失敗時資料庫完全沒被碰過。
 
+  ExitNotPendingError      mark_exit_published()：目標不存在（reason="missing"）、還沒平倉
+                           （reason="open"）或出場早已標記（reason="published"）。
+  StorePoisonedError       ROLLBACK 本身失敗之後，這個 store 的任何操作（見下一段）。
+
 失敗的寫入一律 ROLLBACK，資料庫停在呼叫前的狀態，store 物件可以繼續用。
+
+例外：**ROLLBACK 本身失敗**（磁碟錯誤、連線狀態已壞）時，無從確定這條連線的交易狀態 —— 它可能
+還停在一個沒提交的交易裡，之後同一條連線的讀取會讀到那些未提交的內容（例如一筆其實沒寫成功的
+訊號，被 unpublished_signals() 找出來補發）。所以這時 store 會「中毒」：立刻關掉底層連線（未提交的
+內容隨之丟棄），之後這個 store 的任何操作都拋 StorePoisonedError，逼呼叫端重新 open_store()。
+原本那個例外照樣往外拋（中毒的原因記在 StorePoisonedError 訊息裡）。（A3 前置小修 FR-0）
 
 ──────────────────────────────────────────────────────────────────────
 耐久性
@@ -161,11 +188,17 @@ WAL 模式下讀不會卡住寫。
 schema 版本
 ──────────────────────────────────────────────────────────────────────
 版本記在 PRAGMA user_version（資料庫檔頭的一個整數，不需要額外的表）。open_store() 的規則：
-  0 而且資料庫是空的      新檔：在同一個交易裡建表、建索引、把版本設成 SCHEMA_VERSION
+  0 而且資料庫是空的      新檔：在同一個交易裡建 v1 的表與索引、依序套用每一段遷移到 SCHEMA_VERSION
+  1..SCHEMA_VERSION-1     舊版：在同一個交易裡依序套用遷移（_MIGRATIONS）到 SCHEMA_VERSION，
+                          既有資料原封不動；任何一步失敗整段 ROLLBACK，資料庫停在舊版
   == SCHEMA_VERSION       什麼都不做（所以可以重複呼叫，冪等）
   > SCHEMA_VERSION        拋 SchemaVersionError：這是新版程式建的，舊程式不可以亂寫
   0 但資料庫裡已經有東西  拋 SchemaVersionError：不是本模組建的檔，不要在上面亂建表
-日後要改 schema：SCHEMA_VERSION + 1，在 _init_schema() 加一段「舊版本 -> 新版本」的遷移，
+新檔也走「v1 DDL + 遷移」這條路，所以新建的與升級上來的資料庫 schema 逐字相同。
+版本歷史：
+  1  B4′（0d10ec4）：signals + positions + 部分唯一索引
+  2  A3：positions 加 exit_features_json、exit_published_ms（出場的稽核旗標與「已發布」追蹤）
+日後要改 schema：SCHEMA_VERSION + 1，在 _MIGRATIONS 加一段「舊版本 -> 新版本」的遷移，
 跟版本號更新放在同一個交易裡。
 """
 
@@ -180,23 +213,17 @@ from contextlib import contextmanager
 
 from live import config
 
-# 目前的 schema 版本（PRAGMA user_version）。改了 _DDL 就要加 1 並寫遷移。
-SCHEMA_VERSION = 1
+# 目前的 schema 版本（PRAGMA user_version）。改 schema 就要加 1 並在 _MIGRATIONS 寫遷移。
+SCHEMA_VERSION = 2
 
-# side / exit_reason 的合法值。只在本模組驗、不寫成表層 CHECK，理由見模組 docstring。
-# strategy 的合法值不在這裡：一律在呼叫當下讀 config.STRATEGIES（策略名單只有那一份）。
-SIDES = ("short",)
-EXIT_REASONS = ("take_profit", "stop_loss")
+# side / exit_reason / strategy 的合法值都不在本模組：一律在呼叫當下讀 live/config.py 的
+# DIRECTIONS / EXIT_REASONS / STRATEGIES（與 live.signal_events 共用同一份）。epoch 毫秒的合理範圍
+# 同理讀 config.EPOCH_MS_MIN / EPOCH_MS_MAX。只在 Python 端驗、不寫成表層 CHECK，理由見模組 docstring。
 
 # positions.status 的兩個值（表層 CHECK 的那兩個）。給呼叫端比對用，例如 p["status"] == STATUS_OPEN；
 # 本模組的 SQL 直接寫字面值，因為它們就是 schema 的一部分。
 STATUS_OPEN = "open"
 STATUS_CLOSED = "closed"
-
-# epoch 毫秒的合理範圍：[2001-09-09, 西元 5138 年)。
-# 下限擋「把秒當毫秒」（現在的秒數約 1.7e9，遠小於 1e12）；上限擋「把微秒 / 奈秒當毫秒」。
-MIN_EPOCH_MS = 10 ** 12
-MAX_EPOCH_MS = 10 ** 14
 
 # 本模組建立的物件。只建這些；schema 檢查與測試都以這份為準。
 TABLES = ("signals", "positions")
@@ -245,6 +272,27 @@ _DDL = (
         ON positions (user_id, strategy, symbol) WHERE status = 'open'
     """,
 )
+# 上面的 _DDL 是 schema v1（B4′，0d10ec4）原封不動的 DDL；之後每一版的變更都寫成遷移。
+# 新檔與舊檔都走「_DDL + 依序套用遷移」，兩條路得到逐字相同的 schema。
+
+# 遷移：目標版本 -> 這一版要執行的 SQL（在 _init_schema() 的同一個交易裡依序執行）。
+# 只用 ALTER TABLE ... ADD COLUMN：不重建表、不搬資料，既有的列一格都不動，新欄位對舊列是 NULL。
+_MIGRATIONS = {
+    # v2（A3）：出場的稽核旗標與「出場事件已發布」。欄位 CHECK 可以參照同一列的其他欄位：
+    # 只有 closed 的部位可以有值，open 的部位兩欄必須全空（與 v1 的「半套狀態」CHECK 同一個精神）。
+    2: (
+        """
+        ALTER TABLE positions ADD COLUMN exit_features_json TEXT
+            CHECK (exit_features_json IS NULL
+                   OR (typeof(exit_features_json) = 'text' AND status = 'closed'))
+        """,
+        """
+        ALTER TABLE positions ADD COLUMN exit_published_ms INTEGER
+            CHECK (exit_published_ms IS NULL
+                   OR (typeof(exit_published_ms) = 'integer' AND status = 'closed'))
+        """,
+    ),
+}
 
 
 # ============================== 例外 ==============================
@@ -302,6 +350,24 @@ class SignalNotPendingError(StoreError):
         super().__init__("signal_id %r 的訊號%s；資料庫沒有任何變更" % (signal_id, what))
 
 
+class ExitNotPendingError(StoreError):
+    """mark_exit_published() 的目標不是一筆「已平倉、出場未發布」的部位。
+    reason 是 "missing"（不存在）、"open"（還沒平倉）或 "published"（早已標記）。"""
+
+    _WHAT = {"missing": "不存在", "open": "還沒平倉，沒有出場事件可以標記",
+             "published": "的出場事件早已標記為已發布（原本的時刻保留不動）"}
+
+    def __init__(self, signal_id, reason):
+        self.signal_id = signal_id
+        self.reason = reason
+        super().__init__("signal_id %r 的名目部位%s；資料庫沒有任何變更"
+                         % (signal_id, self._WHAT.get(reason, reason)))
+
+
+class StorePoisonedError(StoreError):
+    """ROLLBACK 本身失敗過，這條連線的交易狀態不可信，已經關閉；請重新 open_store()。"""
+
+
 # ============================== 參數驗證 ==============================
 def _now_ms():
     """預設時鐘：目前的 UTC epoch 毫秒（time.time_ns() 與時區無關）。"""
@@ -313,6 +379,10 @@ def _text(name, value):
         raise TypeError("%s 必須是 str，收到 %s" % (name, type(value).__name__))
     if not value or value != value.strip():
         raise ValueError("%s 不可為空字串，也不可前後帶空白：%r" % (name, value))
+    if any(0xD800 <= ord(ch) <= 0xDFFF for ch in value):
+        # 一般 TEXT 欄綁定時要編成 UTF-8，lone surrogate 會在那一步失敗；與 live.signal_events 一致，
+        # 在碰資料庫之前就擋下（見模組 docstring「型別」）
+        raise ValueError("%s 不可含 lone surrogate（U+D800～U+DFFF）：%r" % (name, value))
     return value
 
 
@@ -347,10 +417,10 @@ def _epoch_ms(name, value):
     if isinstance(value, bool) or not isinstance(value, numbers.Integral):
         raise TypeError("%s 必須是整數的 UTC epoch 毫秒，收到 %s" % (name, type(value).__name__))
     value = int(value)
-    if not MIN_EPOCH_MS <= value < MAX_EPOCH_MS:
+    if not config.EPOCH_MS_MIN <= value < config.EPOCH_MS_MAX:
         raise ValueError(
             "%s=%d 不像 UTC epoch 毫秒（合理範圍 [%d, %d)）；常見原因是把秒或微秒當成毫秒傳進來"
-            % (name, value, MIN_EPOCH_MS, MAX_EPOCH_MS)
+            % (name, value, config.EPOCH_MS_MIN, config.EPOCH_MS_MAX)
         )
     return value
 
@@ -398,7 +468,7 @@ def _features_json(features):
 
 def _check_levels(side, signal_price, take_profit_price, stop_loss_price):
     """止盈 / 止損相對訊號價的方向。目前只有做空：止盈在下、止損在上。"""
-    if side == "short" and not take_profit_price < signal_price < stop_loss_price:
+    if side == config.DIRECTION_SHORT and not take_profit_price < signal_price < stop_loss_price:
         raise ValueError(
             "做空必須 止盈價 < 訊號價 < 止損價，收到 止盈 %r / 訊號 %r / 止損 %r"
             "（止盈止損是不是傳反了？）" % (take_profit_price, signal_price, stop_loss_price)
@@ -433,14 +503,23 @@ def _signal_dict(row):
     return d
 
 
-def _filters(strategy, user_id):
-    """把 open_positions() / unpublished_signals() 的選用過濾條件轉成 SQL 片段。"""
+def _position_dict(row):
+    """positions 的一列 -> dict。v2 的 exit_features_json 解回 exit_features（沒有值是 None）。"""
+    d = dict(row)
+    raw = d.pop("exit_features_json", None)
+    d["exit_features"] = None if raw is None else json.loads(raw)
+    return d
+
+
+def _filters(strategy, user_id, prefix=""):
+    """把 open_positions() / unpublished_signals() 等的選用過濾條件轉成 SQL 片段。
+    prefix 是欄位名前的表別名（例如 "p."），查詢有 JOIN 或子查詢時用。"""
     clauses, params = [], []
     if strategy is not None:
-        clauses.append("strategy = ?")
+        clauses.append(prefix + "strategy = ?")
         params.append(_choice("strategy", strategy, config.STRATEGIES))
     if user_id is not None:
-        clauses.append("user_id = ?")
+        clauses.append(prefix + "user_id = ?")
         params.append(_user_id(user_id))
     return "".join(" AND " + c for c in clauses), params
 
@@ -465,6 +544,7 @@ def _check_version(conn, path):
 
     open_store() 在切 WAL 之前先呼叫一次（拒絕開啟的檔案連 journal mode 都不可以被改掉），
     _init_schema() 在寫入鎖裡再呼叫一次（兩次之間檔案可能被別人動過）。
+    0 < 版本 < SCHEMA_VERSION 是可以升級的舊版（遷移在 _init_schema() 做），前提是每一版都有遷移。
     """
     version = conn.execute("PRAGMA user_version").fetchone()[0]
     if version > SCHEMA_VERSION:
@@ -479,18 +559,30 @@ def _check_version(conn, path):
                 "%s 沒有 schema 版本卻已經有東西（%s），不是 live.store 建的資料庫，不在上面建表"
                 % (path, ", ".join(sorted(existing))))
     elif version != SCHEMA_VERSION:
-        # 0 < version < SCHEMA_VERSION：日後的遷移寫在 _init_schema()。目前只有版本 1，走不到。
-        raise SchemaVersionError("%s 的 schema 版本 %d 沒有對應的遷移" % (path, version))
+        missing = [v for v in range(version + 1, SCHEMA_VERSION + 1) if v not in _MIGRATIONS]
+        if missing:
+            raise SchemaVersionError("%s 的 schema 版本 %d 沒有升到 %d 的遷移（缺 %s）"
+                                     % (path, version, SCHEMA_VERSION, missing))
     return version
 
 
 def _init_schema(conn, path):
-    """建表、建索引、記版本；整段在一個交易裡，冪等。規則見模組 docstring「schema 版本」。"""
+    """建表 / 升級、記版本；整段在一個交易裡，冪等。規則見模組 docstring「schema 版本」。
+
+    版本 0：建 v1 的表與索引，再從 v2 起依序套用遷移；版本 1..SCHEMA_VERSION-1：從下一版起依序套用遷移。
+    任何一步失敗整段 ROLLBACK（SQLite 的 ALTER TABLE 在交易裡），資料庫停在原本的版本。
+    """
     conn.execute("BEGIN IMMEDIATE")
     try:
-        if _check_version(conn, path) == 0:
+        version = _check_version(conn, path)
+        if version == 0:
             for ddl in _DDL:
                 conn.execute(ddl)
+            version = 1
+        if version < SCHEMA_VERSION:
+            for target in range(version + 1, SCHEMA_VERSION + 1):
+                for ddl in _MIGRATIONS[target]:
+                    conn.execute(ddl)
             conn.execute("PRAGMA user_version = %d" % SCHEMA_VERSION)
         conn.execute("COMMIT")
     except BaseException:
@@ -538,9 +630,16 @@ class Store:
         self._conn = conn
         self.path = path
         self._clock = clock
+        self._poisoned = None          # ROLLBACK 失敗的說明；不是 None 就代表這個 store 已經不能用
 
     def __repr__(self):
-        return "<live.store.Store %s%s>" % (self.path, "" if self._conn else " (closed)")
+        state = " (poisoned)" if self._poisoned else ("" if self._conn else " (closed)")
+        return "<live.store.Store %s%s>" % (self.path, state)
+
+    @property
+    def poisoned(self):
+        """ROLLBACK 失敗過（見模組 docstring「錯誤語意」）。True 時任何操作都拋 StorePoisonedError。"""
+        return self._poisoned is not None
 
     def __enter__(self):
         return self
@@ -556,34 +655,52 @@ class Store:
 
     # ---------- 內部 ----------
     def _db(self):
+        if self._poisoned is not None:
+            raise StorePoisonedError(
+                "store 已中毒（%s），連線已關閉、交易狀態不可信；請重新 open_store()：%s"
+                % (self._poisoned, self.path))
         if self._conn is None:
             raise StoreError("store 已經關閉：%s" % self.path)
         return self._conn
+
+    def _poison(self, rollback_error, original):
+        """ROLLBACK 失敗：標記中毒並關掉底層連線（未提交的內容隨之丟棄）。關閉本身再失敗也不管。"""
+        self._poisoned = ("ROLLBACK 失敗：%s: %s（原本的錯誤：%s: %s）"
+                          % (type(rollback_error).__name__, rollback_error,
+                             type(original).__name__, original))
+        conn, self._conn = self._conn, None
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001 —— 已經在處理更嚴重的錯誤；中毒標記才是重點
+            pass
 
     def _now(self, name):
         return _epoch_ms("%s（來自 clock()）" % name, self._clock())
 
     @contextmanager
     def _write_transaction(self):
-        """BEGIN IMMEDIATE ... COMMIT；區塊內任何例外（含 COMMIT 本身失敗）都 ROLLBACK 後原樣拋出。"""
+        """BEGIN IMMEDIATE ... COMMIT；區塊內任何例外（含 COMMIT 本身失敗）都 ROLLBACK 後原樣拋出。
+
+        ROLLBACK 本身失敗時 store 中毒（關閉連線、之後的操作拋 StorePoisonedError），原本的例外照樣拋出。
+        """
         conn = self._db()
         conn.execute("BEGIN IMMEDIATE")
         try:
             yield conn
             conn.execute("COMMIT")
-        except BaseException:
+        except BaseException as original:
             if conn.in_transaction:
                 try:
                     conn.execute("ROLLBACK")
-                except sqlite3.Error:
-                    # 原本的例外比較重要。連 ROLLBACK 都失敗時，未提交的內容會在連線關閉時丟棄。
-                    pass
+                except Exception as rollback_error:  # noqa: BLE001 —— 任何原因的 ROLLBACK 失敗都一樣處理
+                    # 原本的例外比較重要，照樣往外拋；但這條連線的交易狀態已經不可信，不可以繼續用
+                    self._poison(rollback_error, original)
             raise
 
     @staticmethod
     def _fetch_position(conn, signal_id):
         row = conn.execute("SELECT * FROM positions WHERE signal_id = ?", (signal_id,)).fetchone()
-        return None if row is None else dict(row)
+        return None if row is None else _position_dict(row)
 
     # ---------- 寫入 ----------
     def record_entry(self, *, signal_id, user_id, strategy, symbol, side, bar_open_ms,
@@ -595,7 +712,7 @@ class Store:
         user_id            A 頻道策略層一律傳 config.STRATEGY_USER_ID；不可以是 None
         strategy           config.STRATEGIES 之一（呼叫當下讀）
         symbol             交易對，例如 "XXX_USDT"
-        side               SIDES 之一（目前只有 "short"）
+        side               config.DIRECTIONS 之一（目前只有 "short"）
         bar_open_ms        訊號所在 K 棒的開盤時刻（UTC epoch 毫秒）
         signal_price       訊號價，也就是名目部位的進場價（R-2：A 頻道以訊號價計）
         take_profit_price  止盈價；做空時必須低於訊號價
@@ -616,7 +733,7 @@ class Store:
             "user_id": _user_id(user_id),
             "strategy": _choice("strategy", strategy, config.STRATEGIES),
             "symbol": _text("symbol", symbol),
-            "side": _choice("side", side, SIDES),
+            "side": _choice("side", side, config.DIRECTIONS),
             "bar_open_ms": _epoch_ms("bar_open_ms", bar_open_ms),
             "signal_price": _price("signal_price", signal_price),
             "take_profit_price": _price("take_profit_price", take_profit_price),
@@ -669,32 +786,66 @@ class Store:
                                       (signal_id,)).fetchone()
                 raise SignalNotPendingError(signal_id, "missing" if exists is None else "published")
 
-    def close_position(self, signal_id, *, exit_reason, exit_price, closed_ms=None):
+    def close_position(self, signal_id, *, exit_reason, exit_price, closed_ms=None,
+                       exit_features=None):
         """把一筆 open 的名目部位平倉。只動那一筆。
 
-        exit_reason  EXIT_REASONS 之一（"take_profit" / "stop_loss"）
-        exit_price   出場價
-        closed_ms    平倉時刻；省略時用 clock()
+        exit_reason    config.EXIT_REASONS 之一（"take_profit" / "stop_loss"）
+        exit_price     出場價
+        closed_ms      平倉時刻；省略時用 clock()
+        exit_features  出場的稽核旗標（任何 Mapping，規則同 record_entry 的 features，可以是空的）；
+                       省略（None）時欄位留空。A3 一律給，重啟補發出場事件時用它重建事件。
 
-        回傳平倉後的名目部位（dict）。
+        回傳平倉後的名目部位（dict，同 get_position()）。
         拋出 PositionNotOpenError：部位不存在（reason="missing"）或已平倉（reason="closed"）。
         回報方式固定是例外、不是回傳值 —— 呼叫端不可能「忘了檢查」而讓錯誤靜默通過。
         """
         signal_id = _text("signal_id", signal_id)
-        exit_reason = _choice("exit_reason", exit_reason, EXIT_REASONS)
+        exit_reason = _choice("exit_reason", exit_reason, config.EXIT_REASONS)
         exit_price = _price("exit_price", exit_price)
         closed_ms = (_epoch_ms("closed_ms", closed_ms) if closed_ms is not None
                      else self._now("closed_ms"))
+        exit_json = None if exit_features is None else _features_json(exit_features)
         with self._write_transaction() as conn:
-            cur = conn.execute(
-                "UPDATE positions SET status = 'closed', exit_reason = ?, exit_price = ?, "
-                "closed_ms = ? WHERE signal_id = ? AND status = 'open'",
-                (exit_reason, exit_price, closed_ms, signal_id))
+            if exit_json is None:
+                cur = conn.execute(
+                    "UPDATE positions SET status = 'closed', exit_reason = ?, exit_price = ?, "
+                    "closed_ms = ? WHERE signal_id = ? AND status = 'open'",
+                    (exit_reason, exit_price, closed_ms, signal_id))
+            else:
+                cur = conn.execute(
+                    "UPDATE positions SET status = 'closed', exit_reason = ?, exit_price = ?, "
+                    "closed_ms = ?, exit_features_json = ? WHERE signal_id = ? AND status = 'open'",
+                    (exit_reason, exit_price, closed_ms, exit_json, signal_id))
             if cur.rowcount != 1:
                 existing = self._fetch_position(conn, signal_id)
                 raise PositionNotOpenError(signal_id, "missing" if existing is None else "closed")
             position = self._fetch_position(conn, signal_id)
         return position
+
+    def mark_exit_published(self, signal_id, *, published_ms=None):
+        """把一筆已平倉部位的出場事件標記為已發布（schema v2）。published_ms 省略時用 clock()。
+
+        拋出 ExitNotPendingError：部位不存在（reason="missing"）、還沒平倉（reason="open"），
+        或早就標記過（reason="published"，原本的時刻保留不動）。
+        """
+        signal_id = _text("signal_id", signal_id)
+        published_ms = (_epoch_ms("published_ms", published_ms) if published_ms is not None
+                        else self._now("published_ms"))
+        with self._write_transaction() as conn:
+            cur = conn.execute(
+                "UPDATE positions SET exit_published_ms = ? WHERE signal_id = ? "
+                "AND status = 'closed' AND exit_published_ms IS NULL",
+                (published_ms, signal_id))
+            if cur.rowcount != 1:
+                existing = self._fetch_position(conn, signal_id)
+                if existing is None:
+                    reason = "missing"
+                elif existing["status"] == STATUS_OPEN:
+                    reason = "open"
+                else:
+                    reason = "published"
+                raise ExitNotPendingError(signal_id, reason)
 
     # ---------- 讀取 ----------
     def get_signal(self, signal_id):
@@ -717,7 +868,7 @@ class Store:
         rows = self._db().execute(
             "SELECT * FROM positions WHERE status = 'open'" + where +
             " ORDER BY opened_ms, signal_id", params).fetchall()
-        return [dict(r) for r in rows]
+        return [_position_dict(r) for r in rows]
 
     def unpublished_signals(self, *, strategy=None, user_id=None):
         """已寫入但還沒標記發布的訊號（重啟補發用），依寫入時刻排序。過濾條件同 open_positions()。"""
@@ -726,3 +877,33 @@ class Store:
             "SELECT * FROM signals WHERE published_ms IS NULL" + where +
             " ORDER BY created_ms, signal_id", params).fetchall()
         return [_signal_dict(r) for r in rows]
+
+    def unpublished_exits(self, *, strategy=None, user_id=None):
+        """已平倉、出場事件還沒標記發布的部位（重啟補發用，schema v2），依平倉時刻排序。
+
+        每筆是 get_position() 的 dict，另外帶對應訊號的 side 與 entry_published_ms（訊號的 published_ms）：
+        進場事件還沒發布的，呼叫端要先發進場再發出場（A3 的「出場不超車進場」）。
+        過濾條件同 open_positions()。
+        """
+        where, params = _filters(strategy, user_id, prefix="p.")
+        rows = self._db().execute(
+            "SELECT p.*, s.side AS side, s.published_ms AS entry_published_ms FROM positions p "
+            "JOIN signals s ON s.signal_id = p.signal_id "
+            "WHERE p.status = 'closed' AND p.exit_published_ms IS NULL" + where +
+            " ORDER BY p.closed_ms, p.signal_id", params).fetchall()
+        return [_position_dict(r) for r in rows]
+
+    def last_closed_positions(self, *, strategy=None, user_id=None):
+        """每個 (user_id, strategy, symbol) 最後一筆已平倉的部位（平倉時刻最晚的那筆；同刻取 signal_id 大的），
+        依 (strategy, symbol, user_id) 排序。A3 重啟時用它重建冷卻。過濾條件同 open_positions()。
+
+        同一個鍵同時最多一筆 open、依序平倉，所以「平倉時刻最晚」就是最近一次出場。
+        """
+        where, params = _filters(strategy, user_id, prefix="p.")
+        rows = self._db().execute(
+            "SELECT p.* FROM positions p WHERE p.status = 'closed'" + where +
+            " AND NOT EXISTS (SELECT 1 FROM positions q WHERE q.status = 'closed' "
+            "AND q.user_id = p.user_id AND q.strategy = p.strategy AND q.symbol = p.symbol "
+            "AND (q.closed_ms > p.closed_ms OR (q.closed_ms = p.closed_ms AND q.signal_id > p.signal_id)))"
+            " ORDER BY p.strategy, p.symbol, p.user_id", params).fetchall()
+        return [_position_dict(r) for r in rows]
