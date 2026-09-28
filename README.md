@@ -266,14 +266,81 @@ A 頻道名目部位追蹤在 `live/notional_tracker.py`（A3）：收 A1 的原
 
 執行入口（**不在** `python -m live` 裡）：
 
-    python -m live.a_channel --duration 3600 [--events-jsonl [DIR]]
+    python -m live.a_channel --duration 3600 [--events-jsonl [DIR]] [--push-tg]
 
-它把 `logsetup.setup()`、共用閘門、A2 匯流排、A3、A1（標的池由 `market_static` 載入）接起來；T2 上線前
-匯流排只掛一個記錄事件的訂閱者（寫 INFO 日誌，加 `--events-jsonl` 時另外寫 jsonl，預設
-`runtime/a_channel/`，不可以指到 `state/` 或 `output/`）。啟動時印接線自檢（每種事件幾個訂閱者，有 0 個就不跑）。
+它把 `logsetup.setup()`、共用閘門、A2 匯流排、A3、A1（標的池由 `market_static` 載入）接起來。匯流排一定會掛一個
+記錄事件的訂閱者（寫 INFO 日誌，加 `--events-jsonl` 時另外寫 jsonl，預設 `runtime/a_channel/`，不可以指到
+`state/` 或 `output/`）；**加 `--push-tg` 才會推播到 Telegram A 頻道**（見下面 T2）。啟動時印接線自檢
+（每種事件幾個訂閱者，有 0 個就不跑）。
 A3 相關的執行參數：`S5_KLINE_INTERVAL`、`A3_KLINES_PAGE_LIMIT`（分頁取 K 棒的 limit）、
 `A3_STORE_READY_TIMEOUT_SECONDS`、`A3_JOIN_TIMEOUT_SECONDS`、`A3_EVENTS_RECORD_DIR`（都在 `live/config.py`，
 `python -m live` 會列出）。離線測試在 `tests/test_notional_tracker.py`（含拿 dry run 真正的程式逐筆對照）。
+
+A 頻道的發送器在 `live/tg_channel.py`（T1′）：`ChannelSender` 只負責把組好的純文字送到 Telegram Channel
+（Bot API `sendMessage`，不帶 `parse_mode`、關閉連結預覽，只用 `requests`，模組刻意不叫 `telegram`）。`send()`
+排進嚴格 FIFO 的記憶體佇列就返回，一條背景執行緒依序送出；限速是任何 60 秒最多 `TG_MAX_MESSAGES_PER_MINUTE` 次請求、
+相鄰至少隔 `TG_MIN_INTERVAL_SECONDS` 秒；429 等滿 `retry_after` 才重送（超過 `TG_MAX_RETRY_AFTER_SECONDS` 就不等、
+放棄這一則並記 ERROR），5xx / 連線錯誤 / 逾時退避重試，400 / 401 / 403 等不重試。token 在網址裡，所以所有日誌、
+例外、`stats()` 都經過集中遮罩（token 與 channel id 的任何 8 字元片段都換成 `[REDACTED]`，urllib3 的 logger 也掛了
+遮罩 filter）。`send(..., on_done=callback, expires_at=epoch 秒)` 兩個選用參數給 T2 用：每一則的實際結果
+（已送達含 `message_id` / 永久失敗 / 不確定・放棄 / 過期）恰好回報一次；期限在每一次實際發出請求之前檢查，
+但只要之前有一次結果不確定（讀取逾時、連線中斷、5xx 等請求可能已到 Telegram 的情況），就不再套期限；DNS 解析失敗、
+連線被拒、連線逾時、SSL 憑證驗證失敗則確定沒送達（請求沒有離開本機），期限照常檢查。不給就跟以前完全一樣。實機冒煙：
+
+    python -m live.tg_channel --smoke
+
+有設兩個密鑰就送一則 `[測試] T1′ 冒煙 <台北時間>`（成功 exit 0、失敗 exit 1），沒設就回報未實測（exit 3），
+不連網。離線測試在 `tests/test_tg_channel.py`。
+
+**A 頻道推播（T2）**把 A3 的進場 / 出場事件變成頻道訊息：
+
+- `live/a_channel_text.py`：訊息格式（純函式）。進場（訊號價、止盈 / 止損價與百分比、建議倉位、槓桿、發出時間）、
+  止盈出場、止損出場（兩者欄位完全對稱）。百分比、名目報酬、持倉時間一律由事件本身的價格與時間推導，不讀
+  `strategy/` 的參數；價格依該幣的價格精度（`market_static.symbol_spec()` 的 `quotePrecision`）四捨五入；
+  建議倉位 = 本金的 `A_CHANNEL_ORDER_PCT × A_CHANNEL_TARGET_LEVERAGE ÷ min(目標槓桿, 該幣上限)`，上限取不到時不捏造、
+  以目標槓桿計並註明。出場稽核旗標（例如 `minor_resolved`）不出現在訊息裡。策略名稱在 `config.STRATEGY_LABELS`。
+  版面是「標籤：值」（使用者 2026-09-28 看過實機樣本定案，沒有版面開關）；出場原因是「觸及止盈價」「觸及止損價」，
+  開盤跳空的止損是「觸及止損價且有滑價」；出場訊息底部的時間叫「出場時間」，延遲發布的註記放在標題下方。
+- `live/a_channel_outbox.py`：**頻道發送紀錄（outbox）**，SQLite 檔 `runtime/db/a_channel_outbox.sqlite3`
+  （`A_CHANNEL_OUTBOX_DB_PATH`，跟 `live.sqlite3` 分開）。一列 = 一個 `(signal_id, 事件種類)`，狀態是 `pending`（待送）/
+  `delivered`（已送達，記 `message_id`）/ `expired`（延遲不發）/ `no_entry`（因進場未出現而不發）/ `failed`（永久失敗）。
+  它同時是 **R-A 報表的統計依據**，**不自動刪除任何一列**；同一個 outbox 檔同時只能有一個行程在寫。
+- `live/a_channel_push.py`：匯流排訂閱者（名稱 `tg_a_channel`）。handler 在 A3 的執行緒裡只寫 outbox 就返回
+  （新鮮的進場碰到 `market_static` 還沒載入、或 outbox 寫不進去就拋例外，A3 下一分鐘重送；收到時就已過延遲門檻的舊進場、
+  以及出場，都不查 `market_static`）；自己的工作執行緒依寫入順序、
+  **一次交出一則**給 `ChannelSender`，把實際結果記回 outbox。當機、重啟、`stop()` 沒送完的訊息都會從 outbox 接著送；
+  結果不確定的（可能已到 Telegram）一律重送同一段文字，寧可多一則、不可以紀錄說沒有而頻道上有。發送器回報的結果
+  暫時寫不回 outbox（被外部程式鎖住、磁碟錯誤）時記 ERROR、結果留在記憶體、`A_CHANNEL_OUTBOX_RETRY_SECONDS` 後再記，
+  記回之前不交出新的列，所以已送達的不會被重送、同一訊號的出場也不會卡到下次重啟。
+
+**延遲進場不發（使用者 2026-09-28 決定）**：進場訊息實際送出時若已晚於訊號 K 棒收盤超過
+`A_CHANNEL_ENTRY_MAX_DELAY_SECONDS`（預設 300 秒），就不發，之後的出場也不發，**報表也不統計這一筆**（outbox 記
+`expired` / `no_entry`）。判定點盡量貼近實際送出：發送器在每一次發出請求之前都會再檢查一次（限速、429 等待也算）。
+出場訊息晚於平倉超過同一個門檻（或是重啟後補判的出場）照送、加一行延遲註記。**A3 的名目部位與冷卻不受影響**：
+這一筆 A3 照樣追蹤、冷卻照算（跟 dry run 一致），只是頻道上看不到、報表不算。
+
+推播要明確帶旗標：
+
+    python -m live.a_channel --duration 3600 --push-tg
+
+不帶 `--push-tg` 時行為與 T2 之前完全相同（不讀 TG 密鑰、不建 outbox）——開發機的長時間實跑不可以把訊息發進正式頻道。
+帶旗標但缺密鑰就記 ERROR、exit 1（A3 / A1 都不啟動）。A3 啟動之前 T2 就接好（A3 的重啟補發一啟動就會發布事件），
+啟動時記一行 outbox 現況；結束時沒送完的留在 outbox、記 WARNING，下次啟動再送。
+**部署前**確認目標機器的 `a_channel_outbox.sqlite3` 不存在或沒有測試資料（否則裡面的待送列會在第一次啟動時發進正式頻道）；
+開始有訂閱者之後，開發機的 `--push-tg` 實跑要改用測試頻道（換 `CRYPTO_TRADER_TG_CHANNEL_ID`），不可以與正式環境同時推播同一個頻道。
+
+版面確認用的樣本訊息（寫死的假資料、開頭加 `[測試]`，不碰 outbox、不碰 `live.sqlite3`、不打派網；exit 0 全部送達、
+1 有失敗、3 缺密鑰未實測）：
+
+    python -m live.a_channel_push --sample
+
+共 9 則：策略4 進場（該幣上限 ≥ 50x / 20x / 取不到）、策略5 進場、止盈、一般止損、跳空止損、同根兩碰止損、延遲註記的出場。
+
+頻道的設定：**私人頻道**，用「需管理員核准」的邀請連結加入，不綁討論群組；bot 要設為頻道管理員（有發文權限）；
+`CRYPTO_TRADER_TG_CHANNEL_ID` 是 `-100` 開頭的數字 ID（直接當 `chat_id` 用）。頻道置頂「所有時間均為台北時間 UTC+8」
+由管理者手動發文。T2 相關的執行參數都是 `A_CHANNEL_*` 與 `STRATEGY_LABELS`（`live/config.py`，`python -m live` 會列出）。
+離線測試在 `tests/test_a_channel_text.py`（訊息格式黃金樣本）與 `tests/test_a_channel_push.py`（去重、順序、延遲判定、
+handler 規則、接線，以及在「寫入 outbox 後」「交給發送器後」兩個時間點硬砍子行程的持久化測試）。
 
 ## 方法 A：GitHub Actions（免費、免主機）
 

@@ -106,7 +106,7 @@ TG_MAX_MESSAGES_PER_MINUTE 次請求，而且相鄰兩次至少隔 TG_MIN_INTERV
               retry_after 缺少、不是數字、或不是正數時：先看 Retry-After 標頭，再不行就等
               TG_RETRY_AFTER_FALLBACK_SECONDS；兩種都記 WARNING（代表 Telegram 的回應格式跟
               預期不同，值得有人看一眼）。
-  可重試      5xx、連線錯誤、逾時、傳輸中斷（ChunkedEncodingError）。退避後重試，連同第一次
+  可重試      5xx、連線錯誤（含 DNS 失敗、連線被拒）、逾時、傳輸中斷（ChunkedEncodingError）。退避後重試，連同第一次
               總共嘗試 TG_SEND_MAX_ATTEMPTS 次；只有「後面還要再試」才等（跟 live.pionex_api
               同一個原則），用盡就記 ERROR（含 key）、計入 failed、換下一則。
   不可重試    400 / 401 / 403 / 404 等其他 4xx、SSL 憑證錯誤、HTTP 200 但 ok 不是 true、
@@ -116,15 +116,71 @@ TG_MAX_MESSAGES_PER_MINUTE 次請求，而且相鄰兩次至少隔 TG_MIN_INTERV
 注意：逾時與連線中斷時，請求可能其實已經送達 Telegram，重試就會讓頻道收到兩則一樣的訊息。
 這是「寧可重複、不可漏發」的取捨（at-least-once），PRD 要求逾時要重試。
 
+429 的 retry_after 超過 TG_MAX_RETRY_AFTER_SECONDS（T2 FR-6 S4）：不等，放棄這一則並記 ERROR，
+回報「不確定 / 放棄」（見下面「每一則的結果回報」）；上限以內照舊等滿 retry_after 才重送。
+
+──────────────────────────────────────────────────────────────────────
+每一則的結果回報與期限（T2 FR-2 第 9 點、FR-3；不給就跟以前完全一樣）
+──────────────────────────────────────────────────────────────────────
+send(text, key, on_done=callback, expires_at=epoch 秒) 兩個參數都是選用的關鍵字參數：
+
+  on_done     callback(SendResult)。send() 回傳 True 的那一則，**恰好回報一次**；回傳 False（拒收）的不回報，
+              呼叫端看回傳值就知道。平常在工作執行緒裡呼叫；stop() 等不到工作執行緒時，佇列裡被放棄的那幾則
+              改在呼叫 stop() 的執行緒回報。callback 拋例外只記 ERROR（遮罩後的 traceback），不會弄死執行緒。
+              callback 必須很快（排進呼叫端自己的佇列就好），它擋住的是整條發送佇列。
+  expires_at  期限（以 wall_clock 計的 epoch 秒）。**每一次實際發出請求之前**檢查：wall_clock() > expires_at
+              就不發，回報 expired。例外：這一則之前有任何一次嘗試的結果「不確定」（請求可能已經到了
+              Telegram），之後就不再檢查期限、照常送到有結論為止 —— 頻道上可能已經有它，不可以讓呼叫端記成
+              「沒有送出」。429 與「送出前就過期」都確定沒有送達。
+
+SendResult 的欄位：status / key / message_id / uncertain / detail。status 是下列之一：
+
+  delivered   HTTP 200 且 ok=true（message_id 是 Telegram 回傳的值）
+  failed      永久失敗：400 / 401 / 403 / 404、SSL、HTTP 200 但 ok 不是 true、未預期的例外。不可重送
+  gave_up     不確定 / 放棄：可重試錯誤用盡、429 超過重送上限、retry_after 超過 TG_MAX_RETRY_AFTER_SECONDS
+  abandoned   stop() 的期限內沒送完（含佇列裡還沒輪到的）
+  expired     expires_at 已過、而且之前沒有任何不確定的嘗試：確定沒有送出
+
+uncertain = 這一則有沒有任何一次嘗試「可能已經送達」（請求可能已經到了 Telegram）。對照 requests 2.34 / urllib3 2.7
+的實際包裝方式（requests 預設 Retry(0, read=False)）逐類判定：
+
+  確定沒送達（請求沒有離開本機，或 Telegram 明確拒收 / 叫我們等）
+    ・DNS 解析失敗、連線被拒：urllib3 在建立 socket 時拋 NewConnectionError（NameResolutionError 是它的子類），
+      包成 MaxRetryError(reason=...) 之後 requests 再包成 ConnectionError。_attempt 沿例外鏈（__cause__ /
+      __context__ / args / MaxRetryError.reason / ProxyError.original_error）找到它就算確定沒送達（T2 第 1 輪 F2）
+    ・連線逾時 ConnectTimeout（TCP 連線沒建立）
+    ・SSL 錯誤而且原因是憑證驗證失敗（ssl.SSLCertVerificationError、urllib3 的 CertificateError）：
+      發生在握手階段，請求還沒送出
+    ・429、其他 4xx、送出前就過期
+  不確定（可能已送達）
+    ・讀取逾時、連線中斷 / 被重設（ProtocolError、RemoteDisconnected）、傳輸中斷（ChunkedEncodingError）、5xx
+    ・其他 SSL 錯誤：urllib3 讀回應時的 ssl.SSLError 也會被包成 requests 的 SSLError，可能發生在請求送到之後
+      （第 1 輪 F1；SSL 錯誤一律不重試、記永久失敗，差別只在「可能已送達」的標記與 ERROR 的說明）
+    ・HTTP 200 但 ok 不是 true、其他 requests 例外
+呼叫端拿它決定之後要不要再套期限（見 live.a_channel_push）。規則「同一次 send 裡有過一次不確定，之後就不再檢查
+期限」不變：先有一次不確定、後來才是 DNS 失敗，照樣不套期限。
+
+urllib3 的類別以「MRO 上的類別名稱 + 所屬模組是 urllib3」辨認，不直接 import urllib3：本模組只依賴標準庫與
+requests（tests/test_tg_channel.py 的 test_ac9_module_name_and_dependencies）。
+
+stats() 的欄位不變（向下相容）：gave_up 與 failed 都計入 failed；expired 的不計入任何一欄
+（呼叫端由 on_done 得知，T2 記在自己的 outbox）。
+
 ──────────────────────────────────────────────────────────────────────
 stop(timeout)
 ──────────────────────────────────────────────────────────────────────
 從呼叫當下（以注入的時鐘計）起算 timeout 秒為期限，工作執行緒繼續照 FIFO、照限速送。
 任何一次等待（限速、退避、429）若會越過期限，就不等了：當下這一則連同佇列裡剩下的全部放棄，
 記一筆 ERROR 寫明放棄幾則，計入 stats 的 abandoned，stop() 回傳這個數字。
-正在等待中的工作執行緒會被 stop() 叫醒重新計算（不會傻等一個 600 秒的 retry_after 等完）。
+正在等待中的工作執行緒會被 stop() 叫醒重新計算（不會傻等一個 300 秒的 retry_after 等完）。
 正在進行中的單一 HTTP 請求無法中斷，最多再等 TG_HTTP_TIMEOUT_SECONDS；stop() 以真實時間
 join 工作執行緒，上限是 timeout + TG_HTTP_TIMEOUT_SECONDS + 5 秒，真的等不到就記 ERROR 返回。
+
+回傳值 = stop() 返回當下「沒有確認送出」的則數，**之後再呼叫 stop() 回傳同一個數字**。
+等不到工作執行緒時，這個數字含卡在請求裡的那一則；它之後若其實送成功了，會計入 stats 的 sent
+（並照常經 on_done 回報 delivered），但 stop() 的回傳值不再改變 —— 它描述的是 stop() 當下的狀況。
+等不到的工作執行緒日後自己結束時，會自己拆掉第三方 logger 的 filter 並關 Session（T2 FR-6 S2），
+不會殘留。
 
 ──────────────────────────────────────────────────────────────────────
 可注入的東西（測試全程離線、不真的 sleep）
@@ -167,6 +223,7 @@ import collections
 import logging
 import math
 import re
+import ssl
 import sys
 import threading
 import time
@@ -227,8 +284,21 @@ _NEW, _STARTING, _RUNNING, _STOPPING, _STOPPED = "new", "starting", "running", "
 # 每一次請求的分類
 _OK, _RATE_LIMITED, _RETRYABLE, _FATAL = "ok", "rate_limited", "retryable", "fatal"
 
-# 一則訊息處理完的結局
-_SENT, _FAILED, _ABANDONED = "sent", "failed", "abandoned"
+# 一則訊息處理完的結局（內部用；_GAVE_UP 與 _FAILED 在 stats 裡都計入 failed）
+_SENT, _FAILED, _GAVE_UP, _EXPIRED, _ABANDONED = "sent", "failed", "gave_up", "expired", "abandoned"
+
+# on_done 回報的 SendResult.status（公開常數，語意見模組 docstring「每一則的結果回報與期限」）
+RESULT_DELIVERED = "delivered"
+RESULT_FAILED = "failed"
+RESULT_GAVE_UP = "gave_up"
+RESULT_ABANDONED = "abandoned"
+RESULT_EXPIRED = "expired"
+
+_RESULT_OF = {_SENT: RESULT_DELIVERED, _FAILED: RESULT_FAILED, _GAVE_UP: RESULT_GAVE_UP,
+              _EXPIRED: RESULT_EXPIRED, _ABANDONED: RESULT_ABANDONED}
+
+# 一則訊息的最終結果，交給 send(on_done=...) 的 callback。detail 已遮罩；message_id 只有 delivered 才有。
+SendResult = collections.namedtuple("SendResult", "status key message_id uncertain detail")
 
 
 # ============================== 遮罩 ==============================
@@ -295,17 +365,35 @@ class SecretMasker:
 
 
 class _MaskingFilter(logging.Filter):
-    """掛在第三方 logger 上：把紀錄的訊息與 traceback 整段遮罩後才放行。"""
+    """掛在第三方 logger 上：把紀錄的訊息與 traceback 整段遮罩後才放行。
+
+    格式字串與參數對不上（record.getMessage() 失敗）時也不可以原樣放行：logging 之後會在 handler 裡再格式化
+    一次、再失敗一次，然後由 Handler.handleError 把原始的 msg 與 args 印到 stderr —— args 裡正好可能是帶 token
+    的網址（T2 FR-6 S1）。所以改成把 repr(msg) 與 repr(args) 各自遮罩後組成一段說明當作訊息，清掉 args 再放行。
+    """
+
+    # 格式化失敗時，說明文字裡 msg / args 的 repr 最多留多長（**先遮罩再截斷**，截斷不會留下半截密鑰）
+    _BROKEN_REPR_LIMIT = 1000
 
     def __init__(self, masker):
         super().__init__()
         self._masker = masker
 
+    def _masked_repr(self, value):
+        try:
+            text = repr(value)
+        except Exception:  # noqa: BLE001
+            text = "<repr 失敗的 %s>" % type(value).__name__
+        text = self._masker(text)
+        limit = self._BROKEN_REPR_LIMIT
+        return text if len(text) <= limit else text[:limit] + "..."
+
     def filter(self, record):
         try:
             message = record.getMessage()
-        except Exception:  # noqa: BLE001 — 格式化失敗就交給 logging 自己報錯
-            return True
+        except Exception:  # noqa: BLE001 — 格式化失敗：遮罩 repr(msg) / repr(args) 後當作訊息（見 docstring）
+            message = ("<日誌格式化失敗：格式字串與參數不符> msg=%s args=%s"
+                       % (self._masked_repr(record.msg), self._masked_repr(record.args)))
         extra = ""
         if record.exc_info and record.exc_info[1] is not None:
             extra = "\n" + "".join(traceback.format_exception(*record.exc_info)).rstrip("\n")
@@ -347,6 +435,47 @@ def _positive_seconds(value):
     return value
 
 
+_CHAIN_LIMIT = 32
+
+
+def _exception_chain(exc):
+    """exc 與它連帶的例外：__cause__、__context__、args 裡的例外、MaxRetryError.reason、ProxyError.original_error。
+    去重、最多 _CHAIN_LIMIT 個。只在 except 區塊裡用來分類，結果不保存例外物件。"""
+    seen, out, stack = set(), [], [exc]
+    while stack and len(out) < _CHAIN_LIMIT:
+        e = stack.pop()
+        if not isinstance(e, BaseException) or id(e) in seen:
+            continue
+        seen.add(id(e))
+        out.append(e)
+        stack.append(e.__cause__)
+        stack.append(e.__context__)
+        stack.extend(a for a in getattr(e, "args", ()) if isinstance(a, BaseException))
+        for attr in ("reason", "original_error"):
+            value = getattr(e, attr, None)
+            if isinstance(value, BaseException):
+                stack.append(value)
+    return out
+
+
+def _is_urllib3_class(exc, name):
+    """exc 是否為 urllib3 的 name 類別（或其子類）。以 MRO 比對，本模組不 import urllib3（見模組 docstring）。"""
+    return any(cls.__name__ == name and cls.__module__.split(".")[0] == "urllib3" for cls in type(exc).__mro__)
+
+
+def _connection_never_established(exc):
+    """DNS 解析失敗或連線被拒：例外鏈上有 urllib3 的 NewConnectionError（NameResolutionError 是它的子類）。
+    這時 socket 連線根本沒建立，請求沒有離開本機 —— 確定沒送達。"""
+    return any(_is_urllib3_class(e, "NewConnectionError") for e in _exception_chain(exc))
+
+
+def _certificate_verification_failed(exc):
+    """SSL 錯誤的原因是握手階段的憑證驗證失敗（ssl.SSLCertVerificationError，或 urllib3 自己比對主機名稱時的
+    CertificateError）。這時請求還沒送出 —— 確定沒送達。其他 SSL 錯誤可能發生在讀回應的時候（不確定）。"""
+    return any(isinstance(e, ssl.SSLCertVerificationError) or _is_urllib3_class(e, "CertificateError")
+               for e in _exception_chain(exc))
+
+
 def _safe_repr(value, limit=200):
     try:
         text = repr(value)
@@ -360,24 +489,36 @@ def _iso_utc(epoch_seconds):
 
 
 class _Item:
-    __slots__ = ("text", "key")
+    __slots__ = ("text", "key", "on_done", "expires_at", "uncertain", "attempts", "detail", "message_id",
+                 "notified")
 
-    def __init__(self, text, key):
+    def __init__(self, text, key, on_done=None, expires_at=None):
         self.text = text
         self.key = key
+        self.on_done = on_done
+        self.expires_at = expires_at
+        self.uncertain = False      # 有沒有任何一次嘗試「可能已經送達」（之後就不再套 expires_at）
+        self.attempts = 0           # 實際發出的請求次數
+        self.detail = None          # 最後的失敗描述（已遮罩），給 on_done
+        self.message_id = None
+        self.notified = False       # on_done 已經呼叫過（恰好一次）
 
 
 class _Outcome:
-    """一次請求的分類結果。只留遮罩後的字串，不保存原始例外物件。"""
+    """一次請求的分類結果。只留遮罩後的字串，不保存原始例外物件。
 
-    __slots__ = ("kind", "detail", "retry_after", "note", "message_id")
+    uncertain：這次請求可能已經送達 Telegram（讀取逾時、連線中斷、5xx、HTTP 200 但 ok 不是 true……）。
+    """
 
-    def __init__(self, kind, detail="", retry_after=None, note=None, message_id=None):
+    __slots__ = ("kind", "detail", "retry_after", "note", "message_id", "uncertain")
+
+    def __init__(self, kind, detail="", retry_after=None, note=None, message_id=None, uncertain=False):
         self.kind = kind
         self.detail = detail
         self.retry_after = retry_after
         self.note = note
         self.message_id = message_id
+        self.uncertain = uncertain
 
 
 # ============================== 發送器 ==============================
@@ -388,7 +529,7 @@ class ChannelSender:
                  api_base_url=None, max_per_minute=None, min_interval=None,
                  max_attempts=None, backoff_base=None, backoff_max=None,
                  max_rate_limited_retries=None, retry_after_fallback=None,
-                 http_timeout=None, max_chars=None, stop_timeout=None):
+                 http_timeout=None, max_chars=None, stop_timeout=None, max_retry_after=None):
         def pick(value, default):
             return default if value is None else value
 
@@ -405,11 +546,14 @@ class ChannelSender:
         self._http_timeout = pick(http_timeout, config.TG_HTTP_TIMEOUT_SECONDS)
         self._max_chars = int(pick(max_chars, config.TG_MAX_MESSAGE_CHARS))
         self._stop_timeout = float(pick(stop_timeout, config.TG_STOP_TIMEOUT_SECONDS))
+        self._max_retry_after = float(pick(max_retry_after, config.TG_MAX_RETRY_AFTER_SECONDS))
         if self._max_per_minute < 1 or self._max_attempts < 1 or self._max_chars < 1:
             raise ValueError("max_per_minute / max_attempts / max_chars 都必須 >= 1")
         if (self._min_interval < 0 or self._backoff_base < 0 or self._backoff_max < 0
                 or self._max_rate_limited_retries < 0 or self._retry_after_fallback <= 0):
             raise ValueError("間隔、退避與重試上限不可為負，retry_after 保底秒數必須 > 0")
+        if not self._max_retry_after > 0:
+            raise ValueError("retry_after 的上限（max_retry_after）必須 > 0")
 
         self._injected_post = post
         self._clock = clock or time.monotonic
@@ -424,6 +568,8 @@ class ChannelSender:
         self._deadline = None          # stop() 設定的期限（clock 秒數）；None = 沒有在停
         self._abort_requested = False  # stop() 等不到工作執行緒時設起來，要它一回來就收工
         self._thread = None
+        self._worker_exited = False    # 工作執行緒已經結束（S2：誰後到誰負責 _teardown）
+        self._stop_result = None       # 第一次 stop() 完成時的回傳值；之後的 stop() 回傳同一個數字
 
         # start() 之後才有
         self._masker = SecretMasker(())
@@ -442,6 +588,7 @@ class ChannelSender:
         self._failed = 0
         self._rejected = 0
         self._abandoned = 0
+        self._expired = 0              # expires_at 已過而沒送的則數（不在 stats() 裡，見模組 docstring）
         self._last_success_at = None
         self._last_message_id = None
         self._last_error = None
@@ -494,15 +641,26 @@ class ChannelSender:
                   self._max_per_minute, self._min_interval, self._max_attempts,
                   self._max_rate_limited_retries)
 
-    def send(self, text, key=None):
+    def send(self, text, key=None, *, on_done=None, expires_at=None):
         """把一則純文字訊息排進 FIFO 佇列後立刻返回，不等網路。
 
         key 是呼叫端的關聯鍵（例如 signal_id；不假設它只是 symbol），只用在日誌裡方便追查。
         回傳 True = 已排入；False = 拒收（原因記在 ERROR，計入 stats 的 rejected）。
         text 不是 str 拋 TypeError；還沒 start() 就呼叫拋 RuntimeError。
+
+        on_done / expires_at（選用，T2）：結果回報與期限，語意見模組 docstring「每一則的結果回報與期限」。
+        不給就跟以前完全一樣。on_done 不可呼叫、expires_at 不是有限實數時拋 TypeError / ValueError。
         """
         if not isinstance(text, str):
             raise TypeError("text 必須是 str，收到 %s" % type(text).__name__)
+        if on_done is not None and not callable(on_done):
+            raise TypeError("on_done 必須可呼叫，收到 %s" % type(on_done).__name__)
+        if expires_at is not None:
+            if isinstance(expires_at, bool) or not isinstance(expires_at, (int, float)):
+                raise TypeError("expires_at 必須是 epoch 秒（int / float），收到 %s" % type(expires_at).__name__)
+            if not math.isfinite(expires_at):
+                raise ValueError("expires_at 必須是有限的數字，收到 %r" % (expires_at,))
+            expires_at = float(expires_at)
         units = utf16_units(text)
         with self._cond:
             if self._state in (_NEW, _STARTING):
@@ -517,7 +675,7 @@ class ChannelSender:
             elif self._thread is None or not self._thread.is_alive():
                 reason = "發送執行緒已經不在了，訊息不會被送出"
             else:
-                self._queue.append(_Item(text, key))
+                self._queue.append(_Item(text, key, on_done, expires_at))
                 self._cond.notify_all()
                 return True
             self._rejected += 1
@@ -528,13 +686,14 @@ class ChannelSender:
         """停止接收新訊息，盡量在 timeout 秒內把佇列送完。回傳沒送出去的則數。
 
         timeout 省略時用 TG_STOP_TIMEOUT_SECONDS。逾時放棄時記 ERROR 寫明放棄幾則。
+        回傳值是 stop() 返回當下沒有確認送出的則數；再呼叫一次 stop() 回傳同一個數字（見模組 docstring）。
         """
         timeout = self._stop_timeout if timeout is None else max(0.0, float(timeout))
         with self._cond:
             if self._state in (_NEW, _STARTING):
                 return 0
             if self._state == _STOPPED:
-                return self._abandoned
+                return self._abandoned if self._stop_result is None else self._stop_result
             if self._state == _RUNNING:
                 self._state = _STOPPING
                 self._deadline = self._clock() + timeout
@@ -545,22 +704,35 @@ class ChannelSender:
         thread.join(timeout + float(self._http_timeout) + _JOIN_GRACE_SECONDS)
         if thread.is_alive():
             with self._cond:
+                if self._state == _STOPPED and self._stop_result is not None:
+                    return self._stop_result        # 另一個同時呼叫的 stop() 已經處理完這個分支
                 self._abort_requested = True
-                dropped = len(self._queue)
-                self._abandoned += dropped
+                dropped_items = list(self._queue)
+                self._abandoned += len(dropped_items)
                 self._queue.clear()
-                stuck = dropped + (1 if self._in_flight is not None else 0)
+                stuck = len(dropped_items) + (1 if self._in_flight is not None else 0)
                 self._state = _STOPPED
+                self._stop_result = stuck
+                # S2：工作執行緒若恰好已經結束（它結束時看到的還不是 STOPPED，沒有自己拆），由這裡拆；
+                # 否則由它日後結束時自己拆（_run 的 finally）。兩邊都在同一把鎖底下判斷，不會兩邊都漏掉。
+                teardown_now = self._worker_exited
+                self._cond.notify_all()
             self._wakeup.set()
             self._log(logging.ERROR,
                       "stop()：發送執行緒在期限內沒有結束（可能卡在一次 HTTP 請求），"
                       "放棄 %d 則未送出的 A 頻道訊息", stuck)
+            for item in dropped_items:
+                self._notify(item, _ABANDONED)
+            if teardown_now:
+                self._teardown()
             return stuck
 
         self._teardown()
         with self._cond:
             self._state = _STOPPED
-            remaining = self._abandoned
+            if self._stop_result is None:
+                self._stop_result = self._abandoned
+            remaining = self._stop_result
             sent, failed = self._sent, self._failed
         if not remaining:
             self._log(logging.INFO, "A 頻道發送器已停止，佇列已處理完（已送出 %d、失敗 %d）",
@@ -641,16 +813,25 @@ class ChannelSender:
             self._wakeup.clear()
 
     def _run(self):
-        while True:
-            try:
-                if not self._process_next():
-                    return
-            except Exception as exc:  # noqa: BLE001 — 最後一道防線：記錄後繼續，不讓執行緒死掉
+        try:
+            while True:
                 try:
-                    self._log_unexpected("主迴圈", None, exc)
-                    self._sleep_until(self._clock() + _CRASH_PAUSE_SECONDS)
-                except Exception:  # noqa: BLE001 — 連記錄都失敗：至少用真實時間喘口氣再繼續
-                    self._wakeup.wait(_CRASH_PAUSE_SECONDS)
+                    if not self._process_next():
+                        return
+                except Exception as exc:  # noqa: BLE001 — 最後一道防線：記錄後繼續，不讓執行緒死掉
+                    try:
+                        self._log_unexpected("主迴圈", None, exc)
+                        self._sleep_until(self._clock() + _CRASH_PAUSE_SECONDS)
+                    except Exception:  # noqa: BLE001 — 連記錄都失敗：至少用真實時間喘口氣再繼續
+                        self._wakeup.wait(_CRASH_PAUSE_SECONDS)
+        finally:
+            # S2：stop() 等不到本執行緒就先返回了（狀態已經是 STOPPED）→ 由本執行緒收尾，filter 與 Session
+            # 不殘留。正常停止時 stop() join 到本執行緒之後自己 _teardown()。_teardown() 本身可重複呼叫。
+            with self._cond:
+                self._worker_exited = True
+                teardown_now = self._state == _STOPPED
+            if teardown_now:
+                self._teardown()
 
     def _process_next(self):
         """等下一則並把它處理完。回傳 False 代表工作執行緒該結束了。"""
@@ -662,40 +843,79 @@ class ChannelSender:
             item = self._queue.popleft()
             self._in_flight = item
         result = _FAILED
+        dropped_items = []
         try:
             result = self._deliver(item)
         except Exception as exc:  # noqa: BLE001
             self._log_unexpected("送出這一則時", item, exc)
+            item.detail = self._describe_exception(exc)
+            if item.attempts:
+                item.uncertain = True       # 請求可能已經發出去了，無從確定
             result = _FAILED
         finally:
             with self._cond:
                 self._in_flight = None
                 if result == _SENT:
                     self._sent += 1
-                elif result == _FAILED:
+                elif result in (_FAILED, _GAVE_UP):
                     self._failed += 1
+                elif result == _EXPIRED:
+                    self._expired += 1
                 else:
-                    dropped = 1 + len(self._queue)
+                    dropped_items = list(self._queue)
+                    dropped = 1 + len(dropped_items)
                     self._abandoned += dropped
                     self._queue.clear()
                 self._cond.notify_all()
+        # 回報在鎖外做：callback 可能會去讀 stats()
+        self._notify(item, result)
+        for other in dropped_items:
+            self._notify(other, _ABANDONED)
         if result == _ABANDONED:
             self._log(logging.ERROR, "stop() 的期限已到，放棄 %d 則未送出的 A 頻道訊息"
                                      "（含處理中的 key=%s）", dropped, _safe_repr(item.key))
             return False
         return True
 
+    def _notify(self, item, result):
+        """把一則的最終結果交給它的 on_done（恰好一次）。callback 拋例外只記 ERROR，不往外拋。"""
+        with self._cond:
+            if item.on_done is None or item.notified:
+                return
+            item.notified = True
+            callback = item.on_done
+        status = _RESULT_OF[result]
+        detail = self._mask(item.detail) if item.detail else None
+        report = SendResult(status=status, key=item.key,
+                            message_id=item.message_id if status == RESULT_DELIVERED else None,
+                            uncertain=bool(item.uncertain), detail=detail)
+        try:
+            callback(report)
+        except Exception as exc:  # noqa: BLE001 — 呼叫端的 callback 出錯不可以弄死發送執行緒
+            tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)).rstrip("\n")
+            self._log(logging.ERROR, "A 頻道訊息的 on_done 回報拋出例外（key=%s，結果 %s），忽略、發送執行緒繼續運作。\n%s",
+                      _safe_repr(item.key), status, tb)
+
     def _deliver(self, item):
-        """把一則送到成功、放棄、或 stop 期限到為止。回傳 _SENT / _FAILED / _ABANDONED。"""
+        """把一則送到成功、放棄、過期、或 stop 期限到為止。
+        回傳 _SENT / _FAILED（永久失敗）/ _GAVE_UP（不確定、放棄）/ _EXPIRED / _ABANDONED。"""
         failures = 0        # 可重試錯誤的次數，計入 TG_SEND_MAX_ATTEMPTS
         rate_limited = 0    # 429 的次數，另計（TG_MAX_RATE_LIMITED_RETRIES）
         key = _safe_repr(item.key)
         while True:
             if not self._wait_for_send_slot():
                 return _ABANDONED
+            # FR-3：期限在「每一次實際發出請求之前」檢查（限速、429、退避的等待都已經等完了）。
+            # 之前有不確定的嘗試就不再檢查：頻道上可能已經有它（_expired_now 裡判斷）。
+            if self._expired_now(item):
+                self._log(logging.WARNING, "A 頻道訊息已過送出期限（key=%s），不送出、回報 expired", key)
+                return _EXPIRED
             outcome = self._attempt(item)
+            if outcome.uncertain:
+                item.uncertain = True
 
             if outcome.kind == _OK:
+                item.message_id = outcome.message_id
                 with self._cond:
                     self._last_success_at = self._now_iso()
                     self._last_message_id = outcome.message_id
@@ -709,6 +929,11 @@ class ChannelSender:
                     return self._give_up(item, "連續收到 %d 次 HTTP 429（上限重送 %d 次），放棄這一則：%s"
                                          % (rate_limited, self._max_rate_limited_retries,
                                             outcome.detail))
+                if outcome.retry_after > self._max_retry_after:
+                    # S4：上限以內照舊等滿；超過就不等（FIFO 的佇列會被一則卡住幾十分鐘），回報不確定 / 放棄
+                    return self._give_up(item, "HTTP 429 的 retry_after %s 秒超過上限 %s 秒"
+                                               "（TG_MAX_RETRY_AFTER_SECONDS），不等、放棄這一則：%s"
+                                         % (outcome.retry_after, self._max_retry_after, outcome.detail))
                 if outcome.note:
                     self._log(logging.WARNING, "HTTP 429 的回應格式跟預期不同（key=%s）：%s",
                               key, outcome.note)
@@ -730,32 +955,65 @@ class ChannelSender:
                     return _ABANDONED
                 continue
 
-            return self._give_up(item, "不可重試的錯誤，放棄這一則：%s" % outcome.detail)
+            return self._give_up(item, "不可重試的錯誤，放棄這一則%s：%s"
+                                 % ("（可能其實已經送達 Telegram，不重送以免重複）" if outcome.uncertain else "",
+                                    outcome.detail), permanent=True)
 
-    def _give_up(self, item, detail):
+    def _give_up(self, item, detail, permanent=False):
+        """放棄這一則：permanent = 永久失敗（不可重送）→ _FAILED；否則是「不確定 / 放棄」→ _GAVE_UP。
+        兩者都記 ERROR、在 stats 裡都計入 failed（與以前相同）。"""
         self._log(logging.ERROR, "A 頻道訊息送出失敗（key=%s）：%s", _safe_repr(item.key), detail)
         self._set_last_error(detail)
-        return _FAILED
+        item.detail = detail
+        return _FAILED if permanent else _GAVE_UP
+
+    def _expired_now(self, item):
+        """這一則此刻是否已過期限。沒給期限、或之前有不確定的嘗試 → 永遠 False。"""
+        if item.expires_at is None or item.uncertain:
+            return False
+        try:
+            return self._wall_clock() > item.expires_at
+        except Exception:  # noqa: BLE001 — 時鐘壞掉時寧可照送（多一則），不可以誤判成沒送
+            return False
 
     def _attempt(self, item):
-        """發出一次請求並分類結果。例外只留下遮罩後的描述字串。"""
+        """發出一次請求並分類結果。例外只留下遮罩後的描述字串。
+
+        uncertain 的判定（請求可能已經到了 Telegram），詳見模組 docstring「每一則的結果回報與期限」：
+          確定沒送達  連線逾時 ConnectTimeout；DNS 解析失敗 / 連線被拒（例外鏈上有 urllib3 NewConnectionError）；
+                      SSL 錯誤且原因是憑證驗證失敗（握手階段）
+          不確定      其他 SSL 錯誤（可能在讀回應時發生）、讀取逾時、連線中斷 / 被重設、傳輸中斷、其他 requests 例外
+        回應的部分見 _classify_response。
+        """
         payload = {
             "chat_id": self._chat_id,
             "text": item.text,
             "link_preview_options": {"is_disabled": True},
         }
         self._record_request()
+        item.attempts += 1
         try:
             response = self._post(self._url, json=payload, timeout=self._http_timeout)
         except requests.exceptions.SSLError as exc:
-            # SSLError 是 ConnectionError 的子類，必須先接：憑證問題重試幾次都一樣
+            # SSLError 是 ConnectionError 的子類，必須先接。SSL 錯誤重試幾次都一樣，一律不重試（永久失敗）；
+            # 只有握手階段的憑證驗證失敗能確定沒送達，其他 SSL 錯誤可能發生在讀回應時（F1）
+            if _certificate_verification_failed(exc):
+                return _Outcome(_FATAL, self._describe_exception(exc)
+                                + "（SSL 憑證驗證失敗，請求沒有送出；這台機器若在 SSL inspection 後面，"
+                                  "把 CA bundle 路徑放進環境變數 REQUESTS_CA_BUNDLE）")
             return _Outcome(_FATAL, self._describe_exception(exc)
-                            + "（SSL 憑證驗證失敗；這台機器若在 SSL inspection 後面，"
-                              "把 CA bundle 路徑放進環境變數 REQUESTS_CA_BUNDLE）")
-        except _RETRYABLE_EXCEPTIONS as exc:
+                            + "（SSL 錯誤不是憑證驗證失敗，可能發生在請求送到之後：這一則可能其實已經送達）",
+                            uncertain=True)
+        except requests.exceptions.ConnectTimeout as exc:
+            # ConnectTimeout 同時是 ConnectionError 與 Timeout 的子類，要先接：連線沒建立，確定沒送達
             return _Outcome(_RETRYABLE, self._describe_exception(exc))
+        except _RETRYABLE_EXCEPTIONS as exc:
+            if _connection_never_established(exc):
+                # DNS 解析失敗 / 連線被拒：請求沒有離開本機，確定沒送達，期限照常檢查（F2）
+                return _Outcome(_RETRYABLE, self._describe_exception(exc) + "（連線沒有建立，確定沒送達）")
+            return _Outcome(_RETRYABLE, self._describe_exception(exc), uncertain=True)
         except requests.exceptions.RequestException as exc:
-            return _Outcome(_FATAL, self._describe_exception(exc))
+            return _Outcome(_FATAL, self._describe_exception(exc), uncertain=True)
         return self._classify_response(response)
 
     def _classify_response(self, response):
@@ -775,13 +1033,14 @@ class ChannelSender:
                 message_id = result.get("message_id") if isinstance(result, dict) else None
                 return _Outcome(_OK, message_id=message_id)
             return _Outcome(_FATAL, "HTTP 200 但回應不是 ok=true（%s）；不重試以免重複發送"
-                            % description)
+                            % description, uncertain=True)
         if status == 429:
             retry_after, note = self._retry_after(body, response)
             return _Outcome(_RATE_LIMITED, "HTTP 429：%s" % description,
                             retry_after=retry_after, note=note)
         if isinstance(status, int) and 500 <= status <= 599:
-            return _Outcome(_RETRYABLE, "HTTP %d：%s" % (status, description))
+            # 5xx（尤其 502 / 504 閘道逾時）時後端可能已經處理了這則：算不確定
+            return _Outcome(_RETRYABLE, "HTTP %d：%s" % (status, description), uncertain=True)
         hint = _STATUS_HINTS.get(status, "不可重試的回應")
         return _Outcome(_FATAL, "HTTP %s：%s（%s）" % (status, description, hint))
 

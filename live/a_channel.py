@@ -8,22 +8,34 @@ live.a_channel — A 頻道的執行入口：A1（原始訊號）→ A3（名目
     B5  live.market_static               標的池（由 A1 的 MarketUniverse 載入與刷新）
         live.rest_gate.shared_gate()     整個行程共用的 REST 閘門（A1 與 A3 都走它）
     B4′ live.store                       A3 的工作執行緒自己開（一個 Store 只在建立它的執行緒用）
-    A2  live.bus.SignalBus               T2 上線前只掛一個訂閱者：EventLog（事件寫進 INFO 日誌，
-                                         加 --events-jsonl 時另外寫 jsonl）
+    A2  live.bus.SignalBus               訂閱者：EventLog（事件寫進 INFO 日誌，加 --events-jsonl 時另外寫 jsonl），
+                                         加 --push-tg 時再掛 T2（live.a_channel_push.ChannelPusher，名稱 tg_a_channel）
+    T2  live.a_channel_push              A 頻道推播：handler 只寫 outbox（runtime/db/a_channel_outbox.sqlite3）就返回，
+        live.tg_channel.ChannelSender    自己的工作執行緒依 outbox 交給發送器、把實際結果記回 outbox
     A3  live.notional_tracker            名目部位追蹤（自己的執行緒）
     A1  live.signal_feed.SignalFeed      on_result = A3 的回呼（只排佇列，立刻返回）
+
+**必須明確帶 --push-tg 才推播**（比照 T1′ 的 --smoke）。不帶時行為與 T2 之前完全相同：只有 EventLog，
+不開 outbox、不讀 TG 密鑰 —— 開發機的實跑（例如 A1 的長時間冒煙）不可以把訊息發進正式頻道。
+帶 --push-tg 時，**在 A3 啟動之前**依序做好（A3 的重啟補發會在啟動時就發布事件，T2 必須先接好）：
+  1. ChannelSender.start()：缺密鑰 → 記 ERROR、exit 1，A3 / A1 都不啟動
+  2. ChannelPusher.start()：建 outbox、記一行 outbox 現況（待送幾則、各狀態累計）、啟動 T2 工作執行緒
+  3. 訂閱兩種事件（EventLog 之後），接線自檢會列出 T2
+  4. 主週期取自 A3 的策略規格（pusher.set_specs(tracker.specs)），再 tracker.start()
+關閉順序：A1 → A3（join）→ T2（停止派送 → ChannelSender.stop() → 記回結果 → 結束工作執行緒）。沒送完的留在
+outbox，記 WARNING 寫明幾則，下次啟動再送。
 
 啟動時先做接線自檢：印出每種事件有幾個訂閱者（有任何一種是 0 就 exit 1，不跑）。A3 的工作執行緒開好
 資料庫之後才啟動 A1（開不了資料庫就 exit 1）；A3 的重啟復原在自己的執行緒裡做，期間 A1 交來的訊號
 先排在佇列裡。
 
-事件去重約定（寫給日後的訂閱者，T2 照做）：A3 採 at-least-once 發布，**以 (signal_id, 事件種類) 去重**，
-詳見 live.signal_events 的模組說明。本入口的 EventLog 只記錄，不去重（重送會看到兩行，這是預期的）。
+事件去重約定：A3 採 at-least-once 發布，**以 (signal_id, 事件種類) 去重**，詳見 live.signal_events 的模組說明。
+T2 以 outbox 的 UNIQUE (signal_id, 事件種類) 去重（跨重啟有效）；EventLog 只記錄，不去重（重送會看到兩行，這是預期的）。
 
 不加進 `python -m live`（那是環境冒煙檢查，不放業務邏輯）。
 
 執行：
-    python -m live.a_channel --duration 3600 [--events-jsonl [DIR]]
+    python -m live.a_channel --duration 3600 [--events-jsonl [DIR]] [--push-tg]
 """
 
 import json
@@ -47,7 +59,7 @@ EVENT_LOG_SUBSCRIBER = "event_log"
 
 
 class EventLog:
-    """T2 上線前唯一的匯流排訂閱者：每個事件寫一行 INFO，給了目錄就另外寫 jsonl（UTF-8，一行一個事件）。
+    """一定會掛的匯流排訂閱者（與 --push-tg 的 T2 並存）：每個事件寫一行 INFO，給了目錄就另外寫 jsonl（UTF-8，一行一個事件）。
 
     handler 必須很快、執行緒安全（live.bus 的規則）：只做格式化與一次本機檔案寫入，有鎖。
     jsonl 的 features 可能含 ±inf，照 Python json 的寫法記成 Infinity（與 live.store 的 features_json 相同）。
@@ -97,19 +109,50 @@ def wiring_report(bus):
     return all(subs.values()), text
 
 
-def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=None):
+def start_push(bus, *, sender_factory=None, pusher_factory=None):
+    """--push-tg：ChannelSender.start() → ChannelPusher.start() → 訂閱。回傳 pusher；不能啟動時記 ERROR 回 None。
+
+    缺密鑰時 sender.start() 拋 MissingSecretError（訊息只含環境變數名），這裡記 ERROR 回 None，呼叫端 exit 1。
+    只有帶 --push-tg 才會 import / 建立發送器與 outbox：不帶旗標時連 TG 密鑰都不讀。
+    """
+    from live.a_channel_push import ChannelPusher
+    from live.tg_channel import ChannelSender
+    sender = (sender_factory or ChannelSender)()
+    try:
+        sender.start()
+    except config.MissingSecretError as e:
+        logger.error("--push-tg 需要 Telegram 密鑰：%s 不啟動（A3 / A1 都沒有跑）", e)
+        return None
+    pusher = (pusher_factory or ChannelPusher)(sender)
+    try:
+        pusher.start()
+    except Exception:  # noqa: BLE001 —— outbox 開不了就不能保證不漏發，不跑
+        logger.exception("--push-tg：A 頻道推播的 outbox 開不了，不啟動（A3 / A1 都沒有跑）")
+        sender.stop(0)
+        return None
+    pusher.subscribe(bus)
+    return pusher
+
+
+def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=None, sender_factory=None,
+         pusher_factory=None):
     """python -m live.a_channel 的進入點。回傳 exit code。
 
     tracker_factory(bus) / feed_factory(on_result)：測試注入用（正式執行不給，用共用閘門建真的 A3 / A1）。
+    sender_factory() / pusher_factory(sender)：--push-tg 時的測試注入（正式執行不給，用 ChannelSender() /
+    ChannelPusher(sender)）。
     """
     parser = _SafeArgumentParser(
         prog="python -m live.a_channel",
-        description="A 頻道：A1 原始訊號 → A3 名目部位追蹤 → 事件匯流排（T2 上線前只記錄事件）。連網實跑。")
+        description="A 頻道：A1 原始訊號 → A3 名目部位追蹤 → 事件匯流排（加 --push-tg 才推播到 Telegram）。連網實跑。")
     parser.add_argument("--duration", type=float, default=None, metavar="SECONDS",
                         help="跑幾秒後正常結束（不給就一直跑到 Ctrl+C）")
     parser.add_argument("--events-jsonl", nargs="?", const=config.A3_EVENTS_RECORD_DIR, default=None,
                         metavar="DIR", help="事件另外寫成 jsonl；只給旗標不給目錄時寫到 %s"
                                             % config.A3_EVENTS_RECORD_DIR)
+    parser.add_argument("--push-tg", action="store_true",
+                        help="把進場 / 出場訊息推播到 Telegram A 頻道（需要兩個 TG 密鑰；outbox 在 %s）。"
+                             "不帶就只記錄事件，不讀密鑰、不建 outbox" % config.A_CHANNEL_OUTBOX_DB_PATH)
     args = parser.parse_args(argv)
     if args.duration is not None and args.duration <= 0:
         parser.error("--duration 必須是正數")
@@ -139,11 +182,22 @@ def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=No
     event_log = EventLog(events_dir)
     bus.subscribe(EntryEvent, event_log, EVENT_LOG_SUBSCRIBER)
     bus.subscribe(ExitEvent, event_log, EVENT_LOG_SUBSCRIBER)
+    push = None
+    if args.push_tg:
+        # T2 必須在 A3 啟動之前接好：A3 的重啟補發一啟動就會發布事件
+        push = start_push(bus, sender_factory=sender_factory, pusher_factory=pusher_factory)
+        if push is None:
+            event_log.close()
+            return 1
     ok, text = wiring_report(bus)
     logger.info("A 頻道啟動：duration %s、事件 jsonl %s、日誌 %s", args.duration, event_log.path or "不寫",
                 log_path or "（未設定）")
+    if push is not None:
+        logger.info("A 頻道推播：已啟用（--push-tg），outbox %s", push.path)
     if not ok:
         logger.error("接線自檢失敗：%s。有事件沒有任何訂閱者，不啟動", text)
+        if push is not None:
+            push.shutdown()
         event_log.close()
         return 1
     logger.info("接線自檢：%s", text)
@@ -153,12 +207,16 @@ def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=No
         logger.info("A3 規格 %s：主週期 %s、監控週期 %s、止盈 %s、止損 %s、冷卻 %d 根（全部取自 strategy/）",
                     spec.strategy, spec.main_interval, spec.monitor_interval, spec.take_profit, spec.stop_loss,
                     spec.cooldown_bars)
+    if push is not None:
+        push.set_specs(tracker.specs)      # 進場訊息的「發出時間」用 A3 同一份規格的主週期
     tracker.start()
     if not tracker.wait_ready(config.A3_STORE_READY_TIMEOUT_SECONDS):
         logger.error("A3 的資料庫沒有在 %s 秒內開好（%s），不啟動 A1", config.A3_STORE_READY_TIMEOUT_SECONDS,
                      tracker.ready_error)
         tracker.stop()
         tracker.join(config.A3_JOIN_TIMEOUT_SECONDS)
+        if push is not None:
+            push.shutdown()
         event_log.close()
         return 1
 
@@ -177,6 +235,11 @@ def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=No
         if not tracker.join(config.A3_JOIN_TIMEOUT_SECONDS):
             logger.error("A3 工作執行緒 %s 秒內沒有結束", config.A3_JOIN_TIMEOUT_SECONDS)
             rc = rc or 1
+        if push is not None:
+            # A3 已停，不會再有新事件：T2 停止派送 → ChannelSender.stop() → 記回結果（沒送完的留在 outbox）
+            push.shutdown()
+            sender_stats = getattr(push.sender, "stats", None)
+            logger.info("A 頻道推播總結：%s；發送器 %s", push.stats, sender_stats() if callable(sender_stats) else "-")
         logger.info("A3 總結：%s；事件 %d 個%s", tracker.stats, event_log.count,
                     "；REST %s" % gate_box[0].stats() if gate_box else "")
         event_log.close()

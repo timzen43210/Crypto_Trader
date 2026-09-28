@@ -1187,10 +1187,13 @@ def test_stop_timeout_abandons_the_rest_and_reports_count():
 
 
 def test_stop_wakes_the_worker_out_of_a_long_429_wait():
-    """預設的等待（可被 stop 叫醒的 Event.wait）+ 不會自己走的假時鐘：retry_after=600 時
-    stop(30) 必須馬上叫醒工作執行緒、放棄這一則，不可以等 600 秒，也不可以提早重送。"""
+    """預設的等待（可被 stop 叫醒的 Event.wait）+ 不會自己走的假時鐘：retry_after 很長時
+    stop(30) 必須馬上叫醒工作執行緒、放棄這一則，不可以等完 retry_after，也不可以提早重送。
+
+    T2 FR-6 S4 修改：原本用 retry_after=600，但 S4 起超過 TG_MAX_RETRY_AFTER_SECONDS（300）就直接放棄、不等，
+    這條測的「長時間等待中被 stop 叫醒」就走不到了。改用上限本身（仍會等滿的最長 retry_after），測的事情不變。"""
     with harness() as h:
-        h.tg.plan(too_many(600))
+        h.tg.plan(too_many(config.TG_MAX_RETRY_AFTER_SECONDS))
         s = h.sender(wait=None)
         entered = threading.Event()
         real_wait = s._wait
@@ -1371,6 +1374,507 @@ def test_ac9_module_name_and_dependencies():
     assert not any(n.startswith("pionex_") or n == "research" for n in top), top
     live_names = [f[:-3] for f in os.listdir(os.path.join(REPO_ROOT, "live")) if f.endswith(".py")]
     assert "telegram" not in live_names
+
+
+# ============================== T2（TASK-018）：FR-6 小修、on_done、expires_at ==============================
+# 以下全部是 T2 新增的測試（只增不改）。舊的測試不給 on_done / expires_at，照常全過 = 向下相容（AC-6）。
+import io as _io  # noqa: E402 —— T2 新增（只增不改：不動檔頭的 import）
+
+
+class ResultBox:
+    """on_done 的收集器：key -> [SendResult, ...]（用來斷言「恰好一次」）。執行緒安全。"""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.by_key = collections.defaultdict(list)
+        self.threads = []
+
+    def __call__(self, result):
+        with self._lock:
+            self.by_key[result.key].append(result)
+            self.threads.append(threading.current_thread().name)
+
+    def one(self, key):
+        with self._lock:
+            got = list(self.by_key.get(key, ()))
+        assert len(got) == 1, "key=%r 的 on_done 應該恰好一次，實際 %d 次：%r" % (key, len(got), got)
+        return got[0]
+
+
+def connect_timeout(url):
+    return requests.exceptions.ConnectTimeout(
+        "HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: "
+        + url[len(config.TG_API_BASE_URL):] + " (Caused by ConnectTimeoutError(...))")
+
+
+def test_t2_s4_retry_after_over_cap_gives_up_without_waiting():
+    """S4：retry_after = 上限 + 1 → 不等、放棄這一則（ERROR），換下一則。（不用 on_done：舊版也跑得動這條，
+    拿來證明修改前的程式碼在 301 時會等。on_done 的 gave_up 回報在 test_t2_on_done_reports_every_outcome_exactly_once。）"""
+    cap = config.TG_MAX_RETRY_AFTER_SECONDS
+    assert cap == 300, "PRD 指定的預設值"
+    with harness() as h:
+        h.tg.plan(too_many(cap + 1), ok(7))
+        s = h.started()
+        s.send("A", key="sig-A")
+        s.send("B", key="sig-B")
+        stop_within(s, 3600)
+        assert not any(w >= cap for w in h.clock.waits), "超過上限還是等了：%r" % h.clock.waits
+        assert h.tg.texts() == ["A", "B"], h.tg.texts()
+        assert h.tg.times()[1] - h.tg.times()[0] == config.TG_MIN_INTERVAL_SECONDS
+        errors = h.logs.at(logging.ERROR)
+        assert any("sig-A" in e and str(cap + 1) in e and "上限" in e for e in errors), errors
+        st = s.stats()
+        assert (st["sent"], st["failed"]) == (1, 1), st
+
+
+def test_t2_s4_retry_after_at_cap_still_waits_exactly():
+    """S4：上限以內照舊等滿（= 300 → 恰好等 300 秒才重送同一則）。"""
+    cap = config.TG_MAX_RETRY_AFTER_SECONDS
+    with harness() as h:
+        h.tg.plan(too_many(cap), ok())
+        s = h.started()
+        s.send("A", key="A")
+        stop_within(s, 3600)
+        t = h.tg.times()
+        assert h.tg.texts() == ["A", "A"] and t[1] - t[0] == cap, t
+        assert sum(h.clock.waits) == cap, h.clock.waits
+        assert s.stats()["sent"] == 1
+
+
+def test_t2_s4_cap_is_injectable_and_validated():
+    with harness() as h:
+        h.tg.plan(too_many(50), ok())
+        s = h.started(max_retry_after=40)
+        s.send("A", key="A")
+        stop_within(s, 3600)
+        assert h.tg.texts() == ["A"] and s.stats()["failed"] == 1
+        for bad in (0, -1):
+            try:
+                ChannelSender(max_retry_after=bad)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("max_retry_after=%r 應該拒絕" % bad)
+
+
+def _emit_broken_format_record(err):
+    """兩個 %s 只給一個參數：getMessage() 會拋 TypeError；參數本身是帶 token 的網址。
+
+    urllib3 的 logger 上暫時掛一個標準的 StreamHandler（跟 logsetup 的終端機 / 檔案 handler 一樣，格式化失敗時
+    走 Handler.handleError，把 msg 與 args 印到 sys.stderr）。紀錄接著往上傳到根 logger 的 LogCapture，
+    它不接格式化例外，TypeError 會一路拋回這裡 —— 那是測試工具本身的行為，接住即可。
+    回傳 (stderr 內容, 標準 handler 寫出的內容)。"""
+    out = _io.StringIO()
+    handler = logging.StreamHandler(out)
+    lg = logging.getLogger("urllib3.connectionpool")
+    lg.addHandler(handler)
+    try:
+        with contextlib.redirect_stderr(err):
+            try:
+                lg.warning("Retrying %s after %s", EXPECTED_URL)
+            except TypeError:
+                pass
+    finally:
+        lg.removeHandler(handler)
+    return err.getvalue(), out.getvalue()
+
+
+def test_t2_s1_bad_format_record_is_masked_not_dumped_to_stderr():
+    """S1：格式字串與參數不符的第三方紀錄，stderr（logging 的 handleError）與日誌都不可以出現 token 片段。"""
+    with harness() as h:
+        s = h.started()
+        stderr, written = _emit_broken_format_record(_io.StringIO())
+        stop_within(s, 60)
+        lines = [line for line in h.logs.lines if " urllib3." in line]
+        assert len(lines) == 1 and MASK in lines[0] and "格式化失敗" in lines[0], lines
+        assert MASK in written and "格式化失敗" in written, written
+        assert "--- Logging error ---" not in stderr, stderr[-500:]
+        assert not find_leaks([stderr, written] + h.logs.lines), (stderr[-500:], written, lines)
+    # 鑑別力前提：沒有掛 filter 時，同一筆紀錄會讓 logging 把原始參數（含 token）印到 stderr
+    with harness() as h:
+        stderr, _ = _emit_broken_format_record(_io.StringIO())
+        leaked = "--- Logging error ---" in stderr and find_leaks([stderr])
+        assert leaked, "前提不成立：沒有 filter 時 stderr 應該看得到 token：%r" % stderr[-500:]
+
+
+def test_t2_s2_stuck_worker_tears_down_itself_and_stop_is_idempotent():
+    """S2：stop() 等不到卡在 HTTP 請求裡的工作執行緒 → 先返回；執行緒日後結束時自己拆 filter、關 Session；
+    兩次 stop() 回傳同一個數字。（不用 on_done：舊版也跑得動這條，拿來證明修改前 filter 會殘留、回傳值不一致。）"""
+    saved = tg_channel._JOIN_GRACE_SECONDS
+    tg_channel._JOIN_GRACE_SECONDS = 0.2
+    try:
+        with harness() as h:
+            h.tg.gate = threading.Event()
+            s = h.started(http_timeout=0)
+            for k in ("A", "B", "C"):
+                s.send(k, key=k)
+            assert h.tg.entered.wait(5), "工作執行緒沒有送出第一則"
+            first = stop_within(s, 0)
+            assert first == 3, first                       # 卡住的 A + 佇列裡的 B、C
+            assert s.stats()["worker_alive"], "前提：工作執行緒應該還卡在請求裡"
+            h.tg.gate.set()
+            wait_until(lambda: not s.stats()["worker_alive"], "卡住的工作執行緒結束")
+            for name in tg_channel._THIRD_PARTY_LOGGERS:
+                assert not [f for f in logging.getLogger(name).filters
+                            if isinstance(f, tg_channel._MaskingFilter)], "等不到的執行緒結束後 %s 的 filter 殘留" % name
+            assert s._session is None and s._log_filter is None
+            assert stop_within(s, 0) == first, "第二次 stop() 回傳值要跟第一次一樣"
+            assert s.stats()["sent"] == 1                  # A 其實送成功了：stats 照實記
+    finally:
+        tg_channel._JOIN_GRACE_SECONDS = saved
+
+
+def test_t2_s2_stuck_worker_reports_via_on_done():
+    """同上情境的 on_done：佇列裡被放棄的回報 abandoned（在呼叫 stop() 的執行緒）、卡住的那一則之後照實回報。"""
+    saved = tg_channel._JOIN_GRACE_SECONDS
+    tg_channel._JOIN_GRACE_SECONDS = 0.2
+    try:
+        with harness() as h:
+            h.tg.gate = threading.Event()
+            box = ResultBox()
+            s = h.started(http_timeout=0)
+            for k in ("A", "B", "C"):
+                s.send(k, key=k, on_done=box)
+            assert h.tg.entered.wait(5)
+            assert stop_within(s, 0) == 3
+            assert box.one("B").status == tg_channel.RESULT_ABANDONED
+            assert box.one("C").status == tg_channel.RESULT_ABANDONED
+            assert "A" not in box.by_key, "卡住的那一則還沒有結果，不可以先回報"
+            h.tg.gate.set()
+            wait_until(lambda: not s.stats()["worker_alive"], "卡住的工作執行緒結束")
+            assert box.one("A").status == tg_channel.RESULT_DELIVERED
+    finally:
+        tg_channel._JOIN_GRACE_SECONDS = saved
+
+
+def test_t2_on_done_reports_every_outcome_exactly_once():
+    n = config.TG_SEND_MAX_ATTEMPTS
+    with harness() as h:
+        h.tg.plan(
+            ok(101),                                                  # A 送達
+            http_error(400, "Bad Request"),                           # B 永久失敗，確定沒送達
+            *[read_timeout] * n,                                      # C 重試用盡：不確定
+            *[too_many(1)] * (config.TG_MAX_RATE_LIMITED_RETRIES + 1),  # D 429 超過重送上限：確定沒送達
+            FakeResponse(200, {"ok": False, "description": "odd"}),   # E 永久失敗，但可能已送出
+            *[connect_timeout] * n,                                   # F 連線逾時用盡：確定沒送達
+            http_error(503, "x"), ok(102),                            # G 5xx 之後送達：uncertain 但 delivered
+            too_many(config.TG_MAX_RETRY_AFTER_SECONDS + 1),          # H retry_after 超過上限（S4）：確定沒送達
+        )
+        box = ResultBox()
+        s = h.started()
+        for k in "ABCDEFGH":
+            s.send("msg " + k, key=k, on_done=box)
+        stop_within(s, 3600)
+        want = {"A": (tg_channel.RESULT_DELIVERED, False), "B": (tg_channel.RESULT_FAILED, False),
+                "C": (tg_channel.RESULT_GAVE_UP, True), "D": (tg_channel.RESULT_GAVE_UP, False),
+                "E": (tg_channel.RESULT_FAILED, True), "F": (tg_channel.RESULT_GAVE_UP, False),
+                "G": (tg_channel.RESULT_DELIVERED, True), "H": (tg_channel.RESULT_GAVE_UP, False)}
+        for k, (status, uncertain) in want.items():
+            r = box.one(k)
+            assert (r.status, r.uncertain) == (status, uncertain), (k, r)
+            assert r.key == k
+        assert box.one("A").message_id == 101 and box.one("G").message_id == 102
+        assert box.one("B").detail and "HTTP 400" in box.one("B").detail
+        assert set(box.threads) == {"tg-channel-sender"}, box.threads
+        st = s.stats()
+        assert (st["sent"], st["failed"]) == (2, 6), st
+        assert not find_leaks([repr(r) for rs in box.by_key.values() for r in rs])
+
+
+def test_t2_expires_at_is_checked_before_every_request():
+    wall = FakeClock.EPOCH + FakeClock().now()
+    # (a) 交給發送器時已過期：一次請求都不發
+    with harness() as h:
+        box = ResultBox()
+        s = h.started()
+        s.send("A", key="A", on_done=box, expires_at=wall - 1)
+        stop_within(s, 3600)
+        assert h.tg.calls == [] and box.one("A").status == tg_channel.RESULT_EXPIRED
+        assert box.one("A").uncertain is False
+        st = s.stats()
+        assert (st["sent"], st["failed"], st["abandoned"]) == (0, 0, 0), st
+    # (b) 429 的等待途中過期 → 等完之後不重送，回報 expired
+    with harness() as h:
+        h.tg.plan(too_many(20))
+        box = ResultBox()
+        s = h.started()
+        s.send("A", key="A", on_done=box, expires_at=wall + 10)
+        stop_within(s, 3600)
+        assert h.tg.texts() == ["A"] and box.one("A").status == tg_channel.RESULT_EXPIRED
+    # (c) 限速（相鄰間隔）的等待也算：第二則要等 1 秒，期限只剩 0.5 秒 → 不送
+    with harness() as h:
+        box = ResultBox()
+        s = h.started()
+        s.send("X", key="X", on_done=box)
+        s.send("Y", key="Y", on_done=box, expires_at=wall + 0.5)
+        stop_within(s, 3600)
+        assert h.tg.texts() == ["X"] and box.one("Y").status == tg_channel.RESULT_EXPIRED
+    # (d) 第一次讀取逾時（不確定）之後才過期 → 照送，回報 delivered 且 uncertain
+    with harness() as h:
+        h.tg.plan(read_timeout, ok(9))
+        box = ResultBox()
+        s = h.started()
+        s.send("A", key="A", on_done=box, expires_at=wall + 1)      # 退避 2 秒之後已過期
+        stop_within(s, 3600)
+        t = h.tg.times()
+        assert h.tg.texts() == ["A", "A"] and t[1] > t[0] + 1, t
+        r = box.one("A")
+        assert (r.status, r.uncertain, r.message_id) == (tg_channel.RESULT_DELIVERED, True, 9), r
+    # (e) 第一次是連線逾時（確定沒送達）→ 過期後不再送
+    with harness() as h:
+        h.tg.plan(connect_timeout, ok())
+        box = ResultBox()
+        s = h.started()
+        s.send("A", key="A", on_done=box, expires_at=wall + 1)
+        stop_within(s, 3600)
+        assert h.tg.texts() == ["A"] and box.one("A").status == tg_channel.RESULT_EXPIRED
+    # (f) 邊界：剛好等於期限照送（「超過」才不送）
+    with harness() as h:
+        box = ResultBox()
+        s = h.started()
+        s.send("A", key="A", on_done=box, expires_at=wall)
+        stop_within(s, 3600)
+        assert box.one("A").status == tg_channel.RESULT_DELIVERED
+
+
+def test_t2_stop_deadline_abandons_and_reports_the_rest():
+    """stop() 的期限到了：放棄的每一則（含佇列裡還沒輪到的）都回報 abandoned，送出的回報 delivered。"""
+    with harness() as h:
+        h.tg.gate = threading.Event()
+        box = ResultBox()
+        s = h.started(max_per_minute=20, min_interval=1.0)
+        for i in range(25):
+            s.send("m%02d" % i, key="m%02d" % i, on_done=box)
+        assert h.tg.entered.wait(5)
+        result = {}
+        stopper = threading.Thread(target=lambda: result.setdefault("r", s.stop(30)), daemon=True)
+        stopper.start()
+        wait_until(lambda: s.stats()["state"] == "stopping", "stop() 設好期限")
+        h.tg.gate.set()
+        stopper.join(10)
+        assert not stopper.is_alive() and result["r"] == 5, result
+        statuses = collections.Counter(box.one("m%02d" % i).status for i in range(25))
+        assert statuses == {tg_channel.RESULT_DELIVERED: 20, tg_channel.RESULT_ABANDONED: 5}, statuses
+
+
+def test_t2_on_done_exception_is_logged_and_worker_keeps_going():
+    def boom(result):
+        raise RuntimeError("callback 炸了 " + EXPECTED_URL)
+
+    with harness() as h:
+        box = ResultBox()
+        s = h.started()
+        s.send("A", key="A", on_done=boom)
+        s.send("B", key="B", on_done=box)
+        stop_within(s, 3600)
+        assert h.tg.texts() == ["A", "B"] and box.one("B").status == tg_channel.RESULT_DELIVERED
+        errors = "\n".join(h.logs.at(logging.ERROR))
+        assert "on_done" in errors and "RuntimeError" in errors, errors
+        assert not find_leaks(h.logs.lines)
+        assert s.stats()["sent"] == 2
+
+
+def test_t2_send_rejects_bad_on_done_and_expires_at():
+    with harness() as h:
+        s = h.started()
+        for kwargs, exc in (({"on_done": 1}, TypeError), ({"expires_at": True}, TypeError),
+                            ({"expires_at": "soon"}, TypeError), ({"expires_at": float("nan")}, ValueError),
+                            ({"expires_at": float("inf")}, ValueError)):
+            try:
+                s.send("x", key="k", **kwargs)
+            except exc:
+                pass
+            else:
+                raise AssertionError("send(%r) 應該拋 %s" % (kwargs, exc.__name__))
+        box = ResultBox()
+        assert s.send("", key="empty", on_done=box) is False       # 拒收的不回報
+        stop_within(s, 60)
+        assert h.tg.calls == [] and not box.by_key
+
+
+# ============================== T2 第 1 輪：F2（DNS 失敗 / 連線被拒）、F1（SSL） ==============================
+# 例外照 requests 2.34 / urllib3 2.7 的實際包裝方式組（requests 預設 Retry(0, read=False)）：
+#   連線階段  urllib3 _new_conn() 拋 NewConnectionError / NameResolutionError → Retry.increment 視為 connect error →
+#             MaxRetryError(reason=...) from reason → requests 包成 ConnectionError(MaxRetryError)（__context__ 同一個）
+#   讀回應    urlopen 把 OSError / HTTPException 包成 ProtocolError("Connection aborted.", ...)，read=False 原樣往外拋 →
+#             requests 包成 ConnectionError(ProtocolError)
+#   SSL       urlopen 把 ssl 例外包成 urllib3 SSLError(原始例外) → MaxRetryError(reason=SSLError) → requests SSLError
+import http.client as _http_client  # noqa: E402 —— T2 第 1 輪新增
+import socket as _socket  # noqa: E402
+import ssl as _ssl  # noqa: E402
+
+from urllib3.exceptions import NameResolutionError as _NameResolutionError  # noqa: E402
+from urllib3.exceptions import ProtocolError as _ProtocolError  # noqa: E402
+from urllib3.exceptions import SSLError as _Urllib3SSLError  # noqa: E402
+
+
+def _requests_wrap(outer_cls, inner):
+    """在 except 區塊裡 raise outer_cls(inner)，讓 __context__ 跟 requests 真的拋出來時一樣。"""
+    try:
+        try:
+            raise inner
+        except type(inner) as caught:
+            raise outer_cls(caught)
+    except outer_cls as outer:
+        return outer
+
+
+def _max_retry(url, reason):
+    try:
+        raise MaxRetryError(HTTPSConnectionPool("api.telegram.org", 443), url[len(config.TG_API_BASE_URL):],
+                            reason) from reason
+    except MaxRetryError as e:
+        return e
+
+
+def dns_error(url):
+    try:
+        raise _NameResolutionError("api.telegram.org", None, _socket.gaierror(11001, "getaddrinfo failed"))
+    except _NameResolutionError as reason:
+        return _requests_wrap(requests.exceptions.ConnectionError, _max_retry(url, reason))
+
+
+def remote_disconnected(url):
+    reason = _ProtocolError("Connection aborted.",
+                            _http_client.RemoteDisconnected("Remote end closed connection without response"))
+    return _requests_wrap(requests.exceptions.ConnectionError, reason)
+
+
+def connection_reset(url):
+    reason = _ProtocolError("Connection aborted.", ConnectionResetError(10054, "遠端主機已強制關閉一個現存的連線"))
+    return _requests_wrap(requests.exceptions.ConnectionError, reason)
+
+
+def ssl_cert_error(url):
+    cause = _ssl.SSLCertVerificationError(1, "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: "
+                                             "unable to get local issuer certificate")
+    return _requests_wrap(requests.exceptions.SSLError, _max_retry(url, _Urllib3SSLError(cause)))
+
+
+def ssl_read_error(url):
+    cause = _ssl.SSLError(1, "[SSL: DECRYPTION_FAILED_OR_BAD_RECORD_MAC] decryption failed or bad record mac")
+    return _requests_wrap(requests.exceptions.SSLError, _max_retry(url, _Urllib3SSLError(cause)))
+
+
+def test_t2_f2_dns_failure_and_refused_connection_are_certain_not_delivered():
+    """DNS 失敗 / 連線被拒：請求沒有離開本機 → 確定沒送達，期限照常檢查：退避之後已過期 → expired、不再送。"""
+    wall = FakeClock.EPOCH + FakeClock().now()
+    for failure in (dns_error, conn_error):
+        with harness() as h:
+            h.tg.plan(failure, ok())
+            box = ResultBox()
+            s = h.started()
+            s.send("A", key="A", on_done=box, expires_at=wall + 1)     # 退避 2 秒之後已過期
+            stop_within(s, 3600)
+            r = box.one("A")
+            assert (r.status, r.uncertain) == (tg_channel.RESULT_EXPIRED, False), (failure.__name__, r)
+            assert len(h.tg.calls) == 1, failure.__name__
+        with harness() as h:                                            # 沒有期限：照常重試到送達，而且不是不確定
+            h.tg.plan(failure, ok(5))
+            box = ResultBox()
+            s = h.started()
+            s.send("A", key="A", on_done=box)
+            stop_within(s, 3600)
+            r = box.one("A")
+            assert (r.status, r.uncertain, r.message_id) == (tg_channel.RESULT_DELIVERED, False, 5), r
+            assert any("確定沒送達" in w for w in h.logs.at(logging.WARNING)), h.logs.at(logging.WARNING)
+
+
+def test_t2_f2_other_connection_errors_stay_uncertain():
+    """連線中斷 / 被重設（ProtocolError、RemoteDisconnected）：請求可能已到 Telegram → 之後過期也照送。"""
+    wall = FakeClock.EPOCH + FakeClock().now()
+    for failure in (remote_disconnected, connection_reset, read_timeout):
+        with harness() as h:
+            h.tg.plan(failure, ok(8))
+            box = ResultBox()
+            s = h.started()
+            s.send("A", key="A", on_done=box, expires_at=wall + 1)
+            stop_within(s, 3600)
+            r = box.one("A")
+            assert (r.status, r.uncertain, r.message_id) == (tg_channel.RESULT_DELIVERED, True, 8), (failure.__name__,
+                                                                                                    r)
+            assert len(h.tg.calls) == 2
+
+
+def test_t2_f2_uncertain_first_then_dns_failure_is_still_sent():
+    """規則不變：同一次 send 裡先有一次不確定，之後就不再檢查期限 —— 後來的 DNS 失敗不會把它變回「可以判過期」。"""
+    wall = FakeClock.EPOCH + FakeClock().now()
+    with harness() as h:
+        h.tg.plan(read_timeout, dns_error, ok(9))
+        box = ResultBox()
+        s = h.started()
+        s.send("A", key="A", on_done=box, expires_at=wall + 1)
+        stop_within(s, 3600)
+        r = box.one("A")
+        assert (r.status, r.uncertain, r.message_id) == (tg_channel.RESULT_DELIVERED, True, 9), r
+        assert len(h.tg.calls) == 3
+
+
+def test_t2_f2_classification_matches_the_real_requests_stack():
+    """用真的 requests（在離線籠子裡）確認例外的實際包裝結構與分類：DNS 出口被擋（OSError）→ NewConnectionError；
+    getaddrinfo 拋 socket.gaierror → NameResolutionError。兩者都判「連線沒有建立」，而且期限照常檢查。"""
+    from urllib3.exceptions import NewConnectionError as _NewConnectionError
+    with env_vars({n: None for n in PROXY_ENVS}), harness(allow_network_attempts=True) as h:
+        caught = {}
+        try:
+            requests.post(EXPECTED_URL, json={"x": 1}, timeout=1)
+        except requests.exceptions.ConnectionError as e:
+            caught["blocked"] = e
+        real_getaddrinfo = socket.getaddrinfo
+
+        def gai_fail(host, port, *a, **k):
+            raise _socket.gaierror(11001, "getaddrinfo failed")
+        socket.getaddrinfo = gai_fail
+        try:
+            try:
+                requests.post(EXPECTED_URL, json={"x": 1}, timeout=1)
+            except requests.exceptions.ConnectionError as e:
+                caught["gaierror"] = e
+        finally:
+            socket.getaddrinfo = real_getaddrinfo
+        for name, exc in caught.items():
+            assert isinstance(exc.args[0], MaxRetryError), (name, exc.args)
+            assert isinstance(exc.args[0].reason, _NewConnectionError), (name, exc.args[0].reason)
+            assert tg_channel._connection_never_established(exc), name
+            assert not tg_channel._certificate_verification_failed(exc), name
+        assert isinstance(caught["gaierror"].args[0].reason, _NameResolutionError)
+        # 發送器走真的 requests：第一次失敗之後已過期 → expired，只試了一次
+        box = ResultBox()
+        s = h.sender(post=None)
+        s.start()
+        s.send("real-stack", key="real", on_done=box, expires_at=FakeClock.EPOCH + h.clock.now() + 1)
+        stop_within(s, 3600)
+        assert (box.one("real").status, box.one("real").uncertain) == (tg_channel.RESULT_EXPIRED, False)
+        dns = [a for a in h.cage.attempts if a[0] == "socket.getaddrinfo"]
+        assert len(dns) == 2, h.cage.attempts                          # 上面手動的一次 + 發送器的一次
+        assert not find_leaks(h.logs.lines + [repr(box.by_key)])
+    # 分類函式只認 urllib3 的類別（名字相同的其他類別不算）
+    fake = type("NewConnectionError", (Exception,), {})
+    assert not tg_channel._connection_never_established(fake("not urllib3"))
+    assert not tg_channel._connection_never_established(remote_disconnected(EXPECTED_URL))
+    assert not tg_channel._connection_never_established(read_timeout(EXPECTED_URL))
+
+
+def test_t2_f1_only_certificate_verification_ssl_errors_are_certain():
+    """F1：SSL 錯誤一律不重試（永久失敗）；憑證驗證失敗（握手階段）才算確定沒送達，其他 SSL 錯誤可能發生在請求送到之後。"""
+    cases = ((ssl_cert_error, False, "憑證驗證失敗"), (ssl_read_error, True, "可能其實已經送達"))
+    for failure, uncertain, word in cases:
+        with harness() as h:
+            h.tg.plan(failure, ok())
+            box = ResultBox()
+            s = h.started()
+            s.send("A", key="sig-A", on_done=box)
+            s.send("B", key="sig-B", on_done=box)
+            stop_within(s, 3600)
+            r = box.one("sig-A")
+            assert (r.status, r.uncertain) == (tg_channel.RESULT_FAILED, uncertain), (failure.__name__, r)
+            assert h.tg.texts() == ["A", "B"], "SSL 錯誤不重試"
+            errors = h.logs.at(logging.ERROR)
+            assert any("sig-A" in e and "SSLError" in e and word in e for e in errors), (failure.__name__, errors)
+            assert not find_leaks(h.logs.lines + [repr(r)])
+    assert tg_channel._certificate_verification_failed(ssl_cert_error(EXPECTED_URL))
+    assert not tg_channel._certificate_verification_failed(ssl_read_error(EXPECTED_URL))
+    assert not tg_channel._certificate_verification_failed(ssl_error(EXPECTED_URL))   # 沒有原因鏈：保守算不確定
 
 
 # ============================== 不用 pytest 也能跑 ==============================

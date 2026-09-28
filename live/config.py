@@ -253,6 +253,11 @@ TG_MAX_MESSAGE_CHARS = 4096
 # stop() 沒有指定 timeout 時，最多花幾秒把佇列送完；逾時就放棄剩下的並記 ERROR。
 TG_STOP_TIMEOUT_SECONDS = 30
 
+# HTTP 429 的 retry_after 超過這個秒數就不等了：放棄這一則、記 ERROR，回報「不確定 / 放棄」
+# （T2 的 outbox 會在 A_CHANNEL_OUTBOX_RETRY_SECONDS 之後重試）。上限以內照舊等滿 retry_after 才重送。
+# 理由：發送佇列是嚴格 FIFO，一則等 20 分鐘的 flood control 會把後面所有訊息（含止損出場）一起卡住。
+TG_MAX_RETRY_AFTER_SECONDS = 300
+
 # ---- A 頻道名目部位追蹤（A3，live/notional_tracker.py；執行入口 live/a_channel.py）----
 # 策略5 的主週期（訊號所在 K 棒的週期）。策略4 的主週期是上面的 KLINE_INTERVAL（A1 的判定週期）。
 # 與 dry run 的 s5 帳本相同（pionex_dryrun.BOOK_INTERVAL）；日後策略五資料層接線時也用這一個。
@@ -271,6 +276,43 @@ A3_JOIN_TIMEOUT_SECONDS = 30
 
 # python -m live.a_channel --events-jsonl 不給目錄時，事件紀錄 jsonl 的預設位置（runtime/ 底下，不進版控）。
 A3_EVENTS_RECORD_DIR = os.path.join(RUNTIME_DIR, "a_channel")
+
+# ---- A 頻道推播（T2，live/a_channel_text.py、live/a_channel_outbox.py、live/a_channel_push.py）----
+# 訊息裡「策略」欄顯示的名稱。鍵必須剛好等於 STRATEGIES（tests 斷言）。只寫策略代號，不寫策略內容
+# （使用者 2026-09-27 決定）。這是依策略分派的顯示表，不是第二份策略名單。
+STRATEGY_LABELS = {"s4": "策略4", "s5": "策略5"}
+
+# 倉位規則（原 WBS §2.2，使用者 2026-09-28 確認策略4、策略5 相同）：目標部位 = 本金 × ORDER_PCT × TARGET_LEVERAGE；
+# 實際槓桿 lev = min(TARGET_LEVERAGE, 該幣 tier1 上限)；建議倉位 = 本金的 ORDER_PCT × TARGET_LEVERAGE ÷ lev。
+# 這是訂閱者的倉位建議，不是策略參數（策略參數只在 strategy/）。
+# 刻意寫成 2 / 100（= 0.02，同一個 float）：tests/test_signal_feed.py 以 token 掃描規定本檔的 0.02 只能出現在
+# SCREEN_RET2H_MARGIN 那一行（防止粗篩門檻被寫死）。這裡的 2% 跟粗篩門檻毫無關係，只是數值剛好相同。
+A_CHANNEL_ORDER_PCT = 2 / 100
+A_CHANNEL_TARGET_LEVERAGE = 50
+
+# 進場訊息的偏離警語門檻（「價格偏離訊號價超過 X% 不建議追進」）。
+# R-3：待 V1 實測滑價後重新校準。
+A_CHANNEL_DEVIATION_WARN_PCT = 0.01
+
+# 延遲門檻（秒），基準是訊號 K 棒收盤（= 進場訊息的「發出時間」）。使用者 2026-09-28 決定：進場訊息實際送出時
+# 已晚於它超過這個秒數就不發，之後的出場也不發，報表不統計這一筆。出場訊息晚於平倉時刻超過這個秒數照送，但加延遲註記。
+A_CHANNEL_ENTRY_MAX_DELAY_SECONDS = 300
+
+# 頻道發送紀錄（outbox，T2 FR-2）的 SQLite 檔。一律在 runtime/ 底下（已 .gitignore），不可以放進 state/ 或 output/。
+# 跟 LIVE_DB_PATH 分開一個檔：T2 不動 A3 的資料庫。它也是 R-A 報表的統計依據，**不自動刪除任何一列**。
+# 目錄由 live.a_channel_outbox.open_outbox() 自己建（live.paths 刻意不建目錄）。
+A_CHANNEL_OUTBOX_DB_PATH = os.path.join(RUNTIME_DIR, "db", "a_channel_outbox.sqlite3")
+
+# outbox 裡「待送」的一則結果不確定（重試用盡、429 超過上限、stop 期限到）時，隔多久再交給發送器一次（秒）。
+A_CHANNEL_OUTBOX_RETRY_SECONDS = 60
+
+# 匯流排 handler（在 A3 的執行緒裡）寫 outbox 時，資料庫被鎖住最多等幾秒；等不到就拋例外，走 A3 的重送。
+# handler 不可以等很久（live.bus 的規則），所以刻意比 sqlite3 預設的 5 秒短。
+A_CHANNEL_OUTBOX_BUSY_TIMEOUT_SECONDS = 2
+
+# 取不到該幣的價格精度（symbol_spec() 查不到，或 quotePrecision 不是合理的整數）時，價格改以這麼多位有效數字顯示
+# （小數位數由訊號價 / 進場價決定，同一則訊息的所有價格用同一個位數）。
+A_CHANNEL_PRICE_FALLBACK_SIGNIFICANT_DIGITS = 6
 
 
 def execution_params():
@@ -330,12 +372,23 @@ def execution_params():
         "TG_HTTP_TIMEOUT_SECONDS": TG_HTTP_TIMEOUT_SECONDS,
         "TG_MAX_MESSAGE_CHARS": TG_MAX_MESSAGE_CHARS,
         "TG_STOP_TIMEOUT_SECONDS": TG_STOP_TIMEOUT_SECONDS,
+        "TG_MAX_RETRY_AFTER_SECONDS": TG_MAX_RETRY_AFTER_SECONDS,
         # ---- A 頻道名目部位追蹤（A3，live.notional_tracker / live.a_channel）----
         "S5_KLINE_INTERVAL": S5_KLINE_INTERVAL,
         "A3_KLINES_PAGE_LIMIT": A3_KLINES_PAGE_LIMIT,
         "A3_STORE_READY_TIMEOUT_SECONDS": A3_STORE_READY_TIMEOUT_SECONDS,
         "A3_JOIN_TIMEOUT_SECONDS": A3_JOIN_TIMEOUT_SECONDS,
         "A3_EVENTS_RECORD_DIR": A3_EVENTS_RECORD_DIR,
+        # ---- A 頻道推播（T2，live.a_channel_text / live.a_channel_outbox / live.a_channel_push）----
+        "STRATEGY_LABELS": STRATEGY_LABELS,
+        "A_CHANNEL_ORDER_PCT": A_CHANNEL_ORDER_PCT,
+        "A_CHANNEL_TARGET_LEVERAGE": A_CHANNEL_TARGET_LEVERAGE,
+        "A_CHANNEL_DEVIATION_WARN_PCT": A_CHANNEL_DEVIATION_WARN_PCT,
+        "A_CHANNEL_ENTRY_MAX_DELAY_SECONDS": A_CHANNEL_ENTRY_MAX_DELAY_SECONDS,
+        "A_CHANNEL_OUTBOX_DB_PATH": A_CHANNEL_OUTBOX_DB_PATH,
+        "A_CHANNEL_OUTBOX_RETRY_SECONDS": A_CHANNEL_OUTBOX_RETRY_SECONDS,
+        "A_CHANNEL_OUTBOX_BUSY_TIMEOUT_SECONDS": A_CHANNEL_OUTBOX_BUSY_TIMEOUT_SECONDS,
+        "A_CHANNEL_PRICE_FALLBACK_SIGNIFICANT_DIGITS": A_CHANNEL_PRICE_FALLBACK_SIGNIFICANT_DIGITS,
     }
 
 
