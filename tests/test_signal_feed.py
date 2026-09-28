@@ -385,7 +385,8 @@ def test_ac1_screen_behaviour_follows_min_ret_2h():
 
 def test_ac1_no_hardcoded_thresholds_in_a1_code():
     """A1 新增 / 修改的程式碼（不含註解與字串 / docstring）裡沒有 0.12、0.14；0.02 只出現在
-    SCREEN_RET2H_MARGIN 的定義那一行。用 tokenize 掃，註解與字串天然被排除。"""
+    SCREEN_RET2H_MARGIN 與 S5_SCREEN_RISE_MARGIN（A5，TASK-116 NFR-2 授權）的定義那兩行。
+    用 tokenize 掃，註解與字串天然被排除。"""
     banned = {float("0.12"), float("0.14")}
     margin = float("0.02")
     hits, margin_hits = [], []
@@ -407,7 +408,8 @@ def test_ac1_no_hardcoded_thresholds_in_a1_code():
             if val == margin:
                 margin_hits.append((rel, lines[tok.start[0] - 1].strip()))
     assert not hits, "寫死的門檻數字：%s" % hits
-    assert margin_hits == [("live/config.py", "SCREEN_RET2H_MARGIN = 0.02")], margin_hits
+    assert margin_hits == [("live/config.py", "SCREEN_RET2H_MARGIN = 0.02"),
+                           ("live/config.py", "S5_SCREEN_RISE_MARGIN = 0.02")], margin_hits
 
 
 # ============================== AC-2：永遠判定剛收完的那根 ==============================

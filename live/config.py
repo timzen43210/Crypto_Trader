@@ -260,9 +260,31 @@ TG_MAX_RETRY_AFTER_SECONDS = 300
 
 # ---- A 頻道名目部位追蹤（A3，live/notional_tracker.py；執行入口 live/a_channel.py）----
 # 策略5 的主週期（訊號所在 K 棒的週期）。策略4 的主週期是上面的 KLINE_INTERVAL（A1 的判定週期）。
-# 與 dry run 的 s5 帳本相同（pionex_dryrun.BOOK_INTERVAL）；日後策略五資料層接線時也用這一個。
+# 與 dry run 的 s5 帳本相同（pionex_dryrun.BOOK_INTERVAL）；策略五資料層（A5）也用這一個。
 # 出場監控週期不寫在這裡：由主週期與 strategy/ 的 RESOLVE_* 出場參數推導（見 notional_tracker）。
 S5_KLINE_INTERVAL = "1M"
+
+# ---- 策略五資料層（A5，live/s5_feed.py）----
+# ① 粗篩門檻 = s5_signal 參數的 MIN_RISE_FROM_OPEN - S5_SCREEN_RISE_MARGIN（呼叫當下從注入的參數推導，
+# 任何地方都不可以寫死門檻值）。近似 ① 用價格緩衝在 H:00 與 H-1:00 的樣本算，與真正的 ① 有誤差，留餘裕寧可多追。
+S5_SCREEN_RISE_MARGIN = 0.02
+
+# 候選每分鐘取 1M klines 的 limit。對齊 dry run 的 KLINE_LIMIT（500）：補格的起點一致，判定才逐根相同。
+# 派網上限 500（1000 會回 limit error）。
+S5_KLINES_LIMIT = 500
+
+# 同一分鐘候選 klines 並發取數的 worker 數。與 A1_FETCH_CONCURRENCY 相同：兩者共用同一個閘門
+# （每秒 A1_REST_RATE_PER_SECOND 個），在飛的請求再多也不會更快送出。
+S5_FETCH_CONCURRENCY = 6
+
+# A1 在 5M 收盤前後持有前景保留（foreground_hold）時，A5 送 klines 前先讓 A1 做完，最多讓這麼多秒；
+# 超過就照送（A5 的請求本來就是前景優先權，閘門會放行）。A1 有候選的根判定完約在收盤後 2.3 秒（p95），
+# A5 的取數排在收盤後 BAR_FINALIZE_WAIT_SECONDS，實際多等的只有零點幾秒。
+S5_YIELD_MAX_SECONDS = 3.0
+
+# 結束時等 A5 工作執行緒收尾（把手上那一分鐘做完）最多幾秒。最壞情況是讓 A1 的 S5_YIELD_MAX_SECONDS 加上
+# 一輪候選取數（每個請求 A1_HTTP_TIMEOUT_SECONDS、最多 TARGET_BAR_ATTEMPTS 次），與 A3_JOIN_TIMEOUT_SECONDS 同值。
+S5_JOIN_TIMEOUT_SECONDS = 30
 
 # A3 取 K 棒（出場監控、重啟重判）每個請求的 limit。派網上限 500（1000 會回 limit error）；
 # 需要的根數超過就用 endTime 分頁往後取。
@@ -286,7 +308,7 @@ STRATEGY_LABELS = {"s4": "策略4", "s5": "策略5"}
 # 實際槓桿 lev = min(TARGET_LEVERAGE, 該幣 tier1 上限)；建議倉位 = 本金的 ORDER_PCT × TARGET_LEVERAGE ÷ lev。
 # 這是訂閱者的倉位建議，不是策略參數（策略參數只在 strategy/）。
 # 刻意寫成 2 / 100（= 0.02，同一個 float）：tests/test_signal_feed.py 以 token 掃描規定本檔的 0.02 只能出現在
-# SCREEN_RET2H_MARGIN 那一行（防止粗篩門檻被寫死）。這裡的 2% 跟粗篩門檻毫無關係，只是數值剛好相同。
+# SCREEN_RET2H_MARGIN 與 S5_SCREEN_RISE_MARGIN 那兩行（防止粗篩門檻被寫死）。這裡的 2% 跟粗篩門檻毫無關係，只是數值剛好相同。
 A_CHANNEL_ORDER_PCT = 2 / 100
 A_CHANNEL_TARGET_LEVERAGE = 50
 
@@ -379,6 +401,12 @@ def execution_params():
         "A3_STORE_READY_TIMEOUT_SECONDS": A3_STORE_READY_TIMEOUT_SECONDS,
         "A3_JOIN_TIMEOUT_SECONDS": A3_JOIN_TIMEOUT_SECONDS,
         "A3_EVENTS_RECORD_DIR": A3_EVENTS_RECORD_DIR,
+        # ---- 策略五資料層（A5，live.s5_feed）----
+        "S5_SCREEN_RISE_MARGIN": S5_SCREEN_RISE_MARGIN,
+        "S5_KLINES_LIMIT": S5_KLINES_LIMIT,
+        "S5_FETCH_CONCURRENCY": S5_FETCH_CONCURRENCY,
+        "S5_YIELD_MAX_SECONDS": S5_YIELD_MAX_SECONDS,
+        "S5_JOIN_TIMEOUT_SECONDS": S5_JOIN_TIMEOUT_SECONDS,
         # ---- A 頻道推播（T2，live.a_channel_text / live.a_channel_outbox / live.a_channel_push）----
         "STRATEGY_LABELS": STRATEGY_LABELS,
         "A_CHANNEL_ORDER_PCT": A_CHANNEL_ORDER_PCT,

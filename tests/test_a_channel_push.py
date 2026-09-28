@@ -1183,8 +1183,23 @@ class FakeFeed:
         pass
 
 
+class FakeS5:
+    """A5（策略五資料層，TASK-116）的替身：這裡的測試只驗 T2 的接線，A5 的接線另見 tests/test_s5_feed.py。"""
+
+    def start(self):
+        pass
+
+    def close(self, timeout=None):
+        return True
+
+    def stats(self):
+        return {"fake": True}
+
+
 def _run_a_channel(argv, **kw):
     from live import a_channel
+    # FakeFeed 沒有 gate / buffer / universe，真的 A5（default_s5_feed）建不起來 → 一律注入替身
+    kw.setdefault("s5_feed_factory", lambda feed, tracker: FakeS5())
     with capture("live.a_channel", "live.a_channel_push") as cap:
         rc = a_channel.main(argv, setup_logging=False, **kw)
     return rc, cap

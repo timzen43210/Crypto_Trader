@@ -76,7 +76,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from live import config, klines, rest_gate
-from live.pionex_api import ApiError
+from live.pionex_api import MARKET_INVALID_SYMBOL, ApiError
 from strategy import s4_signal
 
 logger = logging.getLogger(__name__)
@@ -105,6 +105,8 @@ FETCH_DEGRADED_REASONS = ("target_missing", "api_error", "banned", "exception")
 # 是同一個字串，光看 degraded_reasons 分不出來。一律看 BarResult 的結構：unscreened["banned"] 有東西
 # = tickers 被封鎖 → 整根；只有 fetch_failed["banned"] 有東西 = 候選 klines 被封鎖 → 個別。
 _BANNED = "banned"
+# _fetch 的回傳原因：klines 回 MARKET_INVALID_SYMBOL（標的池有、klines 不收）。不算取數失敗、不進 fetch_failed
+_INVALID_SYMBOL = "invalid_symbol"
 
 
 @dataclass(frozen=True)
@@ -190,6 +192,9 @@ class ReconcileResult:
     requests: int = 0
     respread: int = 0                                      # 落後後重新攤平了幾次
     fetch_failed: dict = field(default_factory=dict)       # 原因 → [symbol]
+    invalid_symbols: list = field(default_factory=list)    # klines 回 MARKET_INVALID_SYMBOL 的 symbol（整輪的）：
+    #                                                        不重試、不算取數失敗；沒有真實值，所以不比對
+    #                                                        （不會算成漏失，也不會算成未判定）
     pairs_compared: int = 0                                # 有真實 ret2h 的 (symbol, K 棒)，不含未判定的根
     true_unavailable: int = 0                              # 重抓的資料算不出真實 ret2h 的 (symbol, K 棒)
     misses: list = field(default_factory=list)             # 漏失明細（整根排除的 degraded 根不算）
@@ -256,6 +261,7 @@ class Reconciler:
         self._server_clock = None
         self._thread = None
         self._stop = None
+        self._invalid_logged = {}      # symbol → 台北日期：klines 回 MARKET_INVALID_SYMBOL 的 INFO 當天記過了
 
     # ---------------- 紀錄 ----------------
     def expect_bars_from(self, close_ms):
@@ -441,6 +447,9 @@ class Reconciler:
                 if fail is None:          # 被 stop 打斷
                     acc.aborted = True
                     break
+                if fail == _INVALID_SYMBOL:
+                    acc.invalid_symbols.append(sym)
+                    continue
                 acc.fetch_failed.setdefault(fail, []).append(sym)
                 continue
             try:
@@ -489,6 +498,7 @@ class Reconciler:
         result.requests = acc.requests
         result.respread = acc.respread
         result.fetch_failed = {k: list(v) for k, v in acc.fetch_failed.items()}
+        result.invalid_symbols = list(acc.invalid_symbols)
         result.send_monotonic = list(acc.send_monotonic)
         result.aborted = acc.aborted
         result.pass_windows = pass_windows
@@ -528,7 +538,9 @@ class Reconciler:
 
     def _fetch(self, sym, result, stop_event):
         """回傳 (rows, None) 或 (None, 失敗原因)；被 stop 打斷回 (None, None)。封鎖冷卻不算嘗試，等它過。
-        API 錯誤隔 2 秒再試一次（停頓剛醒來時 DNS 常常還沒恢復，立刻重試只會一起失敗）。"""
+        API 錯誤隔 2 秒再試一次（停頓剛醒來時 DNS 常常還沒恢復，立刻重試只會一起失敗）。
+        klines 回 MARKET_INVALID_SYMBOL：不重試，回 (None, _INVALID_SYMBOL)，每個 symbol 每個台北日曆日
+        只記一行 INFO（標的池有、klines 不收的幣每小時都會碰到，不是需要告警的失敗）。"""
         attempts = 0
         last = None
         while attempts < 2:
@@ -544,6 +556,9 @@ class Reconciler:
                 self._sleep_until(self.clock.monotonic() + e.remaining_seconds + 0.05, stop_event)
             except ApiError as e:
                 result.requests += 1
+                if e.code == MARKET_INVALID_SYMBOL:
+                    self._log_invalid(sym)
+                    return None, _INVALID_SYMBOL
                 attempts += 1
                 last = e
                 if attempts < 2:
@@ -554,6 +569,14 @@ class Reconciler:
                 return None, "exception"
         logger.warning("背景對帳取 %s 的 klines 失敗：%s", sym, last)
         return None, "api_error"
+
+    def _log_invalid(self, sym):
+        day = _taipei_day(self._now_ms())
+        if self._invalid_logged.get(sym) == day:
+            return
+        self._invalid_logged[sym] = day
+        logger.info("背景對帳：%s 的 klines 回 %s（標的池有、klines 不收），不重試、不算取數失敗、不比對"
+                    "（同一個 symbol 當天不再記）", sym, MARKET_INVALID_SYMBOL)
 
     def _digest(self, rows, window_start_ms, window_end_ms):
         """一個 symbol 的 klines → (開盤時刻 → 真實 ret2h, 開盤時刻 → {OHLCV})，只留區間內的根。"""
@@ -626,14 +649,15 @@ class Reconciler:
                     "只排除取數失敗的候選 %d）、缺紀錄 %d 根、symbol %d、比對 %d 組（算不出真實值 %d）、"
                     "漏失 %d（整根排除的根上另有 %d；個別排除取數失敗的候選 %d 組，其中真實 ret2h >= MIN %d）、"
                     "未判定 %d、近似誤差 n=%s p50=%s p99=%s max=%s、K 棒定稿比對 %d 筆不一致 %d（無法比對 %d）、"
-                    "取數失敗 %s、請求 %d、重新攤平 %d 次、耗時 %.0fs%s%s",
+                    "取數失敗 %s、klines 不收（%s）%d 個、請求 %d、重新攤平 %d 次、耗時 %.0fs%s%s",
                     span, r.bars_expected, r.bars, r.bars_degraded, r.bars_degraded_whole,
                     len(r.bars_missed_close), r.bars_degraded_partial, len(r.bars_missing),
                     r.symbols, r.pairs_compared, r.true_unavailable, len(r.misses), r.misses_on_degraded,
                     len(r.excluded_fetch_failed), r.excluded_hits(),
                     len(r.undetermined), e.get("n"), _fmt(e.get("p50")), _fmt(e.get("p99")), _fmt(e.get("max")),
                     r.ohlcv_checked, len(r.ohlcv_mismatches), r.ohlcv_unverifiable,
-                    {k: len(v) for k, v in r.fetch_failed.items()}, r.requests, r.respread, r.elapsed_s,
+                    {k: len(v) for k, v in r.fetch_failed.items()}, MARKET_INVALID_SYMBOL, len(r.invalid_symbols),
+                    r.requests, r.respread, r.elapsed_s,
                     "（%d 個窗口共用這一輪取數，請求數是整輪的）" % r.pass_windows if r.pass_windows > 1 else "",
                     "（中途停止）" if r.aborted else "")
         if r.bars_missing:
@@ -720,6 +744,13 @@ def _hhmm(ms):
     from datetime import datetime
     from live.logsetup import TAIPEI
     return datetime.fromtimestamp(ms / 1000.0, TAIPEI).strftime("%m-%d %H:%M")
+
+
+def _taipei_day(ms):
+    """UTC epoch ms → 台北日曆日 'YYYY-MM-DD'（與 live.signal_feed._taipei_day 同格式）。"""
+    from datetime import datetime
+    from live.logsetup import TAIPEI
+    return datetime.fromtimestamp(ms / 1000.0, TAIPEI).strftime("%Y-%m-%d")
 
 
 def _dur(ms):

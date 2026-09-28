@@ -241,14 +241,16 @@ A1 另有背景對帳（`live/reconcile.py`）：每小時用 klines 重算上�
 漏失記 ERROR。degraded 的根依原因決定排除範圍：影響粗篩的（收盤 tickers 失敗 / 被封鎖、冷卻中、missed_close…）
 整根不算漏失；只有個別候選 klines 沒拿到的，只排除那幾個候選，同一根其他 symbol 照算。行程停頓醒來後，
 錯過的整點批次會補做（還在 klines 涵蓋內的合併成一輪取數、照常攤平），超出涵蓋（約 5 小時前的窗口）的合併成
-一行 WARNING，不會誤報「完全沒有紀錄」。觀察用：
+一行 WARNING，不會誤報「完全沒有紀錄」。klines 回 `MARKET_INVALID_SYMBOL`（標的池有、klines 不收，例如 KIOXIA）
+的幣，背景對帳與補種子都不重試、不算失敗（每幣每個台北日曆日一行 INFO）；背景對帳的 `add_bar` 出錯只記
+ERROR，這一根照常交給 A3（監控路徑不擋訊號路徑）。觀察用：
 `python -m live.signal_feed --duration 900 --record`（jsonl 預設寫到 `runtime/signal_feed/`，
 不可以指到 `state/` 或 `output/`；`--force-candidates N` 是壓測用；`--finality-probe` 是驗證用，
 收盤後 5 / 15 / 60 秒各重抓一次候選的 K 棒寫進 jsonl，用來校正定稿等待秒數）。離線測試在
 `tests/test_signal_feed.py`、`tests/test_rest_gate.py`、`tests/test_a1f_followups.py`。
 
-A 頻道名目部位追蹤在 `live/notional_tracker.py`（A3）：收 A1 的原始訊號（策略五資料層日後接
-`submit_signal()`），排除「同策略同幣持倉中」與「冷卻中」，以訊號價算止盈 / 止損、寫庫、發進場事件；
+A 頻道名目部位追蹤在 `live/notional_tracker.py`（A3）：經由 `submit_signal()` 收 A1（策略4）與
+A5（策略5，`live/s5_feed.py`）的原始訊號，排除「同策略同幣持倉中」與「冷卻中」，以訊號價算止盈 / 止損、寫庫、發進場事件；
 之後**每一根 1 分K** 收盤 + `BAR_FINALIZE_WAIT_SECONDS` 檢查所有未平倉的名目部位，碰止盈 / 止損就平倉寫庫、
 發出場事件。判定語意對齊 dry run（`pionex_dryrun.step_symbol()` + `resolve_with_5m()`）：結果、出場價、
 出場所屬的主週期 K 棒與冷卻逐筆相同，只有出場時刻會更早（1 分K 觸價就判定，不等 5 分K 收盤）；
@@ -261,14 +263,30 @@ A 頻道名目部位追蹤在 `live/notional_tracker.py`（A3）：收 A1 的原
 **重啟會從資料庫復原**：載入未平倉部位、從進場後第一根 1 分K 重新判定到現在（停機期間已觸價的，以歷史
 出場時刻與價格平倉，事件標 `recovered`）、從最後一筆已平倉部位重建冷卻、補發所有已寫庫未發布的事件
 （進場先於出場）。1 分K 只保留約 7 天，停機超過保留期的區段改用 dry run 的原始做法（5 分K 判定、兩碰再找
-1 分K、找不到 → 止損）；5 分K 也拿不到（約 34 天）就記 ERROR、保持 open 繼續監控。停機期間 A1 沒有交出的
+1 分K、找不到 → 止損）；5 分K 也拿不到（約 34 天）就記 ERROR、保持 open 繼續監控。停機期間 A1 / A5 沒有交出的
 訊號不會補（沒寫過庫、也沒發過事件）。
+
+A 頻道的策略5 資料層在 `live/s5_feed.py`（A5）：與 A1 共用閘門、價格緩衝、標的池與時鐘（自己不打 tickers），
+在自己的執行緒裡每一根 1 分K 收盤 + `BAR_FINALIZE_WAIT_SECONDS` 處理一次。每小時用價格緩衝裡的 H:00 與 H−1:00
+樣本粗篩 ①（門檻 = `MIN_RISE_FROM_OPEN - S5_SCREEN_RISE_MARGIN`，呼叫當下從注入的參數推導），之後每分鐘只對仍在
+追蹤的候選打 1M klines（`S5_KLINES_LIMIT` 根、前景優先、最多 `S5_FETCH_CONCURRENCY` 個並行），在剛收完的那根上跑
+`strategy/s5_signal.evaluate()`，成立就送 A3 的 `submit_signal(strategy="s5")`。H+1:00 收盤的那根是 H 的第 60 分
+（同一刻也做 H+1 的粗篩）。精確 ① 不成立、前一小時不完整、本小時已送出、klines 回 `MARKET_INVALID_SYMBOL`（不重試、
+不算 degraded，每幣每日一行 INFO）→ 本小時不再追蹤該幣。某一分鐘取數失敗、被封鎖（429 冷卻中不硬等，記 degraded
+`banned`）或停頓錯過（`missed_close`）的幣，下一分鐘在同一小時內補判，成立就補送、K 棒時刻用原本那一根；每個
+(幣, 小時) 最多送一次，不跨小時回判。A5 不拿 `foreground_hold`：A1 收盤取數持有它時先讓，最多
+`S5_YIELD_MAX_SECONDS` 秒。冷啟動時價格緩衝還沒有 H−1:00 樣本的幣記「未粗篩」（該分鐘 degraded，小時結束時一行
+WARNING 列出），樣本到了的那一分鐘起才追蹤。每小時一行 INFO 總結，每個原始訊號一行 INFO（含分支標籤、收盤後幾秒
+送出或補送）。執行參數 `S5_SCREEN_RISE_MARGIN`、`S5_KLINES_LIMIT`、`S5_FETCH_CONCURRENCY`、`S5_YIELD_MAX_SECONDS`、
+`S5_JOIN_TIMEOUT_SECONDS` 在 `live/config.py`（`python -m live` 會列出）。離線測試在 `tests/test_s5_feed.py`。
 
 執行入口（**不在** `python -m live` 裡）：
 
     python -m live.a_channel --duration 3600 [--events-jsonl [DIR]] [--push-tg]
 
-它把 `logsetup.setup()`、共用閘門、A2 匯流排、A3、A1（標的池由 `market_static` 載入）接起來。匯流排一定會掛一個
+它把 `logsetup.setup()`、共用閘門、A2 匯流排、A3、A1（標的池由 `market_static` 載入）、A5 接起來。A5 在 A1 建好之後、
+A1 主迴圈開始之前啟動；A5 建立或啟動失敗就記 ERROR、exit 1（**不會只跑策略4**），執行中意外結束記 ERROR、不自動
+重啟，結束時 exit 1。結束時依序關 A5 → A1 → A3 → T2（訊號的產生者先停）。匯流排一定會掛一個
 記錄事件的訂閱者（寫 INFO 日誌，加 `--events-jsonl` 時另外寫 jsonl，預設 `runtime/a_channel/`，不可以指到
 `state/` 或 `output/`）；**加 `--push-tg` 才會推播到 Telegram A 頻道**（見下面 T2）。啟動時印接線自檢
 （每種事件幾個訂閱者，有 0 個就不跑）。

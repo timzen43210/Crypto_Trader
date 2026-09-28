@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-live.a_channel — A 頻道的執行入口：A1（原始訊號）→ A3（名目部位追蹤）→ A2 匯流排 → 訂閱者
-===============================================================================================
+live.a_channel — A 頻道的執行入口：A1 / A5（原始訊號）→ A3（名目部位追蹤）→ A2 匯流排 → 訂閱者
+=====================================================================================================
 把下面這些元件接起來，跑到 --duration 秒或 Ctrl+C 為止：
 
     B3  live.logsetup.setup()            日誌與未攔截例外
@@ -13,7 +13,9 @@ live.a_channel — A 頻道的執行入口：A1（原始訊號）→ A3（名目
     T2  live.a_channel_push              A 頻道推播：handler 只寫 outbox（runtime/db/a_channel_outbox.sqlite3）就返回，
         live.tg_channel.ChannelSender    自己的工作執行緒依 outbox 交給發送器、把實際結果記回 outbox
     A3  live.notional_tracker            名目部位追蹤（自己的執行緒）
-    A1  live.signal_feed.SignalFeed      on_result = A3 的回呼（只排佇列，立刻返回）
+    A1  live.signal_feed.SignalFeed      策略4；on_result = A3 的回呼（只排佇列，立刻返回）
+    A5  live.s5_feed.S5Feed              策略5（自己的執行緒）；與 A1 共用閘門、價格緩衝、標的池，
+                                         訊號送進 A3 的 submit_signal(strategy="s5")（只排佇列，立刻返回）
 
 **必須明確帶 --push-tg 才推播**（比照 T1′ 的 --smoke）。不帶時行為與 T2 之前完全相同：只有 EventLog，
 不開 outbox、不讀 TG 密鑰 —— 開發機的實跑（例如 A1 的長時間冒煙）不可以把訊息發進正式頻道。
@@ -22,12 +24,16 @@ live.a_channel — A 頻道的執行入口：A1（原始訊號）→ A3（名目
   2. ChannelPusher.start()：建 outbox、記一行 outbox 現況（待送幾則、各狀態累計）、啟動 T2 工作執行緒
   3. 訂閱兩種事件（EventLog 之後），接線自檢會列出 T2
   4. 主週期取自 A3 的策略規格（pusher.set_specs(tracker.specs)），再 tracker.start()
-關閉順序：A1 → A3（join）→ T2（停止派送 → ChannelSender.stop() → 記回結果 → 結束工作執行緒）。沒送完的留在
-outbox，記 WARNING 寫明幾則，下次啟動再送。
+關閉順序：A5（join）→ A1 → A3（join）→ T2（停止派送 → ChannelSender.stop() → 記回結果 → 結束工作執行緒）。
+訊號的產生者（A5、A1）都停了才停 A3，A3 停了才停 T2。沒送完的留在 outbox，記 WARNING 寫明幾則，下次啟動再送。
 
 啟動時先做接線自檢：印出每種事件有幾個訂閱者（有任何一種是 0 就 exit 1，不跑）。A3 的工作執行緒開好
-資料庫之後才啟動 A1（開不了資料庫就 exit 1）；A3 的重啟復原在自己的執行緒裡做，期間 A1 交來的訊號
+資料庫之後才啟動 A1（開不了資料庫就 exit 1）；A3 的重啟復原在自己的執行緒裡做，期間 A1 / A5 交來的訊號
 先排在佇列裡。
+
+A5 在 A1 建好之後建立（要用 A1 的 gate / buffer / universe），在 A1 的主迴圈開始之前啟動（A1 的 run() 會阻塞；
+標的池在 run() 裡才載入，A5 在那之前看到空的標的池只是不篩、不取數）。A5 建立或啟動失敗 → 記 ERROR、exit 1，
+**不會只跑策略4**。A5 的執行緒執行中意外結束 → 記 ERROR、不自動重啟（A1 / A3 照跑），結束時 exit 1。
 
 事件去重約定：A3 採 at-least-once 發布，**以 (signal_id, 事件種類) 去重**，詳見 live.signal_events 的模組說明。
 T2 以 outbox 的 UNIQUE (signal_id, 事件種類) 去重（跨重啟有效）；EventLog 只記錄，不去重（重送會看到兩行，這是預期的）。
@@ -48,11 +54,13 @@ from live import config, logsetup, rest_gate
 from live.bus import SignalBus
 from live.notional_tracker import NotionalTracker
 from live.signal_events import EntryEvent, ExitEvent
+from live.s5_feed import S5Feed
 from live.signal_feed import SignalFeed, UniverseUnavailable, _SafeArgumentParser, check_record_dir
 
 logger = logging.getLogger(__name__)
 
-# A1（live.signal_feed）只產生策略4 的原始訊號。策略五資料層日後另外接 NotionalTracker.submit_signal()。
+# A1（live.signal_feed）只產生策略4 的原始訊號。策略5 的原始訊號由 A5（live.s5_feed）直接送
+# NotionalTracker.submit_signal(strategy="s5")。
 A1_STRATEGY = "s4"
 
 EVENT_LOG_SUBSCRIBER = "event_log"
@@ -134,11 +142,18 @@ def start_push(bus, *, sender_factory=None, pusher_factory=None):
     return pusher
 
 
+def default_s5_feed(feed, tracker, **kw):
+    """A5：與 A1（feed）共用閘門、價格緩衝、標的池、時鐘，訊號送進 A3（tracker.submit_signal）。kw 給測試覆寫。"""
+    return S5Feed(gate=feed.gate, buffer=feed.buffer, universe_fn=feed.universe, tickers_fn=feed.latest_tickers,
+                  submit_fn=tracker.submit_signal, clock=feed.clock, **kw)
+
+
 def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=None, sender_factory=None,
-         pusher_factory=None):
+         pusher_factory=None, s5_feed_factory=None):
     """python -m live.a_channel 的進入點。回傳 exit code。
 
-    tracker_factory(bus) / feed_factory(on_result)：測試注入用（正式執行不給，用共用閘門建真的 A3 / A1）。
+    tracker_factory(bus) / feed_factory(on_result) / s5_feed_factory(feed, tracker)：測試注入用（正式執行不給，
+    用共用閘門建真的 A3 / A1，A5 用 default_s5_feed）。
     sender_factory() / pusher_factory(sender)：--push-tg 時的測試注入（正式執行不給，用 ChannelSender() /
     ChannelPusher(sender)）。
     """
@@ -221,6 +236,21 @@ def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=No
         return 1
 
     feed = (feed_factory or default_feed)(tracker.bar_result_handler(A1_STRATEGY))
+    s5 = None
+    try:
+        s5 = (s5_feed_factory or default_s5_feed)(feed, tracker)
+        s5.start()
+    except Exception:  # noqa: BLE001 —— 不可以悄悄只跑策略4
+        logger.exception("策略五資料層（A5）建立或啟動失敗，不啟動（不會只跑策略4）")
+        if s5 is not None:
+            s5.close()
+        feed.close()
+        tracker.stop()
+        tracker.join(config.A3_JOIN_TIMEOUT_SECONDS)
+        if push is not None:
+            push.shutdown()
+        event_log.close()
+        return 1
     rc = 0
     try:
         feed.run(duration_s=args.duration)
@@ -230,6 +260,14 @@ def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=No
         logger.error("無法取得標的池，結束：%s", e)
         rc = 1
     finally:
+        # 產生者先停（A5 → A1），再停 A3、最後 T2
+        if not s5.close():
+            rc = rc or 1
+        s5_stats = s5.stats()
+        logger.info("A5 總結：%s", s5_stats)
+        if s5_stats.get("worker_crashed"):
+            logger.error("A5 的工作執行緒在執行中意外結束（見上面的 ERROR），這次運作的策略5 訊號不完整")
+            rc = rc or 1
         feed.close()
         tracker.stop()
         if not tracker.join(config.A3_JOIN_TIMEOUT_SECONDS):

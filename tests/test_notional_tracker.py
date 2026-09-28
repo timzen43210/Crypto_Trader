@@ -2074,6 +2074,16 @@ def test_a_channel_wiring_self_check_and_events_jsonl():
             def close(self):
                 pass
 
+        class FakeS5:                         # A5（TASK-116）的替身：FakeFeed 沒有 gate / buffer，真的 A5 建不起來
+            def start(self):
+                pass
+
+            def close(self, timeout=None):
+                return True
+
+            def stats(self):
+                return {"fake": True}
+
         tracker_box = []
 
         def tracker_factory(bus):
@@ -2090,7 +2100,8 @@ def test_a_channel_wiring_self_check_and_events_jsonl():
         try:
             rc = a_channel.main(["--duration", "5", "--events-jsonl", jdir], setup_logging=False,
                                 tracker_factory=tracker_factory,
-                                feed_factory=lambda on_result: FakeFeed(on_result))
+                                feed_factory=lambda on_result: FakeFeed(on_result),
+                                s5_feed_factory=lambda feed, tracker: FakeS5())
         finally:
             logging.getLogger("live.a_channel").removeHandler(cap)
         assert rc == 0

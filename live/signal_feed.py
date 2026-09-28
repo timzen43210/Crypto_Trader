@@ -82,7 +82,7 @@ from datetime import datetime, timezone
 
 from live import config, klines, rest_gate
 from live.paths import REPO_ROOT
-from live.pionex_api import ApiError
+from live.pionex_api import MARKET_INVALID_SYMBOL, ApiError
 from live.price_buffer import PriceBuffer
 from strategy import s4_signal
 
@@ -476,6 +476,7 @@ class SignalFeed:
         self._cold_pending = set()     # 初始補種子還沒完成的 symbol
         self._seed_inflight = set()
         self._seed_failed = set()
+        self._seed_invalid_logged = {}  # symbol → 台北日期：klines 回 MARKET_INVALID_SYMBOL 的 INFO 當天記過了
         self._seed_ok = 0
         self._initial_seed_started = None
         self._initial_seed_total = 0
@@ -539,8 +540,12 @@ class SignalFeed:
             self._bg.submit(self._seed_task, sym, initial)
 
     def _seed_task(self, sym, initial):
-        """補一個 symbol 的種子。不會往外拋例外（沒有人取這個 future），任何例外都在這裡記 ERROR。"""
-        ok, last = False, None
+        """補一個 symbol 的種子。不會往外拋例外（沒有人取這個 future），任何例外都在這裡記 ERROR。
+
+        klines 回 MARKET_INVALID_SYMBOL（標的池有、klines 不收，例如 KIOXIA）：不重試、不算補種子失敗，
+        每個 symbol 每個台北日曆日只記一行 INFO（它之後照樣由 tickers 累積樣本）。
+        """
+        ok, last, invalid = False, None, False
         try:
             attempts = 0
             while attempts < config.SEED_ATTEMPTS and not self._stop.is_set():
@@ -552,6 +557,9 @@ class SignalFeed:
                     self._sleep(e.remaining_seconds + 0.05)
                     continue
                 except ApiError as e:
+                    if e.code == MARKET_INVALID_SYMBOL:
+                        invalid = True
+                        break
                     attempts += 1
                     last = e
                     continue
@@ -568,13 +576,22 @@ class SignalFeed:
                 if ok:
                     self._seed_ok += 1
                     self._seed_failed.discard(sym)
+                elif invalid:
+                    self._seed_failed.discard(sym)
+                    day = _taipei_day(self.gate.server_clock.now_ms())
+                    log_invalid = self._seed_invalid_logged.get(sym) != day
+                    self._seed_invalid_logged[sym] = day
                 else:
                     self._seed_failed.add(sym)
                 finished = initial and not self._cold_pending and self._initial_seed_started is not None
                 if finished:
                     started, self._initial_seed_started = self._initial_seed_started, None
                     failed = sorted(self._seed_failed)
-            if not ok and not self._stop.is_set():
+            if invalid:
+                if log_invalid:
+                    logger.info("補種子 %s：klines 回 %s（標的池有、klines 不收），不重試、不算失敗"
+                                "（改由之後的 tickers 累積樣本；同一個 symbol 當天不再記）", sym, MARKET_INVALID_SYMBOL)
+            elif not ok and not self._stop.is_set():
                 logger.warning("補種子失敗 %s：%s（改由之後的 tickers 累積樣本）", sym, last)
             if finished:
                 logger.info("冷啟動補種子完成：%d 個 symbol，失敗 %d 個%s，耗時 %.1f 秒",
@@ -1001,8 +1018,12 @@ class SignalFeed:
             logger.warning("例行 tickers 輪詢（%s）花了 %.1f 秒，超過一個輪詢間隔", _taipei_s(slot), took)
 
     def _deliver(self, res):
+        # 監控路徑（背景對帳）不可以擋住訊號路徑（on_result → A3）：add_bar 出錯只記 ERROR，on_result 照呼叫
         if self.reconciler is not None:
-            self.reconciler.add_bar(res)
+            try:
+                self.reconciler.add_bar(res)
+            except Exception:  # noqa: BLE001
+                logger.exception("背景對帳 add_bar 失敗（K 棒 %s），這一根照常交給 on_result", _taipei(res.bar_close_ms))
         if self._on_result is not None:
             try:
                 self._on_result(res)
@@ -1371,6 +1392,12 @@ def _taipei_s(ms):
     """UTC epoch ms → 台北時間 'MM-DD HH:MM:SS'。"""
     from live.logsetup import TAIPEI
     return datetime.fromtimestamp(ms / 1000.0, TAIPEI).strftime("%m-%d %H:%M:%S")
+
+
+def _taipei_day(ms):
+    """UTC epoch ms → 台北日曆日 'YYYY-MM-DD'（「每幣每日只記一行」的去重鍵）。"""
+    from live.logsetup import TAIPEI
+    return datetime.fromtimestamp(ms / 1000.0, TAIPEI).strftime("%Y-%m-%d")
 
 
 def _duration(ms):

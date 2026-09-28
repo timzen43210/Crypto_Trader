@@ -32,6 +32,7 @@ BASE URL、timeout、retries 這三個是設定，放在 live.config（執行參
     哪一家的 API。
 """
 
+import json
 import time
 
 import requests
@@ -47,12 +48,33 @@ class ApiError(Exception):
     status_code：錯誤來自某個 HTTP 狀態碼時帶那個數字（429、403、5xx…）；result=false、連線錯誤、
     逾時、SSL、非 JSON 則是 None。重試用盡時帶「最後一次失敗」的狀態碼。
     給需要分辨 429 的呼叫端用（A1 的 live.rest_gate：429 = 整個行程停止送請求），不必解析訊息字串。
-    建構時不給就是 None，既有的 `ApiError("訊息")` 寫法與訊息文字都不變。
+    code：派網回應信封裡的錯誤碼字串（例如 MARKET_INVALID_SYMBOL）。result=false 時帶入；
+    HTTP 4xx（403 / 451 / 429 除外）的回應 body 若是帶 code 的 JSON 也帶入（派網對某些錯誤是回 4xx
+    還是回 200 + result=false 沒有文件保證，兩種都接）。其他情況是 None。
+    建構時不給就是 None，既有的 `ApiError("訊息")` / `ApiError("訊息", status_code=…)` 寫法與訊息文字都不變。
     """
 
-    def __init__(self, message, status_code=None):
+    def __init__(self, message, status_code=None, *, code=None):
         super().__init__(message)
         self.status_code = status_code
+        self.code = code
+
+
+# klines 對「標的池裡有、但 klines 不收」的交易對回的錯誤碼（T2 AC-9 實跑觀察到的 KIOXIA_USDT_PERP）。
+# 呼叫端用 ApiError.code 比對，不解析訊息字串。
+MARKET_INVALID_SYMBOL = "MARKET_INVALID_SYMBOL"
+
+
+def _body_code(r):
+    """HTTP 錯誤回應 body 裡的 code（JSON 信封且 code 是字串才算）；拿不到回 None，不拋例外。
+    解析 r.text（錯誤訊息本來就用它），不另外依賴 r.json()：這是錯誤路徑，不可以因為解析 body 而把原本的
+    HTTP 錯誤換成別的例外。"""
+    try:
+        js = json.loads(r.text)
+    except ValueError:
+        return None
+    code = js.get("code") if isinstance(js, dict) else None
+    return code if isinstance(code, str) else None
 
 
 def api_get(path, params=None, retries=config.HTTP_RETRIES, timeout=config.HTTP_TIMEOUT_SECONDS):
@@ -67,7 +89,7 @@ def api_get(path, params=None, retries=config.HTTP_RETRIES, timeout=config.HTTP_
                        等 k+1 秒後重試
         403 / 451      不重試，直接拋（多半是地區或 IP 被封）
         其他 4xx       不重試，直接拋
-        result=false   不重試，直接拋（訊息帶 code 與 message）
+        result=false   不重試，直接拋（訊息帶 code 與 message；code 另外放在 ApiError.code）
         SSL 憑證錯誤   不重試，直接拋，訊息說明要指定 CA 憑證
     只有「後面還要再試一次」才會 sleep：最後一次失敗直接拋，不再白等那一輪。
     """
@@ -103,7 +125,8 @@ def api_get(path, params=None, retries=config.HTTP_RETRIES, timeout=config.HTTP_
                 time.sleep(1.0 * (k + 1))
             continue
         if r.status_code != 200:
-            raise ApiError(f"{path}: HTTP {r.status_code} {r.text[:200]}", status_code=r.status_code)
+            raise ApiError(f"{path}: HTTP {r.status_code} {r.text[:200]}", status_code=r.status_code,
+                           code=_body_code(r))
 
         try:
             js = r.json()
@@ -112,7 +135,7 @@ def api_get(path, params=None, retries=config.HTTP_RETRIES, timeout=config.HTTP_
         if not isinstance(js, dict) or not js.get("result", False):
             code = js.get("code") if isinstance(js, dict) else None
             message = js.get("message") if isinstance(js, dict) else str(js)[:200]
-            raise ApiError(f"{path}: result=false code={code} message={message}")
+            raise ApiError(f"{path}: result=false code={code} message={message}", code=code)
         return js
 
     raise ApiError(f"{path}: 重試 {retries} 次仍失敗：{last}", status_code=getattr(last, "status_code", None))
