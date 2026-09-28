@@ -695,9 +695,8 @@ class S5Feed:
             self._log_hour(st, partial=current_hour_ms is None)
 
     def _log_hour(self, st, partial):
-        counts = {}
-        for r in st.unscreened.values():
-            counts[r] = counts.get(r, 0) + 1
+        # 未粗篩：小時結束時仍未粗篩的每個幣 → 原因（三種都列），依 symbol 排序，可以 ast.literal_eval
+        unscreened = dict(sorted(st.unscreened.items()))
         stop_counts = {}
         for r in st.stopped.values():
             stop_counts[r] = stop_counts.get(r, 0) + 1
@@ -712,7 +711,7 @@ class S5Feed:
                     "-" if st.screened_minute is None else st.screened_minute, len(st.seen), len(st.candidates),
                     {s: round(a, 4) for s, a in sorted(st.candidates.items())}, len(st.rise_pass),
                     sorted(st.rise_pass), st.signals, st.late, st.minutes, st.degraded_minutes, st.missed,
-                    st.requests, stop_counts, counts)
+                    st.requests, stop_counts, unscreened)
         if no_sample:
             logger.warning("策略五 小時 %s：%d 個幣到%s仍沒有 H:00 / H−1:00 的價格樣本，未粗篩（degraded）：%s",
                            _taipei(st.hour_ms), len(no_sample), "程式結束" if partial else "小時結束",

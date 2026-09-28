@@ -365,13 +365,14 @@ def test_ac1_05_whole_hour_stall_never_sends_previous_hour_signal():
 def test_ac1_06_cold_start_unscreened_until_sample_arrives():
     frame = make_1m({-1: (R_UP, None), 0: (0.0, 8)})
     price = float(frame.loc[frame["time"] == H0 - HOUR - MIN, "close"].iloc[0])
-    snap = TickersSnapshot(server_ts_ms=H0, slot_ms=H0, local_recv_ms=H0, prices={"COLD": 1.0},
-                           row_times={"COLD": H0}, invalid=())
+    snap = TickersSnapshot(server_ts_ms=H0, slot_ms=H0, local_recv_ms=H0, prices={"COLD": 1.0, "BADT": 1.0},
+                           row_times={"COLD": H0}, invalid=("BADT",))
 
     def setup(ns):
         ns.clock.call_at(ns.clock.mono_of(H0 + 2 * MIN + 30_000),
                          lambda: ns.buf.add_seed("COLD", [(H0 - HOUR, price)]))
-    run = run_s5({"COLD": frame}, H0 + 8 * MIN, universe=["COLD", "GONE"], drop=[("COLD", H0 - HOUR)],
+    # 標的池刻意不照字母排，摘要的「未粗篩」要自己排序
+    run = run_s5({"COLD": frame}, H0 + 8 * MIN, universe=["COLD", "GONE", "BADT"], drop=[("COLD", H0 - HOUR)],
                  tickers_fn=lambda: snap, setup=setup)
     assert run.by_close[H0].degraded_reasons == ["unscreened"]
     for m in (1, 2):
@@ -379,11 +380,19 @@ def test_ac1_06_cold_start_unscreened_until_sample_arrives():
         assert (r.degraded_reasons, r.fetches, r.candidates) == (["unscreened"], 0, []), (m, r)
     r3 = run.by_close[H0 + 3 * MIN]
     assert (r3.candidates, r3.fetches, r3.degraded_reasons) == (["COLD"], 1, []), r3
-    assert run.ex.attempts["COLD"] == 6 and run.ex.attempts["GONE"] == 0
+    assert run.ex.attempts["COLD"] == 6 and run.ex.attempts["GONE"] == 0 and run.ex.attempts["BADT"] == 0
     assert sent(run) == [("COLD", H0 + 7 * MIN, H0 + 8 * MIN)], sent(run)
     warn = [m for m in run.cap.messages(logging.WARNING) if "仍沒有" in m]
-    assert len(warn) == 1 and _taipei(H0 - HOUR) in warn[0] and "COLD" in warn[0] and "GONE" not in warn[0], warn
-    assert "not_in_tickers" in hour_summary(run, H0)          # tickers 本來就沒有的幣：未粗篩但不算 degraded
+    assert len(warn) == 1 and _taipei(H0 - HOUR) in warn[0] and "COLD" in warn[0], warn
+    assert "GONE" not in warn[0] and "BADT" not in warn[0], warn   # tickers 沒有 / 不合法：未粗篩但不算 degraded
+
+    # 每小時摘要的「未粗篩」= 小時結束時仍未粗篩的 {symbol: 原因}，三種原因都列、依 symbol 排序、可以機器解析
+    def unscreened(hour_ms):
+        return ast.literal_eval(hour_summary(run, hour_ms).rsplit("、未粗篩 ", 1)[1])
+    prev, cur = unscreened(H0 - HOUR), unscreened(H0)
+    assert prev == {"BADT": "ticker_invalid", "COLD": "no_sample", "GONE": "not_in_tickers"}, prev
+    assert cur == {"BADT": "ticker_invalid", "GONE": "not_in_tickers"}, cur     # COLD 第 3 分有樣本後移除
+    assert list(prev) == sorted(prev) and list(cur) == sorted(cur), (prev, cur)
 
 
 # ============================== AC-1 第 7 項：停止追蹤 ==============================
