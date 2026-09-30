@@ -1207,12 +1207,14 @@ def _run_a_channel(argv, **kw):
 
 @contextlib.contextmanager
 def outbox_path_in(tmp):
-    saved = config.A_CHANNEL_OUTBOX_DB_PATH
+    # --push-tg 會另外啟動 R-A 報表（TASK-117），它的發送紀錄也一起導到暫存目錄，不可以建在 repo 的 runtime/
+    saved = config.A_CHANNEL_OUTBOX_DB_PATH, config.A_CHANNEL_REPORT_DB_PATH
     config.A_CHANNEL_OUTBOX_DB_PATH = os.path.join(tmp, "db", "a_channel_outbox.sqlite3")
+    config.A_CHANNEL_REPORT_DB_PATH = os.path.join(tmp, "db", "a_channel_reports.sqlite3")
     try:
         yield config.A_CHANNEL_OUTBOX_DB_PATH
     finally:
-        config.A_CHANNEL_OUTBOX_DB_PATH = saved
+        config.A_CHANNEL_OUTBOX_DB_PATH, config.A_CHANNEL_REPORT_DB_PATH = saved
 
 
 @contextlib.contextmanager
@@ -1724,6 +1726,7 @@ if __name__ == "__main__":
     logging.getLogger().addHandler(logging.NullHandler())
     runtime_existed = os.path.exists(paths.RUNTIME_DIR)
     outbox_existed = os.path.exists(config.A_CHANNEL_OUTBOX_DB_PATH)
+    reports_existed = os.path.exists(config.A_CHANNEL_REPORT_DB_PATH)
     pristine = (socket.socket.connect, socket.create_connection, socket.getaddrinfo, time.sleep)
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     failed = 0
@@ -1739,10 +1742,12 @@ if __name__ == "__main__":
         runner_failed += 1
         print("FAIL  <runner>: socket / time.sleep 沒有還原")
     if os.path.exists(paths.RUNTIME_DIR) != runtime_existed or \
-            os.path.exists(config.A_CHANNEL_OUTBOX_DB_PATH) != outbox_existed:
+            os.path.exists(config.A_CHANNEL_OUTBOX_DB_PATH) != outbox_existed or \
+            os.path.exists(config.A_CHANNEL_REPORT_DB_PATH) != reports_existed:
         runner_failed += 1
         print(f"FAIL  <runner>: 測試在真正的 runtime/ 留下了東西（{paths.RUNTIME_DIR}）")
-    leftover = [t.name for t in threading.enumerate() if t.name in (P.THREAD_NAME, "tg-channel-sender") and t.is_alive()]
+    leftover = [t.name for t in threading.enumerate()
+                if t.name in (P.THREAD_NAME, "tg-channel-sender", "a-channel-report") and t.is_alive()]
     if leftover:
         runner_failed += 1
         print(f"FAIL  <runner>: 還有執行緒活著 {leftover}")

@@ -336,6 +336,39 @@ A_CHANNEL_OUTBOX_BUSY_TIMEOUT_SECONDS = 2
 # （小數位數由訊號價 / 進場價決定，同一則訊息的所有價格用同一個位數）。
 A_CHANNEL_PRICE_FALLBACK_SIGNIFICANT_DIGITS = 6
 
+# ---- A 頻道報表（R-A，live/a_channel_report.py、live/a_channel_report_push.py）----
+# 設計理由與統計口徑寫在 live/a_channel_report.py 的 docstring，這裡只放值。
+# 估算手續費的單邊費率。值與 dry run 的 FEE_RATE 相同（pionex_dryrun.py 兩個帳本設定裡的 FEE_RATE=0.0005，
+# 報酬寫成 ret - 2 * FEE_RATE），但 live/ 不可以 import pionex_*，所以在這裡另立一份。改 dry run 的費率時要一起看這裡。
+A_CHANNEL_REPORT_FEE_RATE = 0.0005
+
+# 排定發送時刻 = 期間結束 + 這個秒數：讓 23:59 那一分鐘的出場有時間被 A3 判定、寫進資料庫。
+A_CHANNEL_REPORT_SEND_DELAY_SECONDS = 300
+
+# 報表執行緒多久檢查一次該發的報表（秒）。發送時刻落在排定時刻之後一個輪詢週期內（最晚晚 60 秒）；
+# 報表一天最多幾則，不需要更密。
+A_CHANNEL_REPORT_POLL_SECONDS = 60
+
+# 補發上限：現在已晚於排定發送時刻超過這個秒數的期別不發，記成 skipped（WARNING）。預設 7 天。
+A_CHANNEL_REPORT_CATCHUP_MAX_SECONDS = 7 * 24 * 3600
+
+# 組字當下已晚於排定發送時刻超過這個秒數 → 訊息加延遲註記。
+A_CHANNEL_REPORT_LATE_NOTE_SECONDS = 3600
+
+# 一則報表交出的結果不確定（重試用盡、429 超過上限、stop 期限到）或發送器拒收時，隔多久用同一段文字再交一次（秒）。
+# 報表不趕時間，刻意比 A_CHANNEL_OUTBOX_RETRY_SECONDS 長：不跟進場 / 出場訊息搶發送器，也不在 flood control 期間反覆撞 429
+# （與 TG_MAX_RETRY_AFTER_SECONDS 同一個量級）。
+A_CHANNEL_REPORT_RETRY_SECONDS = 300
+
+# 報表發送紀錄的 SQLite 檔。一律在 runtime/ 底下（已 .gitignore）；跟 live.sqlite3、outbox 分開一個檔，R-A 不動那兩個檔。
+# 檔案的建立時刻決定「第一次上線不補舊帳」，所以部署到正式環境前這個檔必須不存在（或沒有測試資料），見 README。
+# 目錄由 live.a_channel_report_push.open_record() 自己建（live.paths 刻意不建目錄）。
+A_CHANNEL_REPORT_DB_PATH = os.path.join(RUNTIME_DIR, "db", "a_channel_reports.sqlite3")
+
+# 執行入口最多等報表執行緒開好發送紀錄幾秒；結束時最多等它收尾幾秒。
+A_CHANNEL_REPORT_READY_TIMEOUT_SECONDS = 30
+A_CHANNEL_REPORT_JOIN_TIMEOUT_SECONDS = 30
+
 
 def execution_params():
     """目前生效的執行參數，name -> value。給 `python -m live` 報告用。
@@ -417,6 +450,16 @@ def execution_params():
         "A_CHANNEL_OUTBOX_RETRY_SECONDS": A_CHANNEL_OUTBOX_RETRY_SECONDS,
         "A_CHANNEL_OUTBOX_BUSY_TIMEOUT_SECONDS": A_CHANNEL_OUTBOX_BUSY_TIMEOUT_SECONDS,
         "A_CHANNEL_PRICE_FALLBACK_SIGNIFICANT_DIGITS": A_CHANNEL_PRICE_FALLBACK_SIGNIFICANT_DIGITS,
+        # ---- A 頻道報表（R-A，live.a_channel_report / live.a_channel_report_push）----
+        "A_CHANNEL_REPORT_FEE_RATE": A_CHANNEL_REPORT_FEE_RATE,
+        "A_CHANNEL_REPORT_SEND_DELAY_SECONDS": A_CHANNEL_REPORT_SEND_DELAY_SECONDS,
+        "A_CHANNEL_REPORT_POLL_SECONDS": A_CHANNEL_REPORT_POLL_SECONDS,
+        "A_CHANNEL_REPORT_CATCHUP_MAX_SECONDS": A_CHANNEL_REPORT_CATCHUP_MAX_SECONDS,
+        "A_CHANNEL_REPORT_LATE_NOTE_SECONDS": A_CHANNEL_REPORT_LATE_NOTE_SECONDS,
+        "A_CHANNEL_REPORT_RETRY_SECONDS": A_CHANNEL_REPORT_RETRY_SECONDS,
+        "A_CHANNEL_REPORT_DB_PATH": A_CHANNEL_REPORT_DB_PATH,
+        "A_CHANNEL_REPORT_READY_TIMEOUT_SECONDS": A_CHANNEL_REPORT_READY_TIMEOUT_SECONDS,
+        "A_CHANNEL_REPORT_JOIN_TIMEOUT_SECONDS": A_CHANNEL_REPORT_JOIN_TIMEOUT_SECONDS,
     }
 
 

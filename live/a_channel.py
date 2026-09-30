@@ -12,20 +12,29 @@ live.a_channel — A 頻道的執行入口：A1 / A5（原始訊號）→ A3（�
                                          加 --push-tg 時再掛 T2（live.a_channel_push.ChannelPusher，名稱 tg_a_channel）
     T2  live.a_channel_push              A 頻道推播：handler 只寫 outbox（runtime/db/a_channel_outbox.sqlite3）就返回，
         live.tg_channel.ChannelSender    自己的工作執行緒依 outbox 交給發送器、把實際結果記回 outbox
+    R-A live.a_channel_report_push       A 頻道報表（加 --push-tg 時）：日報 / 10 日報 / 月報，自己的執行緒
+        live.a_channel_report            a-channel-report；唯讀讀 live.sqlite3 與 outbox 組字，經 T2 的 ChannelSender 發送，
+                                         每一期的狀態記在發送紀錄（runtime/db/a_channel_reports.sqlite3）
     A3  live.notional_tracker            名目部位追蹤（自己的執行緒）
     A1  live.signal_feed.SignalFeed      策略4；on_result = A3 的回呼（只排佇列，立刻返回）
     A5  live.s5_feed.S5Feed              策略5（自己的執行緒）；與 A1 共用閘門、價格緩衝、標的池，
                                          訊號送進 A3 的 submit_signal(strategy="s5")（只排佇列，立刻返回）
 
 **必須明確帶 --push-tg 才推播**（比照 T1′ 的 --smoke）。不帶時行為與 T2 之前完全相同：只有 EventLog，
-不開 outbox、不讀 TG 密鑰 —— 開發機的實跑（例如 A1 的長時間冒煙）不可以把訊息發進正式頻道。
+不開 outbox、不建報表的發送紀錄、沒有報表執行緒、不讀 TG 密鑰 —— 開發機的實跑（例如 A1 的長時間冒煙）不可以
+把訊息發進正式頻道。
 帶 --push-tg 時，**在 A3 啟動之前**依序做好（A3 的重啟補發會在啟動時就發布事件，T2 必須先接好）：
   1. ChannelSender.start()：缺密鑰 → 記 ERROR、exit 1，A3 / A1 都不啟動
   2. ChannelPusher.start()：建 outbox、記一行 outbox 現況（待送幾則、各狀態累計）、啟動 T2 工作執行緒
   3. 訂閱兩種事件（EventLog 之後），接線自檢會列出 T2
   4. 主週期取自 A3 的策略規格（pusher.set_specs(tracker.specs)），再 tracker.start()
-關閉順序：A5（join）→ A1 → A3（join）→ T2（停止派送 → ChannelSender.stop() → 記回結果 → 結束工作執行緒）。
-訊號的產生者（A5、A1）都停了才停 A3，A3 停了才停 T2。沒送完的留在 outbox，記 WARNING 寫明幾則，下次啟動再送。
+  5. A3 wait_ready 成功之後、A1 之前：ChannelReporter.start()（R-A；建發送紀錄、記一行現況、啟動報表執行緒）。
+     建立或啟動失敗 → 記 ERROR、exit 1，A1 / A5 不啟動（已啟動的 A3 / T2 照 A5 啟動失敗的方式收掉）
+關閉順序：A5（join）→ A1 → A3（join）→ R-A 報表（停止交出新的一則 → 記回已回報的結果 → 結束執行緒）
+→ T2（停止派送 → ChannelSender.stop() → 記回結果 → 結束工作執行緒）。
+訊號的產生者（A5、A1）都停了才停 A3，A3 停了才停報表與 T2；報表用 T2 的發送器，所以先停報表、再停 T2。
+沒送完的留在 outbox，記 WARNING 寫明幾則，下次啟動再送；報表在途的那一則若結果沒記回來，下次啟動重送同一段文字。
+報表執行緒執行中意外結束 → 記 ERROR、不自動重啟（A1 / A5 / A3 / T2 照跑），結束時 exit 1。
 
 啟動時先做接線自檢：印出每種事件有幾個訂閱者（有任何一種是 0 就 exit 1，不跑）。A3 的工作執行緒開好
 資料庫之後才啟動 A1（開不了資料庫就 exit 1）；A3 的重啟復原在自己的執行緒裡做，期間 A1 / A5 交來的訊號
@@ -142,6 +151,36 @@ def start_push(bus, *, sender_factory=None, pusher_factory=None):
     return pusher
 
 
+def start_reporter(sender, *, reporter_factory=None):
+    """--push-tg：A3 wait_ready 之後、A1 之前啟動 R-A 報表（ChannelReporter(sender).start()）。
+    回傳 reporter；建立或啟動失敗（例如發送紀錄開不了）記 ERROR 回 None，呼叫端 exit 1。"""
+    from live.a_channel_report_push import ChannelReporter
+    reporter = None
+    try:
+        reporter = (reporter_factory or ChannelReporter)(sender)
+        reporter.start()
+    except Exception:  # noqa: BLE001 —— 發送紀錄開不了就不能保證報表不漏發、不重發，不跑
+        logger.exception("--push-tg：A 頻道報表（R-A）建立或啟動失敗，不啟動 A1 / A5")
+        if reporter is not None:
+            try:
+                reporter.stop()
+            except Exception:  # noqa: BLE001
+                logger.exception("A 頻道報表啟動失敗後，stop() 也拋出例外")
+        return None
+    return reporter
+
+
+def stop_reporter(reporter):
+    """停 R-A 報表執行緒（不停發送器）並記一行總結。回傳 False = 沒有在時限內結束、或執行中意外結束過。"""
+    ok = bool(reporter.stop())
+    report_stats = reporter.stats()
+    logger.info("A 頻道報表總結：%s", report_stats)
+    if report_stats.get("worker_crashed"):
+        logger.error("A 頻道報表執行緒在執行中意外結束（見上面的 ERROR），這次運作期間之後的報表沒有發送")
+        ok = False
+    return ok
+
+
 def default_s5_feed(feed, tracker, **kw):
     """A5：與 A1（feed）共用閘門、價格緩衝、標的池、時鐘，訊號送進 A3（tracker.submit_signal）。kw 給測試覆寫。"""
     return S5Feed(gate=feed.gate, buffer=feed.buffer, universe_fn=feed.universe, tickers_fn=feed.latest_tickers,
@@ -149,13 +188,15 @@ def default_s5_feed(feed, tracker, **kw):
 
 
 def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=None, sender_factory=None,
-         pusher_factory=None, s5_feed_factory=None):
+         pusher_factory=None, s5_feed_factory=None, reporter_factory=None):
     """python -m live.a_channel 的進入點。回傳 exit code。
 
     tracker_factory(bus) / feed_factory(on_result) / s5_feed_factory(feed, tracker)：測試注入用（正式執行不給，
     用共用閘門建真的 A3 / A1，A5 用 default_s5_feed）。
     sender_factory() / pusher_factory(sender)：--push-tg 時的測試注入（正式執行不給，用 ChannelSender() /
     ChannelPusher(sender)）。
+    reporter_factory(sender)：--push-tg 時 R-A 報表的測試注入（正式執行不給，用 ChannelReporter(sender)；
+    sender 是 T2 的發送器）。
     """
     parser = _SafeArgumentParser(
         prog="python -m live.a_channel",
@@ -166,8 +207,9 @@ def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=No
                         metavar="DIR", help="事件另外寫成 jsonl；只給旗標不給目錄時寫到 %s"
                                             % config.A3_EVENTS_RECORD_DIR)
     parser.add_argument("--push-tg", action="store_true",
-                        help="把進場 / 出場訊息推播到 Telegram A 頻道（需要兩個 TG 密鑰；outbox 在 %s）。"
-                             "不帶就只記錄事件，不讀密鑰、不建 outbox" % config.A_CHANNEL_OUTBOX_DB_PATH)
+                        help="把進場 / 出場訊息與日報 / 10 日報 / 月報推播到 Telegram A 頻道（需要兩個 TG 密鑰；"
+                             "outbox 在 %s，報表發送紀錄在 %s）。不帶就只記錄事件，不讀密鑰、不建 outbox 與發送紀錄"
+                             % (config.A_CHANNEL_OUTBOX_DB_PATH, config.A_CHANNEL_REPORT_DB_PATH))
     args = parser.parse_args(argv)
     if args.duration is not None and args.duration <= 0:
         parser.error("--duration 必須是正數")
@@ -234,6 +276,17 @@ def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=No
             push.shutdown()
         event_log.close()
         return 1
+    reporter = None
+    if push is not None:
+        # R-A 報表用 T2 的發送器；A3 開好資料庫之後、A1 之前啟動
+        reporter = start_reporter(push.sender, reporter_factory=reporter_factory)
+        if reporter is None:
+            tracker.stop()
+            tracker.join(config.A3_JOIN_TIMEOUT_SECONDS)
+            push.shutdown()
+            event_log.close()
+            return 1
+        logger.info("A 頻道報表：已啟用（--push-tg），發送紀錄 %s", reporter.path)
 
     feed = (feed_factory or default_feed)(tracker.bar_result_handler(A1_STRATEGY))
     s5 = None
@@ -247,6 +300,8 @@ def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=No
         feed.close()
         tracker.stop()
         tracker.join(config.A3_JOIN_TIMEOUT_SECONDS)
+        if reporter is not None:
+            stop_reporter(reporter)
         if push is not None:
             push.shutdown()
         event_log.close()
@@ -260,7 +315,7 @@ def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=No
         logger.error("無法取得標的池，結束：%s", e)
         rc = 1
     finally:
-        # 產生者先停（A5 → A1），再停 A3、最後 T2
+        # 產生者先停（A5 → A1），再停 A3、報表，最後 T2
         if not s5.close():
             rc = rc or 1
         s5_stats = s5.stats()
@@ -273,6 +328,10 @@ def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=No
         if not tracker.join(config.A3_JOIN_TIMEOUT_SECONDS):
             logger.error("A3 工作執行緒 %s 秒內沒有結束", config.A3_JOIN_TIMEOUT_SECONDS)
             rc = rc or 1
+        if reporter is not None:
+            # A3 已停：報表停止交出新的一則、記回已回報的結果（在途的下次啟動重送），再停它用的 T2 發送器
+            if not stop_reporter(reporter):
+                rc = rc or 1
         if push is not None:
             # A3 已停，不會再有新事件：T2 停止派送 → ChannelSender.stop() → 記回結果（沒送完的留在 outbox）
             push.shutdown()

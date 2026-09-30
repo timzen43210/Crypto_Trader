@@ -276,7 +276,9 @@ A 頻道的策略5 資料層在 `live/s5_feed.py`（A5）：與 A1 共用閘門�
 `banned`）或停頓錯過（`missed_close`）的幣，下一分鐘在同一小時內補判，成立就補送、K 棒時刻用原本那一根；每個
 (幣, 小時) 最多送一次，不跨小時回判。A5 不拿 `foreground_hold`：A1 收盤取數持有它時先讓，最多
 `S5_YIELD_MAX_SECONDS` 秒。冷啟動時價格緩衝還沒有 H−1:00 樣本的幣記「未粗篩」（該分鐘 degraded，小時結束時一行
-WARNING 列出），樣本到了的那一分鐘起才追蹤。每小時一行 INFO 總結，每個原始訊號一行 INFO（含分支標籤、收盤後幾秒
+WARNING 列出），樣本到了的那一分鐘起才追蹤。未粗篩的原因裡只有 `no_sample`（冷啟動還沒有價格樣本）算 degraded；
+`not_in_tickers`（tickers 本來就沒有，例如 `USD_USDT_PERP`）與 `ticker_invalid`（價格不合法）記未粗篩、不算 degraded，
+沿用 A1 的定義（`live/s5_feed.py` 第 91 行、`live/signal_feed.py` 第 95～96 行）。每小時一行 INFO 總結，每個原始訊號一行 INFO（含分支標籤、收盤後幾秒
 送出或補送）。執行參數 `S5_SCREEN_RISE_MARGIN`、`S5_KLINES_LIMIT`、`S5_FETCH_CONCURRENCY`、`S5_YIELD_MAX_SECONDS`、
 `S5_JOIN_TIMEOUT_SECONDS` 在 `live/config.py`（`python -m live` 會列出）。離線測試在 `tests/test_s5_feed.py`。
 
@@ -286,7 +288,7 @@ WARNING 列出），樣本到了的那一分鐘起才追蹤。每小時一行 IN
 
 它把 `logsetup.setup()`、共用閘門、A2 匯流排、A3、A1（標的池由 `market_static` 載入）、A5 接起來。A5 在 A1 建好之後、
 A1 主迴圈開始之前啟動；A5 建立或啟動失敗就記 ERROR、exit 1（**不會只跑策略4**），執行中意外結束記 ERROR、不自動
-重啟，結束時 exit 1。結束時依序關 A5 → A1 → A3 → T2（訊號的產生者先停）。匯流排一定會掛一個
+重啟，結束時 exit 1。結束時依序關 A5 → A1 → A3 →（`--push-tg` 時）R-A 報表 → T2（訊號的產生者先停）。匯流排一定會掛一個
 記錄事件的訂閱者（寫 INFO 日誌，加 `--events-jsonl` 時另外寫 jsonl，預設 `runtime/a_channel/`，不可以指到
 `state/` 或 `output/`）；**加 `--push-tg` 才會推播到 Telegram A 頻道**（見下面 T2）。啟動時印接線自檢
 （每種事件幾個訂閱者，有 0 個就不跑）。
@@ -344,7 +346,9 @@ A 頻道的發送器在 `live/tg_channel.py`（T1′）：`ChannelSender` 只負
 不帶 `--push-tg` 時行為與 T2 之前完全相同（不讀 TG 密鑰、不建 outbox）——開發機的長時間實跑不可以把訊息發進正式頻道。
 帶旗標但缺密鑰就記 ERROR、exit 1（A3 / A1 都不啟動）。A3 啟動之前 T2 就接好（A3 的重啟補發一啟動就會發布事件），
 啟動時記一行 outbox 現況；結束時沒送完的留在 outbox、記 WARNING，下次啟動再送。
-**部署前**確認目標機器的 `a_channel_outbox.sqlite3` 不存在或沒有測試資料（否則裡面的待送列會在第一次啟動時發進正式頻道）；
+**部署前**確認目標機器的 `runtime/db/a_channel_outbox.sqlite3` 與 `runtime/db/a_channel_reports.sqlite3`（R-A 報表的發送紀錄）
+都不存在或沒有測試資料（否則 outbox 裡的待送列會在第一次啟動時發進正式頻道；發送紀錄的建立時刻若是測試期，上線後會補發
+測試期之後的舊期別報表）；
 開始有訂閱者之後，開發機的 `--push-tg` 實跑要改用測試頻道（換 `CRYPTO_TRADER_TG_CHANNEL_ID`），不可以與正式環境同時推播同一個頻道。
 
 版面確認用的樣本訊息（寫死的假資料、開頭加 `[測試]`，不碰 outbox、不碰 `live.sqlite3`、不打派網；exit 0 全部送達、
@@ -359,6 +363,48 @@ A 頻道的發送器在 `live/tg_channel.py`（T1′）：`ChannelSender` 只負
 由管理者手動發文。T2 相關的執行參數都是 `A_CHANNEL_*` 與 `STRATEGY_LABELS`（`live/config.py`，`python -m live` 會列出）。
 離線測試在 `tests/test_a_channel_text.py`（訊息格式黃金樣本）與 `tests/test_a_channel_push.py`（去重、順序、延遲判定、
 handler 規則、接線，以及在「寫入 outbox 後」「交給發送器後」兩個時間點硬砍子行程的持久化測試）。
+
+**A 頻道報表（R-A）**把 A 頻道的已平倉名目部位整理成定期績效報表，發到同一個頻道（`live/a_channel_report.py`：
+期間、唯讀讀取、統計、訊息文字、離線 CLI；`live/a_channel_report_push.py`：排程、發送紀錄、報表執行緒）：
+
+- 三種報表（台北時間，固定 UTC+8）：日報（每天 00:00～24:00）、10 日報（上旬 1～10 日、中旬 11～20 日、下旬 21 日～月底）、
+  月報（整月；月底日數由曆法推導）。每一期結束後 `A_CHANNEL_REPORT_SEND_DELAY_SECONDS`（預設 300 秒）發送，讓 23:59
+  那一分鐘的出場有時間被 A3 寫進資料庫；同一時刻有多則時依「日報 → 10 日報 → 月報」的順序，同一時間只交出一則。
+- 統計口徑：兩個策略各自一段、不加總；**依出場時間（`closed_ms`）歸期**；**只統計 outbox 裡進場為 `delivered` 的訊號**
+  （`Outbox.delivered_entry_signal_ids()`；延遲不發的進場不算）；名目報酬以訊號價與理論出場價計、各筆直接相加；
+  手續費每筆以 2 × `A_CHANNEL_REPORT_FEE_RATE`（單邊 0.05%，與 dry run 的 `FEE_RATE` 同值）估算；**不計資金費率**。
+  「持倉中」是期末那一刻還開著的部位（不計入），所以晚發、補發的報表數字與準時發的相同。日報附逐筆明細（百分比與
+  該筆出場訊息的名目報酬逐字相同），整則超過 `TG_MAX_MESSAGE_CHARS` 時從明細尾端刪行、最後註明「另有 N 筆未列出」。
+- 讀取一律用 SQLite 唯讀連線（`mode=ro`），不做 PRAGMA 寫入、不遷移、不建目錄；檔案不存在或 schema 版本不符就報錯、
+  不產生報表（不會當成「無平倉」）。唯讀開 WAL 資料庫時，SQLite 本身可能建立 / 更新 `-wal`、`-shm`（實測：只剩主檔時
+  會多出 0 bytes 的 `-wal` 與 32 KB（32768 bytes）的 `-shm`），主檔與原本就有的 `-wal` 內容不變。
+- **只在 `--push-tg` 時發送**：報表執行緒 `a-channel-report` 在 A3 ready 之後、A1 之前啟動（建立或啟動失敗記 ERROR、
+  exit 1，A1 / A5 不啟動），結束時在 A3 之後、T2 之前停止，用的是 T2 的同一個 `ChannelSender`。執行中意外結束記
+  ERROR，其他元件照跑，結束時 exit 1。不帶旗標時不建發送紀錄、沒有報表執行緒。結束時印一行報表總結。
+- 發送紀錄：SQLite 檔 `runtime/db/a_channel_reports.sqlite3`（`A_CHANNEL_REPORT_DB_PATH`），一列 = 一期，狀態
+  `pending` / `delivered` / `failed` / `skipped`；文字組一次就凍結（重試、重啟重送都用同一段）；**不自動刪除任何一列**。
+  第一次建檔的時刻記在檔裡，**期間結束早於（或等於）建立時刻的期別不發**（第一次上線不補舊帳）。停機錯過的期別
+  重啟後補發：晚於排定時刻超過 `A_CHANNEL_REPORT_LATE_NOTE_SECONDS`（預設 1 小時）加延遲註記，超過
+  `A_CHANNEL_REPORT_CATCHUP_MAX_SECONDS`（預設 7 天）就不發、記 `skipped` 與 WARNING。發送器回報放棄 / 拒收時隔
+  `A_CHANNEL_REPORT_RETRY_SECONDS` 重送同一段；永久失敗記 ERROR、不重送；交出後還沒記回結果就關閉的，下次啟動重送
+  （寧可多一則、不可以漏發）。組報表失敗（檔案不存在、版本不符、被鎖住）記 ERROR（同樣的錯誤不洗版）、不寫紀錄、
+  下一輪再試。
+- 離線 CLI（不讀任何 `CRYPTO_TRADER_*`、不連網、不寫任何資料庫；**不在** `python -m live` 裡）：
+
+      python -m live.a_channel_report --type {daily,tenday,monthly} --date YYYY-MM-DD [--live-db PATH] [--outbox-db PATH] [--out FILE]
+
+  `--date` 是台北日期，取包含這一天的那一期；資料庫路徑省略時用 `LIVE_DB_PATH` / `A_CHANNEL_OUTBOX_DB_PATH`；以 UTF-8
+  輸出到 stdout 或 `--out` 檔；期間還沒結束也能產生（stderr 另印一行說明）；內容不含延遲註記。exit 0 成功、1 讀檔或
+  版本錯誤、2 參數錯誤。
+- 執行參數：`A_CHANNEL_REPORT_FEE_RATE`、`A_CHANNEL_REPORT_SEND_DELAY_SECONDS`、
+  `A_CHANNEL_REPORT_POLL_SECONDS`（預設 60：發送時刻落在排定時刻之後一個輪詢週期內）、`A_CHANNEL_REPORT_CATCHUP_MAX_SECONDS`、
+  `A_CHANNEL_REPORT_LATE_NOTE_SECONDS`、`A_CHANNEL_REPORT_RETRY_SECONDS`、`A_CHANNEL_REPORT_DB_PATH`、
+  `A_CHANNEL_REPORT_READY_TIMEOUT_SECONDS`、`A_CHANNEL_REPORT_JOIN_TIMEOUT_SECONDS`（`live/config.py`，`python -m live` 會列出）。
+- 已知的設計內行為：停機期間發生、重啟後才補判的出場，若補判晚於該期報表的發送時刻，不會出現在已發出的那則報表，
+  但會出現在之後才組字的 10 日報 / 月報，所以某些情況下日報加總 ≠ 月報。
+
+離線測試在 `tests/test_a_channel_report.py`（期間、篩選、統計、訊息文字、唯讀與 WAL、CLI、字面值掃描）與
+`tests/test_a_channel_report_push.py`（排程的連續模擬與重啟情境、組報表失敗、發送紀錄、接線、密鑰）。
 
 ## 方法 A：GitHub Actions（免費、免主機）
 
