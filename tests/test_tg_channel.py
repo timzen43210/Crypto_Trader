@@ -1266,7 +1266,8 @@ def test_stats_fields_and_repr():
 # ============================== AC-8 / AC-9：命令列與設定 ==============================
 def _child_env(**overrides):
     env = dict(os.environ)
-    for name in SECRET_ENVS:
+    # 所有密鑰（含 A4 的維運 chat id）都拿掉：父行程有設的話，子行程的「未設定」判斷才不會被它影響
+    for name in config.SECRET_ENV_VARS:
         env.pop(name, None)
     env.pop("PYTHONIOENCODING", None)
     env.pop("PYTHONUTF8", None)
@@ -1313,7 +1314,8 @@ def test_ac9_execution_params_include_every_tg_param():
     # 既有的密鑰常數沒被動到，而且密鑰不在執行參數裡
     assert config.TG_BOT_TOKEN_ENV == "CRYPTO_TRADER_TG_BOT_TOKEN"
     assert config.TG_CHANNEL_ID_ENV == "CRYPTO_TRADER_TG_CHANNEL_ID"
-    assert set(config.SECRET_ENV_VARS) == set(SECRET_ENVS)
+    # A4（TASK-118）新增維運告警私人聊天的 chat id，也是密鑰（同樣不在執行參數裡）
+    assert set(config.SECRET_ENV_VARS) == set(SECRET_ENVS) | {config.OPS_CHAT_ID_ENV}
     assert not any(k.endswith("_ENV") or "TOKEN" in k for k in params), params
 
 

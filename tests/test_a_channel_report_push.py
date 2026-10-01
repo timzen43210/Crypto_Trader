@@ -31,8 +31,9 @@ sys.path.insert(0, REPO_ROOT)
 sys.path.insert(0, TESTS_DIR)
 
 import test_tg_channel as tgt  # noqa: E402
-from test_a_channel_push import (Clock, FakeFeed, FakeMarket, FakeS5, FakeTracker, ScriptedSender, capture,  # noqa: E402
-                                 deliver_all, outbox_path_in, result, secret_reads_forbidden, tempdir)
+from test_a_channel_push import (Clock, FakeFeed, FakeMarket, FakeS5, FakeTracker, NullAlerter,  # noqa: E402
+                                 ScriptedSender, capture, deliver_all, outbox_path_in, result,
+                                 secret_reads_forbidden, tempdir)
 from test_a_channel_report import LATE_LINE, Books, day, tpe  # noqa: E402
 from test_tg_channel import OfflineCage, find_leaks, wait_until  # noqa: E402
 
@@ -645,6 +646,7 @@ def test_thread_open_failure_is_reported_by_start():
 def _run(argv, **kw):
     from live import a_channel
     kw.setdefault("s5_feed_factory", lambda feed, tracker: FakeS5())
+    kw.setdefault("alerter_factory", NullAlerter)     # A4（TASK-118）的接線另見 tests/test_ops_alert.py
     with capture(*LOGGERS) as cap:
         rc = a_channel.main(argv, setup_logging=False, **kw)
     return rc, cap

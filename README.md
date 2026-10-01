@@ -190,7 +190,7 @@ HTTP 取數在 `live/pionex_api.py`（原本叫 `live/http.py`，跟標準庫的
 | 策略5 參數（進場 11 個、出場 4 個） | `strategy/s5_signal.py` 的 `DEFAULT_PARAMS` / `EXIT_PARAMS`，**唯一來源**（兩者刻意分開；手續費不在這裡） | 改那裡，回測 `pionex_strategy5.S5` / `CONFIG` 與 dry run `S5_RULE` / `S5_CONFIG` 都從它取值。改任何鍵、值或數值型別都會讓 dry run 的 `s5` 帳本換指紋、前瞻紀錄重新開始（`tests/test_s5_signal.py` 會提醒）。`live/notional_tracker.py`（A3）的出場判定直接引用 `exit_params()` / `cooldown_bars()`，不可以在 `live/` 抄一份 |
 | 執行參數（BASE URL、timeout、retries、快取逾時） | `live/config.py` 的模組層級常數 | 改檔案再 commit。沒有設定檔格式、沒有 parser、沒有 dev/prod 切換 |
 | 資料格式常數（方向 `DIRECTIONS`、出場原因 `EXIT_REASONS`、epoch 毫秒合理範圍 `EPOCH_MS_MIN` / `EPOCH_MS_MAX`） | `live/config.py`，事件（`live/signal_events.py`）與持久層（`live/store.py`）共用這一份、呼叫當下讀 | 這是 schema 與事件契約本身，不是可調旋鈕，所以跟 `STRATEGY_USER_ID` 一樣不列在 `execution_params()` |
-| 密鑰（TG bot token、A 頻道 channel id） | 環境變數 `CRYPTO_TRADER_TG_BOT_TOKEN`、`CRYPTO_TRADER_TG_CHANNEL_ID` | 啟動前 `export`，雲端主機用 systemd 的 `Environment=`。**絕不進版控**，不支援 `.env` 或任何檔案來源 |
+| 密鑰（TG bot token、A 頻道 channel id、A4 維運告警私人聊天的 chat id） | 環境變數 `CRYPTO_TRADER_TG_BOT_TOKEN`、`CRYPTO_TRADER_TG_CHANNEL_ID`、`CRYPTO_TRADER_TG_OPS_CHAT_ID` | 啟動前 `export`，雲端主機用 systemd 的 `Environment=` / `EnvironmentFile=`（由 systemd 讀檔、程式只看環境變數）。**絕不進版控**，程式本身不支援 `.env` 或任何檔案來源 |
 
 沒設密鑰不影響用不到它的元件 —— `import live.config` 不會失敗，要用的元件會在取用當下拋出
 說得出該設哪個環境變數的例外。`python -m live` 只報告每個密鑰「已設定 / 未設定」，不印值。
@@ -242,7 +242,9 @@ A1 另有背景對帳（`live/reconcile.py`）：每小時用 klines 重算上�
 整根不算漏失；只有個別候選 klines 沒拿到的，只排除那幾個候選，同一根其他 symbol 照算。行程停頓醒來後，
 錯過的整點批次會補做（還在 klines 涵蓋內的合併成一輪取數、照常攤平），超出涵蓋（約 5 小時前的窗口）的合併成
 一行 WARNING，不會誤報「完全沒有紀錄」。klines 回 `MARKET_INVALID_SYMBOL`（標的池有、klines 不收，例如 KIOXIA）
-的幣，背景對帳與補種子都不重試、不算失敗（每幣每個台北日曆日一行 INFO）；背景對帳的 `add_bar` 出錯只記
+的幣，背景對帳與補種子都不重試、不算失敗（每幣每個台北日曆日一行 INFO）；K 棒收盤的候選取數也一樣：只打 1 次請求、
+記成取數結果類別 `invalid_symbol`（`fetch_failed["invalid_symbol"]`，跟 `insufficient_history` 一樣**不讓那根 K 棒變成
+degraded**，對帳也不算漏失），同一個幣每個台北日曆日一行 INFO；其他 API 錯誤照舊重試、算 degraded。背景對帳的 `add_bar` 出錯只記
 ERROR，這一根照常交給 A3（監控路徑不擋訊號路徑）。觀察用：
 `python -m live.signal_feed --duration 900 --record`（jsonl 預設寫到 `runtime/signal_feed/`，
 不可以指到 `state/` 或 `output/`；`--force-candidates N` 是壓測用；`--finality-probe` 是驗證用，
@@ -266,6 +268,11 @@ A5（策略5，`live/s5_feed.py`）的原始訊號，排除「同策略同幣持
 1 分K、找不到 → 止損）；5 分K 也拿不到（約 34 天）就記 ERROR、保持 open 繼續監控。停機期間 A1 / A5 沒有交出的
 訊號不會補（沒寫過庫、也沒發過事件）。
 
+**執行中資料庫失敗會退避**：資料庫操作失敗時記 ERROR、記憶體狀態作廢、手上的訊號延後，之後重建（重開資料庫 + 重新判定
+open 部位）不再每分鐘試，而是連續第 k 次失敗後等 `A3_STORE_RETRY_DELAYS_SECONDS` 的第 min(k, 5) 項（60 / 120 / 300 / 600 /
+900 秒，第 5 次之後都是 900 秒）。退避中的 tick 不開庫、不取數、不重試延後的訊號（`stats["store_backoff_skips"]` 計數），
+每次失敗另記一行 INFO「A3 資料庫第 k 次連續失敗，下次重建在 X 秒後」；重建成功一次就從頭算。資料庫正常時行為不變。
+
 A 頻道的策略5 資料層在 `live/s5_feed.py`（A5）：與 A1 共用閘門、價格緩衝、標的池與時鐘（自己不打 tickers），
 在自己的執行緒裡每一根 1 分K 收盤 + `BAR_FINALIZE_WAIT_SECONDS` 處理一次。每小時用價格緩衝裡的 H:00 與 H−1:00
 樣本粗篩 ①（門檻 = `MIN_RISE_FROM_OPEN - S5_SCREEN_RISE_MARGIN`，呼叫當下從注入的參數推導），之後每分鐘只對仍在
@@ -288,12 +295,13 @@ WARNING 列出），樣本到了的那一分鐘起才追蹤。未粗篩的原因
 
 它把 `logsetup.setup()`、共用閘門、A2 匯流排、A3、A1（標的池由 `market_static` 載入）、A5 接起來。A5 在 A1 建好之後、
 A1 主迴圈開始之前啟動；A5 建立或啟動失敗就記 ERROR、exit 1（**不會只跑策略4**），執行中意外結束記 ERROR、不自動
-重啟，結束時 exit 1。結束時依序關 A5 → A1 → A3 →（`--push-tg` 時）R-A 報表 → T2（訊號的產生者先停）。匯流排一定會掛一個
+重啟，結束時 exit 1。結束時依序關 A5 → A1 → A3 →（`--push-tg` 時）R-A 報表 → T2 → A4 維運告警（訊號的產生者先停；
+A4 最後停，結束訊息才寫得出 T2 停下來之後的待送數）。匯流排一定會掛一個
 記錄事件的訂閱者（寫 INFO 日誌，加 `--events-jsonl` 時另外寫 jsonl，預設 `runtime/a_channel/`，不可以指到
-`state/` 或 `output/`）；**加 `--push-tg` 才會推播到 Telegram A 頻道**（見下面 T2）。啟動時印接線自檢
+`state/` 或 `output/`）；**加 `--push-tg` 才會推播到 Telegram A 頻道**（見下面 T2），同時啟用 A4 維運告警（見下面 A4）。啟動時印接線自檢
 （每種事件幾個訂閱者，有 0 個就不跑）。
 A3 相關的執行參數：`S5_KLINE_INTERVAL`、`A3_KLINES_PAGE_LIMIT`（分頁取 K 棒的 limit）、
-`A3_STORE_READY_TIMEOUT_SECONDS`、`A3_JOIN_TIMEOUT_SECONDS`、`A3_EVENTS_RECORD_DIR`（都在 `live/config.py`，
+`A3_STORE_READY_TIMEOUT_SECONDS`、`A3_JOIN_TIMEOUT_SECONDS`、`A3_EVENTS_RECORD_DIR`、`A3_STORE_RETRY_DELAYS_SECONDS`（資料庫失敗退避表）（都在 `live/config.py`，
 `python -m live` 會列出）。離線測試在 `tests/test_notional_tracker.py`（含拿 dry run 真正的程式逐筆對照）。
 
 A 頻道的發送器在 `live/tg_channel.py`（T1′）：`ChannelSender` 只負責把組好的純文字送到 Telegram Channel
@@ -405,6 +413,60 @@ handler 規則、接線，以及在「寫入 outbox 後」「交給發送器後�
 
 離線測試在 `tests/test_a_channel_report.py`（期間、篩選、統計、訊息文字、唯讀與 WAL、CLI、字面值掃描）與
 `tests/test_a_channel_report_push.py`（排程的連續模擬與重啟情境、組報表失敗、發送紀錄、接線、密鑰）。
+
+**最小營運告警（A4）**把 A 頻道程式自己的異常與每日心跳，推到營運方與 bot 的 **Telegram 私人聊天**（不是 A 頻道；
+`live/ops_alert.py`，設計細節寫在它的 docstring）：
+
+- **啟用方式**：跟 T2 綁在一起，`python -m live.a_channel ... --push-tg` 時才建立（不帶旗標時連模組都不 import、不讀維運的
+  chat id）。需要三個環境變數：`CRYPTO_TRADER_TG_BOT_TOKEN`（與 A 頻道共用同一個 bot）、`CRYPTO_TRADER_TG_CHANNEL_ID`（A 頻道）、
+  `CRYPTO_TRADER_TG_OPS_CHAT_ID`（私人聊天的 chat id；先在 Telegram 對 bot 發過一則訊息，bot 才能私訊你）。缺 bot token 或維運
+  chat id 時 A4 起不來，記 ERROR、exit 1，T2 / A3 / A1 都不啟動；只缺 A 頻道 id 時照 T2 的規則 exit 1（A3 / A1 不啟動，A4 發 ⚪
+  「啟動失敗：T2（A 頻道推播）」）。A4 在 `logsetup.setup()` 之後、其他元件之前啟動，之後各元件啟動時的 ERROR 都收得到；
+  發送用另一個 `ChannelSender`（執行緒 `tg-ops-sender`、日誌文字「維運告警」），告警本身在執行緒 `ops-alert`。三個密鑰的值
+  在發出前一律遮罩。
+- **七種訊息**（第一行「符號 + 標題 + 兩個空白 + 機器標籤」，標籤是 `OPS_ALERT_INSTANCE_LABEL`，沒設就是主機名稱；第二行
+  台北時間，接著「標籤：值」各行與項目行）：🟢 A 頻道程式啟動、🟡 啟動期間的錯誤、🔴 告警、⏰ 仍未恢復、✅ 已恢復、💓 每日心跳、
+  ⚪ A 頻道程式結束。項目行是 `・[ERROR] <logger> L<行號> ×<次數>：<訊息>`（CRITICAL 寫 `[CRITICAL]`）、
+  `・[條件] <條件名稱>：<說明>`、`・[事件] 對帳 / 報表：<說明>`；每項截到 `OPS_ALERT_ITEM_MAX_CHARS` 字，一則最多 `OPS_ALERT_MAX_ITEMS`
+  項（其餘寫「…另有 N 項（見日誌）」），整則不超過 `TG_MAX_MESSAGE_CHARS`。同一輪同時有新告警、提醒、恢復時分成三則，
+  依 🔴 → ⏰ → ✅。每則交出時記一行 INFO「已交出 <種類>（<中文名>）：N 項，鍵 …」（`live.ops_alert`，實機驗收靠它計數）；
+  發送器拒收記 WARNING。
+- **事件告警**（日誌的 ERROR / CRITICAL）：root logger 上的 handler 只把紀錄放進有上限的佇列（`OPS_ALERT_QUEUE_MAX`，滿了丟最舊的
+  並計數）就返回，不打網路、不擋呼叫它的執行緒；告警執行緒 `ops-alert` / `tg-ops-sender` 與 `live.ops_alert` 自己的紀錄不收
+  （不會自己餵自己）。WARNING 只計數給心跳。以「logger 名稱 + 檔名 + 行號」分組：新的鍵等 `OPS_ALERT_BATCH_SECONDS` 收齊後
+  併成一則 🔴；之後每 `OPS_ALERT_REMIND_SECONDS` 看一次，這段時間又發生 → ⏰「又發生 N 次」，沒有再發生 → 鍵結束（提醒過的
+  才發 ✅，只發生一次的安靜結束）。CRITICAL 不等批次、下一輪就發。啟動後 `OPS_ALERT_STARTUP_GRACE_SECONDS` 內的 ERROR 不逐一
+  告警，寬限結束時併成一則 🟡（沒有就不發）。開始關閉之後的 ERROR、以及還沒發出的（寬限中、批次中）都併進 ⚪。
+- **一次性事件**（跟同一段時間的新事件一起進 🔴）：背景對帳有窗口超出 klines 涵蓋（停頓過久）、R-A 有期別超過補發上限被跳過。
+- **條件告警**（每 `OPS_ALERT_POLL_SECONDS` 讀各元件的 stats；成立 → 🔴、持續中每 `OPS_ALERT_REMIND_SECONDS` ⏰、解除 → ✅）：
+  C1 執行緒不在（已啟動的 A3、A5、T2 pusher、A 頻道發送器、R-A、對帳各自一個條件；還沒啟動的不算）、
+  C2 A1 停擺（超過 `OPS_A1_STALL_SECONDS` 沒有收到 K 棒結果）、C3 A5 停擺（處理的分鐘數超過 `OPS_A5_STALL_SECONDS` 沒增加）、
+  C4 A 頻道待送卡住（outbox 最舊的待送列超過 `OPS_OUTBOX_STUCK_SECONDS`；outbox 唯讀開、開不了就這一輪不判斷）、
+  C5 報表組不出來、C6 A3 取數持續失敗（計數器連續 `OPS_COUNTER_RAISE_POLLS` 輪增加才成立、連續 `OPS_COUNTER_CLEAR_POLLS` 輪
+  沒增加才解除）。讀某個元件的 stats 出錯 → 那一輪略過它（不成立也不解除），同一種錯誤只記一次 WARNING。開始關閉之後不再輪詢。
+- **心跳**：每天台北 `OPS_HEARTBEAT_TIME_TPE`（預設 09:00）一則 💓，統計上一次心跳（或本次啟動）到現在：A1 處理 / degraded
+  的 K 棒、A5 的分鐘、原始訊號、A3 進出場與資料庫失敗、A 頻道送達 / 延遲不發 / 永久失敗、報表、REST 請求與 429、日誌
+  ERROR / WARNING、發出的告警與仍未恢復的條件。不持久化：那一刻程式沒在跑就不發。
+- **結束**：⚪ 寫運作時間、結束原因（到達 `--duration`、Ctrl+C、`UniverseUnavailable`、未預期的例外、`啟動失敗：<哪一步>`）、
+  exit code、outbox 待送數、仍未恢復的條件。啟動中途 exit 1 的路徑不發 🟢、只發 ⚪。A4 的告警執行緒執行中意外結束、或結束時
+  停不下來 → 記 ERROR（其他元件照跑），結束時 exit 1。告警器的任何錯誤都不會往外拋到訊號路徑。
+- **樣本訊息**（寫死的假資料、開頭加 `[測試]`，只需要 bot token 與維運 chat id，不碰 A 頻道、outbox、派網；exit 0 全部送達、
+  1 有失敗、3 缺密鑰未實測，未實測時不連網）：
+
+      python -m live.ops_alert --sample
+
+- 執行參數：`OPS_ALERT_INSTANCE_LABEL`、`OPS_ALERT_POLL_SECONDS`、`OPS_ALERT_BATCH_SECONDS`、`OPS_ALERT_REMIND_SECONDS`、
+  `OPS_ALERT_STARTUP_GRACE_SECONDS`、`OPS_ALERT_QUEUE_MAX`、`OPS_ALERT_ITEM_MAX_CHARS`、`OPS_ALERT_MAX_ITEMS`、
+  `OPS_ALERT_STOP_TIMEOUT_SECONDS`、`OPS_HEARTBEAT_TIME_TPE`、`OPS_A1_STALL_SECONDS`、`OPS_A5_STALL_SECONDS`、
+  `OPS_OUTBOX_STUCK_SECONDS`、`OPS_COUNTER_RAISE_POLLS`、`OPS_COUNTER_CLEAR_POLLS`（`live/config.py`，`python -m live` 會列出；
+  維運 chat id 是密鑰，只列「已設定 / 未設定」）。離線測試在 `tests/test_ops_alert.py`。
+
+**上線 checklist（A4）**：
+
+1. systemd 的 `EnvironmentFile=`（或 `Environment=`）要包含 `CRYPTO_TRADER_TG_OPS_CHAT_ID`（連同 `CRYPTO_TRADER_TG_BOT_TOKEN`、
+   `CRYPTO_TRADER_TG_CHANNEL_ID`）；少了它 `--push-tg` 會直接 exit 1。
+2. 部署、啟動後，確認私人聊天收到 🟢「A 頻道程式啟動」（標籤是正式主機），日誌有一行「已交出 startup（啟動）」。
+3. 隔天台北 09:00 確認收到 💓「每日心跳」。
 
 ## 方法 A：GitHub Actions（免費、免主機）
 

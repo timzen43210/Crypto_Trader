@@ -1,0 +1,1535 @@
+# -*- coding: utf-8 -*-
+"""
+A4 最小營運告警（live.ops_alert、live.tg_channel 的三個新參數、live.a_channel 的 --push-tg 接線）驗收測試。
+
+  AC-1  ChannelSender 不給新參數 = A 頻道原狀；chat_id_env 讀那個環境變數、遮罩含它的值；執行緒名稱與日誌文字；
+        record 的 lineno 是呼叫 _log 的那一行
+  AC-2  handler：佇列滿、告警執行緒卡住時一萬次 emit 都不阻塞、丟棄數正確；ops-alert / tg-ops-sender 執行緒與
+        live.ops_alert 的 record 被排除（無回饋迴圈）；WARNING 只計數；三個密鑰都遮罩
+  AC-3  事件告警：新鍵批次成一則 🔴、⏰ 一小時後的次數、只發生一次的安靜結束、提醒過的 ✅；寬限期間併成一則 🟡；
+        CRITICAL 不等批次、不受寬限；關閉期間的 ERROR 併進 ⚪
+  AC-4  條件 C1–C6 各自 raised → 每小時 ⏰ → cleared（持續時間正確）；沒啟動的 C1 元件不報；C4 讀不到不 raise
+        也不 clear；FR-4 的兩種一次性事件
+  AC-5  心跳：連續三個台北 09:00 各恰好一則、差值與假 stats 相符、第一則的用語；未啟動 / 讀不到的寫法
+  AC-6  七種訊息全文（--sample 的假資料）；每項截斷與整則截斷（項數、UTF-16 長度）
+  AC-7  告警執行緒死掉或卡住時，包過的 on_result 照樣呼叫 A3；A3 的例外原樣往外拋
+  AC-8  不帶 --push-tg 完全不變；缺維運密鑰 exit 1、T2 / A3 / A1 都沒啟動；各路徑的 ⚪ 原因與 exit code；
+        全部啟動成功才發 🟢；A4 最後停
+  AC-11 新常數在 execution_params() 與 python -m live；維運密鑰只列名稱與有沒有設
+  其他  --sample 的 exit code、缺密鑰不連網；模組命名與相依
+
+全程離線：socket 籠子（沿用 tests/test_tg_channel.py 的 OfflineCage，進場自我測試、禁止真的 sleep）；
+告警器的時間一律注入假時鐘（epoch 秒），outbox 與報表發送紀錄一律開在暫存目錄，不碰 runtime/。
+不依賴 pytest：直接 `python tests/test_ops_alert.py`。
+"""
+import ast
+import collections
+import contextlib
+import io
+import linecache
+import logging
+import os
+import socket
+import subprocess
+import sys
+import threading
+import time
+from datetime import datetime
+from types import SimpleNamespace
+
+TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(TESTS_DIR)
+sys.path.insert(0, REPO_ROOT)
+sys.path.insert(0, TESTS_DIR)
+
+import test_tg_channel as tgt  # noqa: E402
+from test_tg_channel import (FAKE_CHAT, FAKE_TOKEN, OfflineCage, exception_texts, find_leaks, harness,  # noqa: E402
+                             http_error, ok, stop_within, wait_until)
+from test_a_channel_push import capture, outbox_path_in, secret_reads_forbidden, tempdir  # noqa: E402
+
+from live import a_channel, config, paths, reconcile, rest_gate  # noqa: E402
+from live import a_channel_outbox as OB  # noqa: E402
+from live import ops_alert as OA  # noqa: E402
+from live.logsetup import TAIPEI  # noqa: E402
+from live.signal_feed import UniverseUnavailable  # noqa: E402
+from live.tg_channel import MASK, utf16_units  # noqa: E402
+
+FAKE_OPS = "424242987654"
+SECRETS = (FAKE_TOKEN, FAKE_CHAT, FAKE_OPS)
+LABEL = "test-host"
+T0 = datetime(2026, 9, 22, 10, 0, tzinfo=TAIPEI).timestamp()
+
+GREEN, YELLOW, RED = chr(0x1F7E2), chr(0x1F7E1), chr(0x1F534)
+ALARM, CHECK, HEART, WHITE = chr(0x23F0), chr(0x2705), chr(0x1F493), chr(0x26AA)
+TITLE = {"startup": GREEN + " A 頻道程式啟動", "grace": YELLOW + " 啟動期間的錯誤", "alert": RED + " 告警",
+         "remind": ALARM + " 仍未恢復", "recovered": CHECK + " 已恢復", "heartbeat": HEART + " 每日心跳",
+         "shutdown": WHITE + " A 頻道程式結束"}
+DEAD = "執行緒已經結束，不會自動重啟（要重啟程式才會恢復）"
+TEST_LOGGER = "live.test_a4"
+
+
+def tpe(t):
+    """T0 + t 秒的台北時間字串（測試自己算，不用 OA.fmt_time）。"""
+    return datetime.fromtimestamp(T0 + t, TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def message(kind, t, *lines):
+    return "\n".join([TITLE[kind] + "  " + LABEL, "時間：" + tpe(t)] + list(lines))
+
+
+# ============================== 替身 ==============================
+class FakeSender:
+    """維運發送器的替身：記下交出的 (key, 文字)。gate 設了的話，ops-alert 執行緒的 send() 會卡在 gate 上。"""
+
+    def __init__(self, order=None, accept=True):
+        self.order = order if order is not None else []
+        self.accept = accept
+        self.sent = []
+        self.gate = None
+        self.entered = threading.Event()
+        self.raise_exc = None
+        self.handler_at_stop = None
+
+    def start(self):
+        self.order.append("ops.start")
+
+    def send(self, text, key=None, **kw):
+        if self.gate is not None and threading.current_thread().name == OA.THREAD_NAME:
+            self.entered.set()
+            self.gate.wait(10)
+        self.sent.append((key, text))
+        self.order.append("ops.send:%s" % key)
+        if self.raise_exc is not None:
+            raise self.raise_exc
+        return self.accept
+
+    def stop(self, timeout=None):
+        self.handler_at_stop = any(isinstance(h, OA._AlertHandler) for h in logging.getLogger().handlers)
+        self.order.append("ops.stop")
+        return 0
+
+    def stats(self):
+        return {"worker_alive": False}
+
+    def kinds(self):
+        return [k[len("ops-"):] for k, _ in self.sent]
+
+    def texts(self, kind):
+        return [t for k, t in self.sent if k == "ops-" + kind]
+
+
+class EpochClock:
+    def __init__(self, t=T0):
+        self.t = t
+        self.fail = False
+
+    def __call__(self):
+        if self.fail:
+            raise RuntimeError("假時鐘故障")
+        return self.t
+
+
+class Taker:
+    """每次呼叫回傳上一次之後新交出的 [(種類, 文字)]。"""
+
+    def __init__(self, sender):
+        self.sender = sender
+        self.n = 0
+
+    def __call__(self):
+        new = self.sender.sent[self.n:]
+        self.n = len(self.sender.sent)
+        return [(k[len("ops-"):], t) for k, t in new]
+
+
+@contextlib.contextmanager
+def ops_env():
+    """暫存目錄的 outbox / 報表發送紀錄 + 三個假密鑰 + 離線籠子。"""
+    with tempdir() as tmp, outbox_path_in(tmp):
+        with tgt.env_vars({config.TG_BOT_TOKEN_ENV: FAKE_TOKEN, config.TG_CHANNEL_ID_ENV: FAKE_CHAT,
+                           config.OPS_CHAT_ID_ENV: FAKE_OPS}):
+            with OfflineCage() as cage:
+                yield tmp
+            assert not cage.attempts, "有程式企圖連網：%r" % cage.attempts
+            assert not cage.sleeps, "有程式呼叫了真的 time.sleep：%r" % cage.sleeps
+
+
+def _shutdown_alerter(a):
+    sender = a._sender
+    if getattr(sender, "gate", None) is not None:
+        sender.gate.set()
+    a._stop_requested = True
+    a._wake.set()
+    if a._thread is not None:
+        a._thread.join(10)
+    a._remove_handler()
+
+
+@contextlib.contextmanager
+def make_alerter(clock, sender=None, run_thread=False, outbox_path=None):
+    a = OA.OpsAlerter(sender=sender if sender is not None else FakeSender(), clock=clock, label=LABEL,
+                      outbox_path=outbox_path)
+    a.start(run_thread=run_thread)
+    try:
+        yield a
+    finally:
+        _shutdown_alerter(a)
+
+
+def emit(clock, t, level, msg, *, name=TEST_LOGGER, lineno=42, thread="MainThread", filename="a4.py"):
+    """在假時鐘 T0 + t 做出一筆 record 交給 logging（與真的 logger.error 走同一條 handler 路徑）。"""
+    clock.t = T0 + t
+    rec = logging.LogRecord(name, level, filename, lineno, msg, None, None)
+    rec.threadName = thread
+    logging.getLogger(name).handle(rec)
+
+
+def tick(a, clock, t, bar=True):
+    clock.t = T0 + t
+    if bar:
+        a.note_bar(None)
+    a.run_once(T0 + t)
+
+
+# ---- 各元件的替身（AC-4 / AC-5）
+class FTracker:
+    def __init__(self):
+        self.alive = True
+        self.fail = False
+        self.st = {"fetch_failures": 0, "entries": 0, "exits": 0, "store_failures": 0}
+
+    @property
+    def worker_alive(self):
+        return self.alive
+
+    @property
+    def stats(self):
+        if self.fail:
+            raise RuntimeError("A3 stats 讀不到")
+        return dict(self.st)
+
+
+class FS5:
+    def __init__(self):
+        self.alive = True
+        self.st = {"minutes": 0, "degraded": 0, "missed": 0, "signals": 0}
+
+    def stats(self):
+        return dict(self.st, worker_alive=self.alive, worker_crashed=False)
+
+
+class FSenderStats:
+    def __init__(self, alive=True):
+        self.alive = alive
+
+    def stats(self):
+        return {"worker_alive": self.alive}
+
+
+class FPush:
+    def __init__(self, path):
+        self.path = path
+        with OB.open_outbox(path):
+            pass
+        self.alive = True
+        self.sender = FSenderStats()
+
+    @property
+    def worker_alive(self):
+        return self.alive
+
+
+class FReporter:
+    def __init__(self):
+        self.st = {"worker_alive": True, "compose_errors": 0, "skipped": 0, "pending": 0, "delivered": 0,
+                   "worker_crashed": False}
+        self.fail = False
+        self.path = "reports.sqlite3"
+
+    def stats(self):
+        if self.fail:
+            raise RuntimeError("R-A stats 讀不到")
+        return dict(self.st)
+
+
+class FGate:
+    def __init__(self):
+        self.st = {"requests": 0, "http_429": 0}
+        self.fail = False
+
+    def stats(self):
+        if self.fail:
+            raise RuntimeError("gate stats 讀不到")
+        return dict(self.st)
+
+
+class FReconciler:
+    def __init__(self):
+        self._thread = None
+        self.alive = True
+
+    @property
+    def worker_alive(self):
+        return self.alive
+
+
+class FFeed:
+    def __init__(self, gate, reconciler):
+        self.gate = gate
+        self.reconciler = reconciler
+
+
+class World:
+    def __init__(self, a, clock, sender, tracker, s5, push, reporter, gate, reconciler):
+        self.a, self.clock, self.sender = a, clock, sender
+        self.tracker, self.s5, self.push, self.reporter = tracker, s5, push, reporter
+        self.gate, self.reconciler = gate, reconciler
+
+    def advance(self, t, *, bar=True, minutes=1):
+        """時鐘走到 T0 + t、（預設）收到一根 K 棒、A5 多處理 minutes 分鐘，跑一輪。回傳這一輪交出的 [(種類, 文字)]。"""
+        self.clock.t = T0 + t
+        if bar:
+            self.a.note_bar(None)
+        self.s5.st["minutes"] += minutes
+        n = len(self.sender.sent)
+        self.a.run_once(T0 + t)
+        return [(k[len("ops-"):], text) for k, text in self.sender.sent[n:]]
+
+
+@contextlib.contextmanager
+def world(attach=True):
+    with ops_env():
+        clock = EpochClock()
+        sender = FakeSender()
+        with make_alerter(clock, sender) as a:
+            tracker, s5, reporter, gate, reconciler = FTracker(), FS5(), FReporter(), FGate(), FReconciler()
+            push = FPush(config.A_CHANNEL_OUTBOX_DB_PATH)
+            if attach:
+                a.attach(tracker=tracker, push=push, reporter=reporter)
+                a.attach(feed=FFeed(gate, reconciler), s5=s5)
+            yield World(a, clock, sender, tracker, s5, push, reporter, gate, reconciler)
+
+
+def add_pending(path, signal_id, received_s, kind=OB.KIND_ENTRY):
+    with OB.open_outbox(path) as ob:
+        ob.insert(signal_id=signal_id, kind=kind, strategy="s4", symbol="ACE_USDT_PERP", event={}, snapshot={},
+                  received_ms=int(received_s * 1000))
+
+
+def finalize(path, signal_id, status, now_s, kind=OB.KIND_ENTRY):
+    with OB.open_outbox(path) as ob:
+        ob.finalize(ob.get(signal_id, kind)["seq"], status, now_ms=int(now_s * 1000))
+
+
+def _threads(name):
+    return [t for t in threading.enumerate() if t.name == name and t.is_alive()]
+
+
+# ============================== AC-1：ChannelSender 的三個新參數 ==============================
+def test_ac1_default_sender_is_the_a_channel_sender():
+    with harness() as h:
+        s = h.started()
+        assert s._chat_id_env == config.TG_CHANNEL_ID_ENV
+        assert (s._thread_name, s._log_label) == ("tg-channel-sender", "A 頻道")
+        assert _threads("tg-channel-sender") and not _threads(OA.SENDER_THREAD_NAME)
+        assert s.send("hi", key="k") is True
+        wait_until(lambda: len(h.tg.calls) == 1, "A 頻道發送器送出一則")
+        stop_within(s, 60)
+        assert h.tg.calls[0].payload["chat_id"] == FAKE_CHAT
+        assert any("A 頻道發送器已啟動" in line for line in h.logs.at(logging.INFO))
+
+
+def test_ac1_ops_sender_reads_its_own_chat_id_masks_it_and_logs_its_label():
+    with harness() as h, tgt.env_vars({config.OPS_CHAT_ID_ENV: FAKE_OPS}), capture("live.tg_channel") as cap:
+        h.tg.plan(ok(), http_error(400, "Bad Request: chat " + FAKE_OPS + " not found"))
+        s = h.started(chat_id_env=config.OPS_CHAT_ID_ENV, thread_name=OA.SENDER_THREAD_NAME,
+                      log_label=OA.SENDER_LOG_LABEL)
+        assert _threads(OA.SENDER_THREAD_NAME) and not _threads("tg-channel-sender")
+        assert s.send("one", key="ops-a") is True and s.send("two", key="ops-b") is True
+        assert s.send("", key="ops-c") is False
+        wait_until(lambda: len(h.tg.calls) == 2, "維運發送器送出兩則")
+        stop_within(s, 60)
+        assert not _threads(OA.SENDER_THREAD_NAME), "stop() 之後 tg-ops-sender 還活著"
+        assert [c.payload["chat_id"] for c in h.tg.calls] == [FAKE_OPS, FAKE_OPS]
+        infos = cap.messages(logging.INFO)
+        errors = cap.messages(logging.ERROR)
+        assert any("維運告警發送器已啟動" in m for m in infos), infos
+        assert any("維運告警訊息已送出" in m for m in infos), infos
+        assert any("維運告警訊息送出失敗" in m for m in errors), errors
+        all_msgs = cap.messages()
+        assert not any("A 頻道" in m for m in all_msgs), [m for m in all_msgs if "A 頻道" in m]
+        assert not find_leaks(all_msgs + h.logs.lines, SECRETS), "維運發送器的日誌有密鑰片段"
+        assert cap.records
+        for r in cap.records:
+            src = linecache.getline(r.pathname, r.lineno).strip()
+            assert r.funcName != "_log" and src.startswith("self._log("), (r.funcName, r.lineno, src)
+
+
+def test_ac1_new_sender_uses_the_ops_parameters():
+    s = OA.new_sender()
+    assert (s._chat_id_env, s._thread_name, s._log_label) == \
+        (config.OPS_CHAT_ID_ENV, "tg-ops-sender", "維運告警")
+    assert config.OPS_CHAT_ID_ENV == "CRYPTO_TRADER_TG_OPS_CHAT_ID"
+
+
+def test_ac1_missing_ops_chat_id_fails_at_start_without_values():
+    with harness() as h, tgt.env_vars({config.OPS_CHAT_ID_ENV: None}):
+        s = h.sender(chat_id_env=config.OPS_CHAT_ID_ENV, thread_name=OA.SENDER_THREAD_NAME,
+                     log_label=OA.SENDER_LOG_LABEL)
+        try:
+            s.start()
+        except config.MissingSecretError as e:
+            assert config.OPS_CHAT_ID_ENV in str(e)
+            assert not find_leaks(exception_texts(e), SECRETS)
+        else:
+            raise AssertionError("缺維運 chat id 應該在 start() 拋 MissingSecretError")
+        assert not _threads(OA.SENDER_THREAD_NAME)
+
+
+# ============================== AC-2：handler ==============================
+def test_ac2_ten_thousand_emits_never_block_while_the_alert_thread_is_stuck():
+    with ops_env():
+        clock = EpochClock()
+        sender = FakeSender()
+        with make_alerter(clock, sender, run_thread=True) as a:
+            clock.t = T0 + 200
+            sender.gate = threading.Event()
+            emit(clock, 200, logging.CRITICAL, "卡住發送器的那一則", lineno=9)
+            wait_until(sender.entered.is_set, "告警執行緒卡在 send()")
+            worst = 0.0
+            for i in range(10000):
+                rec = logging.LogRecord(TEST_LOGGER, logging.ERROR, "a4.py", 1000 + i, "錯誤 %d" % i, None, None)
+                t0 = time.perf_counter()
+                logging.getLogger(TEST_LOGGER).handle(rec)
+                worst = max(worst, time.perf_counter() - t0)
+            assert worst < 0.25, "emit() 最慢一次 %.3f 秒" % worst
+            assert a.counters() == (10001, 0, 9000), a.counters()
+            with a._qlock:
+                linenos = [e[4] for e in a._queue]
+            assert linenos == list(range(10000, 11000))
+            sender.gate.set()
+            wait_until(lambda: len(a._pending) == 1000, "告警執行緒收下佇列裡的 1000 筆", limit=10.0)
+            rc = a.finish("Ctrl+C", 0)
+            assert rc == 0
+            assert sender.kinds() == ["alert", "shutdown"], sender.kinds()
+            text = sender.texts("shutdown")[0]
+            for want in ("日誌佇列丟棄：9000 筆", "…另有 990 項（見日誌）", "關閉前還沒發出的告警：1000 項（一併列在下面）"):
+                assert want in text, (want, text)
+
+
+def test_ac2_records_from_the_alert_threads_and_its_own_logger_are_excluded():
+    with ops_env():
+        clock = EpochClock()
+        with make_alerter(clock) as a:
+            emit(clock, 1, logging.ERROR, "x", thread=OA.THREAD_NAME, lineno=1)
+            emit(clock, 1, logging.ERROR, "x", thread=OA.SENDER_THREAD_NAME, lineno=2)
+            emit(clock, 1, logging.ERROR, "x", name=OA.LOGGER_NAME, lineno=3)
+            for name in (OA.THREAD_NAME, OA.SENDER_THREAD_NAME):
+                th = threading.Thread(target=lambda: logging.getLogger(TEST_LOGGER).error("真執行緒的錯誤"),
+                                      name=name)
+                th.start()
+                th.join(5)
+            with a._qlock:
+                assert not a._queue, list(a._queue)
+            emit(clock, 2, logging.ERROR, "對照組", lineno=4)
+            for i in range(3):
+                emit(clock, 3, logging.WARNING, "只計數", lineno=5)
+            with a._qlock:
+                queued = [(e[2], e[4], e[6]) for e in a._queue]
+            assert queued == [(TEST_LOGGER, 4, "對照組")], queued
+            assert a.counters() == (6, 3, 0), a.counters()
+        with make_alerter(clock) as b:
+            b._wake.clear()
+            emit(clock, 4, logging.ERROR, "第一筆", lineno=6)
+            assert b._wake.is_set(), "佇列由空變非空要喚醒告警執行緒"
+            b._wake.clear()
+            emit(clock, 4, logging.ERROR, "第二筆", lineno=7)
+            assert not b._wake.is_set(), "佇列本來就非空的 ERROR 不必喚醒"
+            emit(clock, 4, logging.CRITICAL, "嚴重", lineno=8)
+            assert b._wake.is_set(), "CRITICAL 一定喚醒"
+
+
+def test_ac2_sender_failures_do_not_feed_back_into_the_queue():
+    with ops_env():
+        clock = EpochClock()
+        sender = FakeSender()
+        sender.raise_exc = RuntimeError("x")
+        with make_alerter(clock, sender, run_thread=True) as a:
+            clock.t = T0 + 200
+            emit(clock, 200, logging.CRITICAL, "觸發", lineno=11)
+            wait_until(lambda: a.counters()[0] == 2, "交出失敗記一筆 ERROR")
+            with a._qlock:
+                assert not a._queue, list(a._queue)
+            rc = a.finish("Ctrl+C", 0)
+            assert rc == 0
+            assert len(sender.sent) == 2, sender.kinds()
+            assert "關閉過程中的 ERROR：無" in sender.texts("shutdown")[0]
+            with a._qlock:
+                assert not a._queue
+
+
+def test_ac2_all_three_secrets_are_masked_before_and_after_clipping():
+    with ops_env():
+        clock = EpochClock()
+        sender = FakeSender()
+        with make_alerter(clock, sender) as a:
+            tick(a, clock, 200)
+            emit(clock, 200, logging.ERROR, "x" * 185 + FAKE_TOKEN, lineno=1)
+            emit(clock, 200, logging.ERROR, "chat " + FAKE_CHAT, lineno=2)
+            emit(clock, 200, logging.ERROR, "ops " + FAKE_OPS, lineno=3)
+            emit(clock, 200, logging.ERROR, config.TG_API_BASE_URL + "/bot" + FAKE_TOKEN + "/sendMessage", lineno=4)
+            tick(a, clock, 230)
+            a.finish("結束 " + FAKE_OPS, 0)
+        texts = [t for _, t in sender.sent]
+        assert sender.kinds() == ["alert", "shutdown"], sender.kinds()
+        assert not find_leaks(texts, SECRETS), "訊息裡有密鑰片段"
+        assert all(MASK in t for t in texts)
+        assert texts[0].split("\n")[2] == "・[ERROR] live.test_a4 L1 ×1：" + "x" * 185 + MASK
+
+
+# ============================== AC-3：事件告警 ==============================
+def test_ac3_new_keys_batch_remind_and_recover():
+    with ops_env(), capture("live.ops_alert") as cap:
+        clock = EpochClock()
+        sender = FakeSender()
+        take = Taker(sender)
+        with make_alerter(clock, sender) as a:
+            tick(a, clock, 200)
+            assert take() == []
+            emit(clock, 200, logging.ERROR, "甲 失敗 #1", lineno=42)
+            emit(clock, 205, logging.ERROR, "甲 失敗 #2", lineno=42)
+            emit(clock, 210, logging.ERROR, "乙 失敗", lineno=43)
+            tick(a, clock, 229)
+            assert take() == []
+            tick(a, clock, 230)
+            assert take() == [("alert", RED + " 告警  test-host\n時間：2026-09-22 10:03:50\n"
+                                        "・[ERROR] live.test_a4 L42 ×2：甲 失敗 #2\n"
+                                        "・[ERROR] live.test_a4 L43 ×1：乙 失敗")]
+            for i, t in ((3, 1000), (4, 2000), (5, 3000)):
+                emit(clock, t, logging.ERROR, "甲 失敗 #%d" % i, lineno=42)
+            tick(a, clock, 3829)
+            assert take() == []
+            tick(a, clock, 3830)
+            assert take() == [("remind", ALARM + " 仍未恢復  test-host\n時間：2026-09-22 11:03:50\n"
+                                         "・[ERROR] live.test_a4 L42 ×5：過去 1 小時又發生 3 次；最近一次：甲 失敗 #5")]
+            tick(a, clock, 7430)
+            assert take() == [("recovered", CHECK + " 已恢復  test-host\n時間：2026-09-22 12:03:50\n"
+                                            "・[ERROR] live.test_a4 L42 ×5：過去 1 小時沒有再發生（共 5 次）；甲 失敗 #5")]
+            tick(a, clock, 11030)
+            assert take() == []
+        handed = [m for m in cap.messages(logging.INFO) if "已交出" in m]
+        assert len(handed) == 3, handed
+
+
+def test_ac3_rejected_or_raising_sender_is_logged():
+    with ops_env(), capture("live.ops_alert") as cap:
+        clock = EpochClock()
+        sender = FakeSender(accept=False)
+        with make_alerter(clock, sender) as a:
+            tick(a, clock, 200)
+            emit(clock, 200, logging.ERROR, "被拒收", lineno=1)
+            tick(a, clock, 230)
+            assert any("沒有交出" in m for m in cap.messages(logging.WARNING)), cap.messages()
+            assert a._sent["alert"] == 0
+            assert not any("已交出" in m for m in cap.messages(logging.INFO))
+        clock = EpochClock()          # 新的告警器從 T0 起算寬限
+        sender = FakeSender()
+        sender.raise_exc = RuntimeError("壞掉")
+        with make_alerter(clock, sender) as a:
+            tick(a, clock, 200)
+            emit(clock, 200, logging.ERROR, "拋例外", lineno=2)
+            tick(a, clock, 230)
+            assert any("維運告警交給發送器時拋出例外" in m for m in cap.messages(logging.ERROR)), cap.messages()
+
+
+def test_ac3_errors_during_startup_grace_become_one_yellow_message():
+    with ops_env():
+        clock = EpochClock()
+        sender = FakeSender()
+        take = Taker(sender)
+        with make_alerter(clock, sender) as a:
+            emit(clock, 10, logging.ERROR, "丙 #1", lineno=50)
+            emit(clock, 20, logging.ERROR, "丙 #2", lineno=50)
+            emit(clock, 30, logging.ERROR, "丁", lineno=51)
+            tick(a, clock, 60)
+            tick(a, clock, 179)
+            assert take() == []
+            tick(a, clock, 180)
+            assert take() == [("grace", YELLOW + " 啟動期間的錯誤  test-host\n時間：2026-09-22 10:03:00\n"
+                                        "・[ERROR] live.test_a4 L50 ×2：丙 #2\n"
+                                        "・[ERROR] live.test_a4 L51 ×1：丁")]
+            emit(clock, 200, logging.ERROR, "丙 #3", lineno=50)
+            tick(a, clock, 3779)
+            assert take() == []
+            tick(a, clock, 3780)
+            got = take()
+            assert [k for k, _ in got] == ["remind"], got
+            assert "・[ERROR] live.test_a4 L50 ×3：過去 1 小時又發生 1 次；最近一次：丙 #3" in got[0][1], got
+            assert "L51" not in got[0][1]
+
+
+def test_ac3_critical_bypasses_grace_and_batching():
+    with ops_env():
+        clock = EpochClock()
+        sender = FakeSender()
+        take = Taker(sender)
+        with make_alerter(clock, sender) as a:
+            emit(clock, 10, logging.CRITICAL, "嚴重 甲", lineno=60)
+            tick(a, clock, 11)
+            got = take()
+            assert got == [("alert", message("alert", 11, "・[CRITICAL] live.test_a4 L60 ×1：嚴重 甲"))], got
+            emit(clock, 20, logging.ERROR, "乙 先是 ERROR", lineno=61)
+            tick(a, clock, 21)
+            assert take() == []
+            emit(clock, 22, logging.CRITICAL, "乙 變成 CRITICAL", lineno=61)
+            tick(a, clock, 23)
+            got = take()
+            assert got == [("alert", message("alert", 23, "・[CRITICAL] live.test_a4 L61 ×2：乙 變成 CRITICAL"))], got
+            tick(a, clock, 180)
+            assert take() == [], "寬限內的鍵已經整個移到 🔴，寬限結束不該再發 🟡"
+            emit(clock, 300, logging.ERROR, "丙", lineno=62)
+            tick(a, clock, 301)
+            assert take() == []
+            emit(clock, 305, logging.CRITICAL, "丁", lineno=63)
+            tick(a, clock, 306)
+            got = take()
+            assert got == [("alert", message("alert", 306, "・[ERROR] live.test_a4 L62 ×1：丙",
+                                             "・[CRITICAL] live.test_a4 L63 ×1：丁"))], got
+            emit(clock, 400, logging.ERROR, "戊", lineno=64)
+            tick(a, clock, 401)
+            assert take() == []
+            emit(clock, 402, logging.CRITICAL, "戊 嚴重", lineno=64)
+            tick(a, clock, 403)
+            got = take()
+            assert got == [("alert", message("alert", 403, "・[CRITICAL] live.test_a4 L64 ×2：戊 嚴重"))], got
+            assert sender.kinds().count("alert") == 4
+
+
+def test_ac3_errors_during_shutdown_go_into_the_shutdown_message():
+    with ops_env():
+        clock = EpochClock()
+        sender = FakeSender()
+        take = Taker(sender)
+        with make_alerter(clock, sender) as a:
+            tick(a, clock, 200)
+            emit(clock, 300, logging.ERROR, "己", lineno=70)
+            tick(a, clock, 301)
+            a.begin_shutdown()
+            emit(clock, 310, logging.ERROR, "庚 #1", lineno=71)
+            emit(clock, 310, logging.ERROR, "庚 #2", lineno=71)
+            emit(clock, 310, logging.ERROR, "辛", lineno=72)
+            tick(a, clock, 340)
+            assert take() == []
+            clock.t = T0 + 400
+            rc = a.finish("Ctrl+C", 0)
+            assert rc == 0
+            assert take() == [("shutdown", WHITE + " A 頻道程式結束  test-host\n時間：2026-09-22 10:06:40\n"
+                                           "運作時間：6 分 40 秒（自 2026-09-22 10:00:00 起）\n"
+                                           "結束原因：Ctrl+C\n"
+                                           "exit code：0\n"
+                                           "outbox 待送：—（outbox 還沒建立）\n"
+                                           "仍未恢復的條件：無\n"
+                                           "日誌佇列丟棄：0 筆\n"
+                                           "關閉過程中的 ERROR：3 筆\n"
+                                           "關閉前還沒發出的告警：1 項（一併列在下面）\n"
+                                           "・[ERROR] live.test_a4 L71 ×2：庚 #2\n"
+                                           "・[ERROR] live.test_a4 L72 ×1：辛\n"
+                                           "・[ERROR] live.test_a4 L70 ×1：己")]
+            assert sender.handler_at_stop is False, "拆 handler 要在維運發送器 stop() 之前"
+
+
+def test_ac3_grace_items_are_folded_into_the_shutdown_message():
+    with ops_env():
+        clock = EpochClock()
+        sender = FakeSender()
+        with make_alerter(clock, sender) as a:
+            emit(clock, 10, logging.ERROR, "壬 #1", lineno=80)
+            tick(a, clock, 15)
+            a.begin_shutdown()
+            emit(clock, 30, logging.ERROR, "壬 #2", lineno=80)
+            assert a.finish("Ctrl+C", 0) == 0
+        assert sender.kinds() == ["shutdown"], sender.kinds()
+        text = sender.texts("shutdown")[0]
+        for want in ("・[ERROR] live.test_a4 L80 ×2：壬 #2", "關閉過程中的 ERROR：1 筆",
+                     "關閉前還沒發出的告警：1 項（一併列在下面）"):
+            assert want in text, (want, text)
+
+
+# ============================== AC-4：條件 ==============================
+C1_CASES = (("A3", lambda w, v: setattr(w.tracker, "alive", v)),
+            ("A5", lambda w, v: setattr(w.s5, "alive", v)),
+            ("T2 pusher", lambda w, v: setattr(w.push, "alive", v)),
+            ("A 頻道發送器", lambda w, v: setattr(w.push.sender, "alive", v)),
+            ("R-A", lambda w, v: w.reporter.st.__setitem__("worker_alive", v)),
+            ("對帳", lambda w, v: setattr(w.reconciler, "alive", v)))
+
+
+def test_ac4_c1_each_component_raises_reminds_hourly_and_clears():
+    for label, set_alive in C1_CASES:
+        head = "・[條件] C1 執行緒不在（%s）：" % label
+        with world() as w:
+            w.reconciler._thread = object()
+            assert w.advance(540) == [], label
+            set_alive(w, False)
+            assert w.advance(600) == [("alert", message("alert", 600, head + DEAD))], label
+            assert w.advance(4199) == [], label
+            assert w.advance(4200) == [("remind", message("remind", 4200, head + "仍未恢復，已持續 1 小時；" + DEAD))]
+            assert w.advance(7800) == [("remind", message("remind", 7800, head + "仍未恢復，已持續 2 小時；" + DEAD))]
+            set_alive(w, True)
+            assert w.advance(8400) == [("recovered", message("recovered", 8400, head + "已恢復，持續了 2 小時 10 分"))]
+            assert w.advance(12000) == [], label
+
+
+def test_ac4_c2_a1_stall():
+    head = "・[條件] C2 A1 停擺："
+    with world() as w:
+        assert w.advance(600) == []
+        assert w.advance(1260, bar=False) == []
+        assert w.advance(1320, bar=False) == [("alert", message(
+            "alert", 1320, head + "已經 12 分沒有收到新的 K 棒結果（上限 11 分）"))]
+        assert w.advance(4920, bar=False) == [("remind", message(
+            "remind", 4920, head + "仍未恢復，已持續 1 小時；已經 1 小時 12 分沒有收到新的 K 棒結果（上限 11 分）"))]
+        assert w.advance(8520, bar=False) == [("remind", message(
+            "remind", 8520, head + "仍未恢復，已持續 2 小時；已經 2 小時 12 分沒有收到新的 K 棒結果（上限 11 分）"))]
+        assert w.advance(9000) == [("recovered", message("recovered", 9000, head + "已恢復，持續了 2 小時 8 分"))]
+    with world() as w:
+        assert w.advance(660, bar=False) == []
+        assert w.advance(720, bar=False) == [("alert", message(
+            "alert", 720, head + "啟動後已經 12 分還沒收到第一根 K 棒結果（上限 11 分）"))]
+        assert w.advance(780) == [("recovered", message("recovered", 780, head + "已恢復，持續了 1 分"))]
+
+
+def test_ac4_c3_a5_stall():
+    head = "・[條件] C3 A5 停擺："
+    with world() as w:
+        assert w.advance(540) == []
+        assert w.advance(600, minutes=9) == []
+        assert w.advance(780, minutes=0) == []
+        assert w.advance(840, minutes=0) == [("alert", message(
+            "alert", 840, head + "處理的分鐘數已經 4 分沒有增加（上限 3 分；目前累計 10 分鐘）"))]
+        assert w.advance(4440, minutes=0) == [("remind", message(
+            "remind", 4440, head + "仍未恢復，已持續 1 小時；處理的分鐘數已經 1 小時 4 分沒有增加（上限 3 分；目前累計 10 分鐘）"))]
+        assert w.advance(8040, minutes=0) == [("remind", message(
+            "remind", 8040, head + "仍未恢復，已持續 2 小時；處理的分鐘數已經 2 小時 4 分沒有增加（上限 3 分；目前累計 10 分鐘）"))]
+        assert w.advance(8100, minutes=1) == [("recovered", message("recovered", 8100, head + "已恢復，持續了 2 小時 1 分"))]
+
+
+def test_ac4_c4_outbox_stuck():
+    head = "・[條件] C4 A 頻道待送卡住："
+    with world() as w:
+        assert w.advance(540) == []
+        add_pending(w.push.path, "s4-C4-1", T0 + 600)
+        assert w.advance(1200) == []
+        assert w.advance(1260) == [("alert", message(
+            "alert", 1260, head + "最舊的待送列已經 11 分沒送出（上限 10 分；共 1 則待送）"))]
+        assert w.advance(4860) == [("remind", message(
+            "remind", 4860, head + "仍未恢復，已持續 1 小時；最舊的待送列已經 1 小時 11 分沒送出（上限 10 分；共 1 則待送）"))]
+        assert w.advance(8460) == [("remind", message(
+            "remind", 8460, head + "仍未恢復，已持續 2 小時；最舊的待送列已經 2 小時 11 分沒送出（上限 10 分；共 1 則待送）"))]
+        finalize(w.push.path, "s4-C4-1", OB.STATUS_DELIVERED, T0 + 8900)
+        assert w.advance(9000) == [("recovered", message("recovered", 9000, head + "已恢復，持續了 2 小時 9 分"))]
+
+
+def _counter_values(t):
+    if t < 120:
+        return 0
+    table = {120: 1, 180: 2, 240: 2, 300: 3, 360: 4, 420: 5}
+    if t in table:
+        return table[t]
+    return min(35, 5 + (t - 420) // 240)
+
+
+def test_ac4_c5_and_c6_counter_streaks():
+    for key, name, what in (("C6", "C6 A3 取數持續失敗", "A3 取數失敗"), ("C5", "C5 報表組不出來", "組報表失敗")):
+        head = "・[條件] %s：" % name
+        with world() as w:
+            got = []
+            desc_7860 = None
+            for t in range(60, 7921, 60):
+                v = _counter_values(t)
+                if key == "C6":
+                    w.tracker.st["fetch_failures"] = v
+                else:
+                    w.reporter.st["compose_errors"] = v
+                new = w.advance(t)
+                if new:
+                    got.append((t, new))
+                if t == 7860:
+                    desc_7860 = w.a._raised[key].desc
+            assert got == [
+                (420, [("alert", message("alert", 420, head + what + "連續 3 輪輪詢都有增加（累計 5 次）"))]),
+                (4020, [("remind", message("remind", 4020, head + "仍未恢復，已持續 1 小時；"
+                                           + what + "連續 1 輪輪詢都有增加（累計 20 次）"))]),
+                (7620, [("remind", message("remind", 7620, head + "仍未恢復，已持續 2 小時；"
+                                           + what + "連續 1 輪輪詢都有增加（累計 35 次）"))]),
+                (7920, [("recovered", message("recovered", 7920, head + "已恢復，持續了 2 小時 5 分"))]),
+            ], (key, got)
+            assert desc_7860 == what + "累計 35 次，已連續 4 輪輪詢沒有增加（連續 5 輪沒有增加才算恢復）", desc_7860
+            assert w.sender.kinds() == ["alert", "remind", "remind", "recovered"], w.sender.kinds()
+
+
+def test_ac4_components_that_never_started_are_not_reported():
+    with world(attach=False) as w:
+        w.tracker.alive = w.s5.alive = w.push.alive = w.reconciler.alive = False
+        w.reporter.st["worker_alive"] = False
+        assert w.advance(600) == [] and w.advance(1200) == []
+        assert w.sender.sent == []
+    with world() as w:
+        w.reconciler.alive = False
+        assert w.reconciler._thread is None
+        assert w.advance(600) == [], "對帳執行緒還沒啟動（_thread is None）不算不在"
+        w.reconciler._thread = object()
+        assert w.advance(660) == [("alert", message("alert", 660, "・[條件] C1 執行緒不在（對帳）：" + DEAD))]
+
+
+def test_ac4_c4_unreadable_outbox_neither_raises_nor_clears():
+    with world() as w, capture("live.ops_alert") as cap:
+        add_pending(w.push.path, "s4-C4-2", T0)
+        assert [k for k, _ in w.advance(660)] == ["alert"]
+        assert "C4" in w.a._raised
+        tmp = os.path.dirname(w.push.path)
+        w.a._outbox_path = os.path.join(tmp, "missing.sqlite3")
+        assert w.advance(720) == [] and w.advance(780) == []
+        assert "C4" in w.a._raised
+        warns = [m for m in cap.messages(logging.WARNING) if "維運告警讀不到 outbox（ReportError" in m]
+        assert len(warns) == 1, cap.messages(logging.WARNING)
+        garbage = os.path.join(tmp, "garbage.sqlite3")
+        with open(garbage, "wb") as f:
+            f.write(b"this is not a database " * 100)
+        w.a._outbox_path = garbage
+        assert w.advance(840) == [] and w.advance(900) == []
+        warns = [m for m in cap.messages(logging.WARNING) if "DatabaseError" in m]
+        assert len(warns) == 1, cap.messages(logging.WARNING)
+        assert "C4" in w.a._raised
+        w.a._outbox_path = None
+        assert w.advance(960) == [] and "C4" in w.a._raised
+        finalize(w.push.path, "s4-C4-2", OB.STATUS_DELIVERED, T0 + 1000)
+        assert w.advance(1020) == [("recovered", message(
+            "recovered", 1020, "・[條件] C4 A 頻道待送卡住：已恢復，持續了 6 分"))]
+    with world() as w:
+        add_pending(w.push.path, "s4-C4-3", T0)
+        w.a._outbox_path = os.path.join(os.path.dirname(w.push.path), "missing.sqlite3")
+        assert w.advance(660) == [] and w.advance(720) == []
+        assert "C4" not in w.a._raised
+
+
+def test_ac4_fr4_one_shot_events():
+    with world() as w:
+        w.a._wake.clear()
+        w.a.note_reconcile(SimpleNamespace(out_of_coverage=False))
+        assert not w.a._wake.is_set()
+        for _ in range(3):
+            w.a.note_reconcile(SimpleNamespace(out_of_coverage=True))
+        assert w.a._wake.is_set()
+        w.a.note_reconcile(None)          # 怪輸入也不拋
+        assert w.advance(240) == [] and w.advance(269) == []
+        assert w.advance(270) == [("alert", message(
+            "alert", 270, "・[事件] 對帳：3 個小時窗口超出 klines 涵蓋，沒有對帳（多半是停頓過久）"))]
+        w.reporter.st["skipped"] = 2
+        assert w.advance(300) == []
+        assert w.advance(330) == [("alert", message("alert", 330, "・[事件] 報表：2 期超過補發上限，跳過未發"))]
+        w.reporter.st["skipped"] = 3
+        assert w.advance(360) == []
+        assert w.advance(390) == [("alert", message("alert", 390, "・[事件] 報表：1 期超過補發上限，跳過未發"))]
+        assert w.advance(500) == []
+
+
+# ============================== AC-5：心跳 ==============================
+R = ("fetch_failed:api_error", "fetch_failed:banned", "late_bar", "buffer_gap")
+
+
+def test_ac5_three_heartbeats_with_exact_deltas():
+    windows = ((1, 46), (47, 94), (95, 142))
+    acc = [collections.Counter() for _ in windows]
+    reasons = [collections.Counter() for _ in windows]
+    with world() as w:
+        a, clock = w.a, w.clock
+        for i in range(1, 143):
+            wi = 0 if i <= 46 else (1 if i <= 94 else 2)
+            c = acc[wi]
+            now = T0 + 1800 * i
+            clock.t = now
+            bar_reasons = [[R[0]], [R[1]] if i % 2 == 0 else [], [R[2]] if i % 5 == 0 else [],
+                           [R[3]] if i % 11 == 0 else []]
+            for rs in bar_reasons:
+                a.note_bar(SimpleNamespace(degraded_reasons=rs, signals=[]))
+                reasons[wi].update(rs)
+            a.note_bar(SimpleNamespace(degraded_reasons=[], signals=[1] if i % 3 == 0 else []))
+            a.note_bar(SimpleNamespace(degraded_reasons=[], signals=[]))
+            c["bars"] += 6
+            c["degraded"] += sum(1 for rs in bar_reasons if rs)
+            c["s4_signals"] += i % 3 == 0
+            for k, inc in (("minutes", 30), ("degraded", i % 3 == 0), ("missed", i % 7 == 0),
+                           ("signals", i % 4 == 0)):
+                w.s5.st[k] += inc
+                c["s5_" + k] += inc
+            for k, inc in (("entries", i % 4 == 0), ("exits", i % 6 == 0), ("store_failures", i % 40 == 0)):
+                w.tracker.st[k] += inc
+                c[k] += inc
+            with OB.open_outbox(w.push.path) as ob:
+                for tag, kind, status, cond in (("ed", OB.KIND_ENTRY, OB.STATUS_DELIVERED, i % 10 == 0),
+                                                ("xd", OB.KIND_EXIT, OB.STATUS_DELIVERED, i % 15 == 0),
+                                                ("ee", OB.KIND_ENTRY, OB.STATUS_EXPIRED, i % 33 == 0),
+                                                ("ef", OB.KIND_ENTRY, OB.STATUS_FAILED, i % 45 == 0)):
+                    if cond:
+                        sid = "hb-%d-%s" % (i, tag)
+                        ob.insert(signal_id=sid, kind=kind, strategy="s4", symbol="ACE_USDT_PERP", event={},
+                                  snapshot={}, received_ms=int(now * 1000))
+                        ob.finalize(ob.get(sid, kind)["seq"], status, now_ms=int(now * 1000))
+                        c[tag] += 1
+            w.reporter.st["delivered"] += i % 48 == 0
+            c["ra_delivered"] += i % 48 == 0
+            if i == 70:
+                w.reporter.st["skipped"] += 1
+                c["ra_skipped"] += 1
+            if i >= 120:
+                w.reporter.st["worker_alive"] = False
+            w.gate.st["requests"] += 100 + i
+            w.gate.st["http_429"] += i % 50 == 0
+            c["requests"] += 100 + i
+            c["http_429"] += i % 50 == 0
+            if i % 9 == 0:
+                emit(clock, 1800 * i, logging.WARNING, "只計數的 WARNING", lineno=90)
+                c["warnings"] += 1
+            if i == 60:
+                emit(clock, 1800 * i, logging.ERROR, "心跳期間的 ERROR", lineno=91)
+                c["errors"] += 1
+            a.run_once(now)
+        assert w.sender.kinds() == ["heartbeat", "alert", "alert", "heartbeat", "alert"] + ["remind"] * 11 + \
+            ["heartbeat"], w.sender.kinds()
+        hbs = w.sender.texts("heartbeat")
+    assert [tuple(n for _, n in r.most_common(3)) for r in reasons] == [(46, 23, 9), (48, 24, 9), (48, 24, 10)]
+    spans = ["本次啟動以來 23.0 小時（自 2026-09-22 10:00:00 起）",
+             "上一次心跳以來 24.0 小時（自 2026-09-23 09:00:00 起）",
+             "上一次心跳以來 24.0 小時（自 2026-09-24 09:00:00 起）"]
+    uptimes = ["23 小時", "1 天 23 小時", "2 天 23 小時"]
+    times = ["2026-09-23 09:00:00", "2026-09-24 09:00:00", "2026-09-25 09:00:00"]
+    alerts = ["發出 0 則（%s 0、%s 0、%s 0、%s 0）；仍未恢復：無" % (RED, YELLOW, ALARM, CHECK),
+              "發出 2 則（%s 2、%s 0、%s 0、%s 0）；仍未恢復：無" % (RED, YELLOW, ALARM, CHECK),
+              "發出 12 則（%s 1、%s 0、%s 11、%s 0）；仍未恢復：C1 執行緒不在（R-A）" % (RED, YELLOW, ALARM, CHECK)]
+    for wi, text in enumerate(hbs):
+        c = acc[wi]
+        detail = "、".join("%s ×%d" % (r, n) for r, n in reasons[wi].most_common(3))
+        want = "\n".join([
+            HEART + " 每日心跳  " + LABEL,
+            "時間：" + times[wi],
+            "統計區間：" + spans[wi],
+            "運作時間：%s（自 2026-09-22 10:00:00 起）" % uptimes[wi],
+            "策略4 K 棒：處理 %d 根，其中 degraded %d 根（%s）" % (c["bars"], c["degraded"], detail),
+            "策略5 分鐘：處理 %d 分鐘，degraded %d、missed %d" % (c["s5_minutes"], c["s5_degraded"], c["s5_missed"]),
+            "原始訊號：策略4 %d 筆、策略5 %d 筆（含被持倉或冷卻擋掉的）" % (c["s4_signals"], c["s5_signals"]),
+            "A3：進場 %d、出場 %d、資料庫失敗 %d" % (c["entries"], c["exits"], c["store_failures"]),
+            "A 頻道：進場送達 %d、延遲不發 %d、永久失敗 %d、出場送達 %d" % (c["ed"], c["ee"], c["ef"], c["xd"]),
+            "報表：送達 %d、跳過 %d" % (c["ra_delivered"], c["ra_skipped"]),
+            "REST：請求 %d、429 %d 次" % (c["requests"], c["http_429"]),
+            "日誌：ERROR %d、WARNING %d、佇列丟棄 0" % (c["errors"], c["warnings"]),
+            "告警：" + alerts[wi],
+        ])
+        assert text == want, (wi, text, want)
+    assert [acc[i]["warnings"] for i in range(3)] == [5, 5, 5]
+    assert [acc[i]["errors"] for i in range(3)] == [0, 1, 0]
+
+
+def test_ac5_unattached_components_are_shown_as_not_started():
+    with world(attach=False) as w:
+        tick(w.a, w.clock, 82800)
+        texts = w.sender.texts("heartbeat")
+        assert len(texts) == 1, w.sender.kinds()
+        text = texts[0]
+        for want in ("\n策略5 分鐘：—（未啟動）\n",
+                     "\n原始訊號：策略4 0 筆、策略5 —（未啟動）（含被持倉或冷卻擋掉的）\n",
+                     "\nA3：—（未啟動）\n", "\nA 頻道：—（未啟動）\n", "\n報表：—（未啟動）\n", "\nREST：—（未啟動）\n",
+                     "\n策略4 K 棒：處理 1 根，其中 degraded 0 根\n"):
+            assert want in text, (want, text)
+
+
+def test_ac5_unreadable_component_is_skipped_once_and_recovers_next_time():
+    with world() as w, capture("live.ops_alert") as cap:
+        w.gate.fail = True
+        assert [k for k, _ in w.advance(82800)] == ["heartbeat"]
+        assert "\nREST：—（讀不到）\n" in w.sender.texts("heartbeat")[0]
+        warns = [m for m in cap.messages(logging.WARNING) if "讀 gate 的狀態失敗" in m]
+        assert len(warns) == 1, cap.messages(logging.WARNING)
+        w.gate.fail = False
+        w.gate.st["requests"] = 800
+        assert [k for k, _ in w.advance(169200)] == ["heartbeat"]
+        assert "\nREST：請求 800、429 0 次\n" in w.sender.texts("heartbeat")[1]
+
+
+# ============================== AC-6：訊息格式 ==============================
+def test_ac6_title_lines_of_all_seven_kinds():
+    assert OA.KINDS == ("startup", "grace", "alert", "remind", "recovered", "heartbeat", "shutdown")
+    for kind in OA.KINDS:
+        text = OA.compose(kind, T0, LABEL)
+        assert text.split("\n") == [TITLE[kind] + "  " + LABEL, "時間：2026-09-22 10:00:00"], text
+
+
+def test_ac6_sample_messages_full_text():
+    msgs = OA.sample_messages(now_s=T0, label=LABEL)
+    assert [k for k, _ in msgs] == ["ops-sample-%d" % i for i in range(1, 8)]
+    ev2 = "・[ERROR] live.notional_tracker L668 ×3："
+    fake2 = "[假資料] A3 資料庫寫入失敗：disk I/O error"
+    c2 = "・[條件] C2 A1 停擺："
+    want = [
+        message("startup", 0, "參數：--push-tg、--duration 10800 秒", "outbox 待送：0 則", "報表待送：0 期"),
+        message("grace", 0, "・[ERROR] live.a_channel_push L512 ×1：[假資料] outbox 記不回結果：database is locked"
+                            "（signal_id=s4-ACE_USDT_PERP-202609181535）"),
+        message("alert", 0, ev2 + fake2, c2 + "已經 12 分沒有收到新的 K 棒結果（上限 11 分）"),
+        message("remind", 0, ev2 + "過去 1 小時又發生 2 次；最近一次：" + fake2,
+                c2 + "仍未恢復，已持續 1 小時；已經 12 分沒有收到新的 K 棒結果（上限 11 分）"),
+        message("recovered", 0, ev2 + "過去 1 小時沒有再發生（共 3 次）；" + fake2, c2 + "已恢復，持續了 1 小時 12 分"),
+        message("heartbeat", 0,
+                "統計區間：本次啟動以來 3.0 小時（自 2026-09-22 07:00:00 起）",
+                "運作時間：3 小時（自 2026-09-22 07:00:00 起）",
+                "策略4 K 棒：處理 36 根，其中 degraded 2 根（fetch_failed:api_error ×2）",
+                "策略5 分鐘：處理 180 分鐘，degraded 1、missed 0",
+                "原始訊號：策略4 3 筆、策略5 1 筆（含被持倉或冷卻擋掉的）",
+                "A3：進場 3、出場 2、資料庫失敗 0",
+                "A 頻道：進場送達 3、延遲不發 0、永久失敗 0、出場送達 2",
+                "報表：送達 1、跳過 0",
+                "REST：請求 4321、429 0 次",
+                "日誌：ERROR 4、WARNING 12、佇列丟棄 0",
+                "告警：發出 3 則（%s 1、%s 0、%s 1、%s 1）；仍未恢復：無" % (RED, YELLOW, ALARM, CHECK)),
+        message("shutdown", 0,
+                "運作時間：3 小時（自 2026-09-22 07:00:00 起）",
+                "結束原因：到達 --duration（10800 秒）",
+                "exit code：0",
+                "outbox 待送：0 則",
+                "仍未恢復的條件：無",
+                "日誌佇列丟棄：0 筆",
+                "關閉過程中的 ERROR：無"),
+    ]
+    for (key, text), w in zip(msgs, want):
+        assert text == "[測試] " + w, (key, text, w)
+
+
+def test_ac6_startup_fields_and_announce_started():
+    assert OA.startup_fields(None, "0 則", "0 期")[0] == ("參數", "--push-tg（不帶 --duration，跑到 Ctrl+C 為止）")
+    with ops_env():
+        clock = EpochClock()
+        sender = FakeSender()
+        with make_alerter(clock, sender) as a:
+            push, reporter = FPush(config.A_CHANNEL_OUTBOX_DB_PATH), FReporter()
+            add_pending(push.path, "s4-start-1", T0)
+            reporter.st["pending"] = 2
+            a.attach(push=push, reporter=reporter)
+            a.announce_started(None)
+        assert sender.texts("startup") == [message("startup", 0, "參數：--push-tg（不帶 --duration，跑到 Ctrl+C 為止）",
+                                                   "outbox 待送：1 則", "報表待送：2 期")], sender.sent
+    with ops_env():
+        sender = FakeSender()
+        with make_alerter(EpochClock(), sender) as a:
+            a.announce_started(60)
+        text = sender.texts("startup")[0]
+        assert "\n參數：--push-tg、--duration 60 秒\n" in text and text.endswith("\n報表待送：—（未啟動）"), text
+        assert "\noutbox 待送：—（outbox 還沒建立）\n" in text, text
+
+
+def test_ac6_item_clipping_and_whitespace():
+    assert OA._clip("a" * 200) == "a" * 200
+    assert OA._clip("a" * 201) == "a" * 199 + "…"
+    assert OA._clip("a" * 500) == "a" * 199 + "…" and len(OA._clip("a" * 500)) == 200
+    assert OA._clip("第一行\n  第二行\t\t第三行  ") == "第一行 第二行 第三行"
+
+
+def test_ac6_message_level_truncation_by_count_and_by_utf16_length():
+    items = [("k%d" % i, "[ERROR] x L%d ×1" % i, "訊息 %d" % i) for i in range(15)]
+    lines = OA.compose("alert", T0, LABEL, items=items).split("\n")
+    assert len([ln for ln in lines if ln.startswith("・")]) == 10
+    assert lines[-1] == "…另有 5 項（見日誌）"
+    big = [("k%d" % i, "[ERROR] x L%d ×1" % i, RED * 199) for i in range(15)]
+    text = OA.compose("alert", T0, LABEL, items=big)
+    assert utf16_units(text) <= config.TG_MAX_MESSAGE_CHARS, utf16_units(text)
+    lines = text.split("\n")
+    shown = len([ln for ln in lines if ln.startswith("・")])
+    assert lines[-1].startswith("…另有 ") and lines[-1].endswith(" 項（見日誌）"), lines[-1]
+    hidden = int(lines[-1][len("…另有 "):-len(" 項（見日誌）")])
+    assert shown + hidden == 15 and hidden > 5, (shown, hidden)
+
+
+# ============================== AC-7：包過的 on_result ==============================
+def test_ac7_wrapper_still_calls_a3_when_the_alert_thread_crashed():
+    with ops_env():
+        clock = EpochClock()
+        sender = FakeSender()
+        with make_alerter(clock, sender, run_thread=True) as a:
+            clock.fail = True
+            a._wake.set()
+            wait_until(lambda: a.crashed and not a.worker_alive, "告警執行緒意外結束")
+            assert a.wrap_on_result(lambda r: "A3-result")(None) == "A3-result"
+            clock.fail = False
+            rc = a.finish("Ctrl+C", 0)
+            assert rc == 1
+            text = sender.texts("shutdown")[0]
+            assert "\n告警執行緒：執行中意外結束（見日誌），之後沒有再發告警" in text, text
+            assert "\nexit code：1\n" in text, text
+
+
+def test_ac7_wrapper_still_calls_a3_when_the_alert_thread_is_stuck():
+    saved = config.OPS_ALERT_STOP_TIMEOUT_SECONDS
+    try:
+        with ops_env():
+            clock = EpochClock()
+            sender = FakeSender()
+            with make_alerter(clock, sender, run_thread=True) as a:
+                clock.t = T0 + 200
+                sender.gate = threading.Event()
+                emit(clock, 200, logging.CRITICAL, "卡住", lineno=7)
+                wait_until(sender.entered.is_set, "告警執行緒卡在 send()")
+                assert a.wrap_on_result(lambda r: "A3")(None) == "A3"
+                config.OPS_ALERT_STOP_TIMEOUT_SECONDS = 0.05
+                rc = a.finish("Ctrl+C", 0)
+                assert rc == 1
+                text = sender.texts("shutdown")[0]
+                assert "\n告警執行緒：沒有在 0.05 秒內結束（見日誌）" in text, text
+                sender.gate.set()
+                a._thread.join(10)
+                assert not a.worker_alive
+    finally:
+        config.OPS_ALERT_STOP_TIMEOUT_SECONDS = saved
+
+
+def test_ac7_a3_exception_propagates_unchanged():
+    with ops_env():
+        with make_alerter(EpochClock()) as a:
+            boom = ValueError("A3 壞了")
+
+            def a3(res):
+                raise boom
+            try:
+                a.wrap_on_result(a3)(None)
+            except ValueError as e:
+                assert e is boom
+            else:
+                raise AssertionError("A3 的例外應該原樣往外拋")
+            assert a._bars == 1
+
+
+# ============================== AC-8：live.a_channel 的接線 ==============================
+class OTracker:
+    def __init__(self, order, ready=True):
+        self.order = order
+        self.ready = ready
+        self.specs = {}
+        self.stats = {"fetch_failures": 0, "entries": 0, "exits": 0, "store_failures": 0}
+        self.ready_error = None if ready else "假的：資料庫開不了"
+        self.handler = lambda res: None
+        self.worker_alive = True
+
+    def start(self):
+        self.order.append("A3.start")
+
+    def wait_ready(self, timeout=None):
+        return self.ready
+
+    def stop(self):
+        self.order.append("A3.stop")
+
+    def join(self, timeout=None):
+        return True
+
+    def bar_result_handler(self, strategy):
+        return self.handler
+
+
+class OSender:
+    def __init__(self, order):
+        self.order = order
+
+    def start(self):
+        self.order.append("T2sender.start")
+
+    def stop(self, timeout=None):
+        self.order.append("T2sender.stop")
+        return 0
+
+    def stats(self):
+        return {"worker_alive": True}
+
+
+class OPush:
+    def __init__(self, sender, order, tmp, fail_start=False):
+        self.sender = sender
+        self.order = order
+        self.path = os.path.join(tmp, "absent", "outbox.sqlite3")
+        self.fail_start = fail_start
+        self.stats = {"fake": True}
+        self.worker_alive = True
+
+    def start(self):
+        self.order.append("T2.start")
+        if self.fail_start:
+            raise RuntimeError("假的：outbox 開不了")
+
+    def subscribe(self, bus):
+        pass
+
+    def set_specs(self, specs):
+        pass
+
+    def shutdown(self):
+        self.order.append("T2.shutdown")
+
+
+class OReporter:
+    def __init__(self, order, fail_start=False, crashed=False):
+        self.order = order
+        self.fail_start = fail_start
+        self.crashed = crashed
+        self.path = "reports.sqlite3"
+
+    def start(self):
+        self.order.append("RA.start")
+        if self.fail_start:
+            raise RuntimeError("假的：發送紀錄開不了")
+
+    def stop(self):
+        self.order.append("RA.stop")
+        return True
+
+    def stats(self):
+        return {"worker_crashed": self.crashed, "pending": 0, "worker_alive": not self.crashed,
+                "compose_errors": 0, "skipped": 0, "delivered": 0}
+
+
+class OS5:
+    def __init__(self, order, fail_start=False):
+        self.order = order
+        self.fail_start = fail_start
+
+    def start(self):
+        self.order.append("A5.start")
+        if self.fail_start:
+            raise RuntimeError("假的：A5 起不來")
+
+    def close(self, timeout=None):
+        self.order.append("A5.close")
+        return True
+
+    def stats(self):
+        return {"minutes": 0, "worker_crashed": False, "worker_alive": True, "degraded": 0, "missed": 0,
+                "signals": 0}
+
+
+class OFeed:
+    def __init__(self, order, exc=None):
+        self.order = order
+        self.exc = exc
+        self.gate = FGate()
+        self.reconciler = FReconciler()
+
+    def run(self, duration_s=None):
+        self.order.append("A1.run")
+        if self.exc is not None:
+            raise self.exc
+
+    def close(self):
+        self.order.append("A1.close")
+
+
+def run_main(argv, **kw):
+    with capture("live.a_channel") as cap:
+        rc = a_channel.main(argv, setup_logging=False, **kw)
+    return rc, cap
+
+
+@contextlib.contextmanager
+def ac8_env():
+    with ops_env() as tmp:
+        order = []
+        sender = FakeSender(order)
+        a = OA.OpsAlerter(sender=sender, clock=EpochClock(), label=LABEL)
+        try:
+            yield tmp, order, sender, a
+        finally:
+            _shutdown_alerter(a)
+
+
+def factories(a, order, tmp, *, tracker=None, push_fail=False, reporter=None, s5=None, feed=None):
+    tracker = tracker or OTracker(order)
+    reporter = reporter or OReporter(order)
+    s5 = s5 or OS5(order)
+    feed = feed or OFeed(order)
+    t2sender = OSender(order)
+    return dict(alerter_factory=lambda: a,
+                tracker_factory=lambda bus: tracker,
+                sender_factory=lambda: t2sender,
+                pusher_factory=lambda s: OPush(s, order, tmp, push_fail),
+                reporter_factory=lambda s: reporter,
+                s5_feed_factory=lambda f, t: s5,
+                feed_factory=lambda on_result: feed)
+
+
+def _no_a4_left():
+    assert not any(isinstance(h, OA._AlertHandler) for h in logging.getLogger().handlers), "handler 沒拆"
+    assert not _threads(OA.THREAD_NAME) and not _threads(OA.SENDER_THREAD_NAME), "A4 的執行緒還活著"
+
+
+def test_ac8_without_the_flag_nothing_changes():
+    with ac8_env() as (tmp, order, sender, a), secret_reads_forbidden() as seen:
+        called = []
+        tracker = OTracker(order)
+        got_on_result = []
+        kw = factories(a, order, tmp, tracker=tracker)
+        feed = OFeed(order)
+        kw["alerter_factory"] = lambda: called.append(1) or a
+        kw["feed_factory"] = lambda on_result: got_on_result.append(on_result) or feed
+        rc, _ = run_main(["--duration", "5"], **kw)
+        assert rc == 0
+        assert called == [] and seen == [], (called, seen)
+        assert got_on_result == [tracker.handler] and got_on_result[0] is tracker.handler
+        assert sender.sent == [] and "ops.start" not in order
+        assert order == ["A3.start", "A5.start", "A1.run", "A5.close", "A1.close", "A3.stop"], order
+        _no_a4_left()
+
+
+def test_ac8_default_feed_wires_note_reconcile_only_with_the_flag():
+    saved = a_channel.SignalFeed, reconcile.Reconciler, rest_gate.shared_gate
+    seen = []
+
+    def fake_reconciler(gate, *, on_result=None, **kw):
+        seen.append(on_result)
+        return FReconciler()
+    try:
+        alerters = []
+        for flag in (False, True):
+            with ac8_env() as (tmp, order, sender, a):
+                alerters.append(a)
+                feed = OFeed(order)
+                a_channel.SignalFeed = lambda gate, on_result, reconciler: feed
+                reconcile.Reconciler = fake_reconciler
+                rest_gate.shared_gate = FGate
+                kw = factories(a, order, tmp)
+                del kw["feed_factory"]
+                rc, _ = run_main(["--duration", "5"] + (["--push-tg"] if flag else []), **kw)
+                assert rc == 0, flag
+        assert len(seen) == 2 and seen[0] is None, seen
+        assert seen[1] == alerters[1].note_reconcile, seen
+    finally:
+        a_channel.SignalFeed, reconcile.Reconciler, rest_gate.shared_gate = saved
+
+
+def test_ac8_a_channel_does_not_import_ops_alert_at_module_level():
+    with open(os.path.join(REPO_ROOT, "live", "a_channel.py"), encoding="utf-8") as f:
+        tree = ast.parse(f.read())
+    for node in tree.body:
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            names = [n.name for n in node.names] + [getattr(node, "module", None) or ""]
+            assert not any("ops_alert" in n for n in names), ast.dump(node)
+
+
+def test_ac8_missing_ops_secret_exits_1_before_t2_a3_a1():
+    with ac8_env() as (tmp, order, sender, a), tgt.env_vars({config.OPS_CHAT_ID_ENV: None}):
+        kw = factories(a, order, tmp)
+        del kw["alerter_factory"]
+        rc, cap = run_main(["--push-tg", "--duration", "5"], **kw)
+        assert rc == 1
+        assert order == [], order
+        errors = cap.messages(logging.ERROR)
+        assert any(config.OPS_CHAT_ID_ENV in m and "不啟動" in m for m in errors), errors
+        assert not find_leaks(cap.messages(), SECRETS)
+        _no_a4_left()
+
+
+def test_ac8_normal_run_order_and_messages():
+    with ac8_env() as (tmp, order, sender, a):
+        rc, _ = run_main(["--push-tg", "--duration", "5"], **factories(a, order, tmp))
+        assert rc == 0
+        assert sender.kinds() == ["startup", "shutdown"], sender.kinds()
+        start = sender.texts("startup")[0]
+        for want in ("\n參數：--push-tg、--duration 5 秒\n", "\noutbox 待送：—（outbox 還沒建立）\n", "\n報表待送：0 期"):
+            assert want in start, (want, start)
+        end = sender.texts("shutdown")[0]
+        for want in ("\n結束原因：到達 --duration（5 秒）\n", "\nexit code：0\n"):
+            assert want in end, (want, end)
+        assert order[0] == "ops.start", order
+        i_start = order.index("ops.send:ops-startup")
+        assert order.index("A5.start") < i_start and order.index("RA.start") < i_start < order.index("A1.run"), order
+        assert order[-7:] == ["A5.close", "A1.close", "A3.stop", "RA.stop", "T2.shutdown", "ops.send:ops-shutdown",
+                              "ops.stop"], order
+        assert sender.handler_at_stop is False
+        _no_a4_left()
+
+
+def test_ac8_run_outcomes_reason_and_exit_code():
+    cases = ((KeyboardInterrupt(), {}, 0, ("結束原因：Ctrl+C",)),
+             (UniverseUnavailable("x"), {}, 1, ("結束原因：UniverseUnavailable", "無法取得標的池", "exit code：1")),
+             (None, {"crashed": True}, 1, ("關閉過程中的 ERROR：1 筆", "exit code：1")))
+    for exc, rep_kw, want_rc, wants in cases:
+        with ac8_env() as (tmp, order, sender, a):
+            kw = factories(a, order, tmp, feed=OFeed(order, exc), reporter=OReporter(order, **rep_kw))
+            rc, _ = run_main(["--push-tg", "--duration", "5"], **kw)
+            assert rc == want_rc, (exc, rc)
+            assert sender.kinds() == ["startup", "shutdown"], sender.kinds()
+            end = sender.texts("shutdown")[0]
+            for want in wants:
+                assert want in end, (want, end)
+            _no_a4_left()
+    with ac8_env() as (tmp, order, sender, a):
+        boom = RuntimeError("沒料到的")
+        kw = factories(a, order, tmp, feed=OFeed(order, boom))
+        try:
+            run_main(["--push-tg", "--duration", "5"], **kw)
+        except RuntimeError as e:
+            assert e is boom
+        else:
+            raise AssertionError("未預期的例外應該原樣往外拋")
+        end = sender.texts("shutdown")[0]
+        assert "\n結束原因：未預期的例外 RuntimeError\n" in end and "\nexit code：1\n" in end, end
+        _no_a4_left()
+
+
+def test_ac8_start_failures_send_only_the_shutdown_message():
+    cases = (("T2", {"push_fail": True}, "啟動失敗：T2（A 頻道推播）", "A 頻道推播的 outbox 開不了", "A3.start"),
+             ("A3", {"tracker": "not-ready"}, "啟動失敗：A3 資料庫", "A3 的資料庫沒有在", "RA.start"),
+             ("R-A", {"reporter": "fail"}, "啟動失敗：R-A 報表", "A 頻道報表（R-A）建立或啟動失敗", "A5.start"),
+             ("A5", {"s5": "fail"}, "啟動失敗：A5", "策略五資料層（A5）建立或啟動失敗", "A1.run"))
+    for what, opts, reason, logged, never in cases:
+        with ac8_env() as (tmp, order, sender, a):
+            kw = {}
+            if opts.get("push_fail"):
+                kw["push_fail"] = True
+            if opts.get("tracker"):
+                kw["tracker"] = OTracker(order, ready=False)
+            if opts.get("reporter"):
+                kw["reporter"] = OReporter(order, fail_start=True)
+            if opts.get("s5"):
+                kw["s5"] = OS5(order, fail_start=True)
+            rc, _ = run_main(["--push-tg", "--duration", "5"], **factories(a, order, tmp, **kw))
+            assert rc == 1, what
+            assert sender.kinds() == ["shutdown"], (what, sender.kinds())
+            end = sender.texts("shutdown")[0]
+            assert "\n結束原因：%s\n" % reason in end and "\nexit code：1\n" in end, (what, end)
+            assert logged in end, (what, logged, end)
+            assert never not in order, (what, order)
+            assert order[-2:] == ["ops.send:ops-shutdown", "ops.stop"], (what, order)
+            _no_a4_left()
+
+
+# ============================== --sample ==============================
+def test_sample_sends_seven_test_messages_to_the_ops_chat():
+    for plan, want_rc, want_text in (((), OA.EXIT_SENT, "已送達 7"),
+                                     ((http_error(400, "Bad Request: chat not found"),), OA.EXIT_FAILED, "最後錯誤")):
+        with harness() as h, tgt.env_vars({config.OPS_CHAT_ID_ENV: FAKE_OPS}):
+            h.tg.plan(*plan)
+
+            def factory():
+                return h.sender(chat_id_env=config.OPS_CHAT_ID_ENV, thread_name=OA.SENDER_THREAD_NAME,
+                                log_label=OA.SENDER_LOG_LABEL)
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                rc = OA.sample(sender_factory=factory)
+            assert rc == want_rc, (rc, out.getvalue())
+            assert want_text in out.getvalue(), out.getvalue()
+            assert len(h.tg.calls) == 7
+            assert all(c.payload["text"].startswith("[測試]") for c in h.tg.calls)
+            assert all(c.payload["chat_id"] == FAKE_OPS for c in h.tg.calls)
+            assert not find_leaks([out.getvalue()] + h.logs.lines, SECRETS)
+            wait_until(lambda: not _threads(OA.SENDER_THREAD_NAME), "tg-ops-sender 結束")
+
+
+def test_sample_without_secrets_reports_not_tested_and_stays_offline():
+    called = []
+    with tgt.env_vars({config.TG_BOT_TOKEN_ENV: None, config.OPS_CHAT_ID_ENV: None}), OfflineCage() as cage:
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            rc = OA.sample(sender_factory=lambda: called.append(1))
+    assert rc == OA.EXIT_NOT_TESTED == 3, rc
+    text = out.getvalue()
+    assert "未實測" in text and config.TG_BOT_TOKEN_ENV in text and config.OPS_CHAT_ID_ENV in text, text
+    assert called == [] and not cage.attempts and not cage.sleeps
+
+
+def test_main_without_sample_flag_is_a_usage_error():
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        try:
+            OA.main([])
+        except SystemExit as e:
+            assert e.code == 2, e.code
+        else:
+            raise AssertionError("沒帶 --sample 應該是用法錯誤（argparse exit 2）")
+
+
+# ============================== AC-11：參數 ==============================
+def test_ac11_params_in_execution_params_and_python_m_live_and_env_listed_by_name_only():
+    ops_names = sorted(n for n in dir(config) if n.startswith("OPS_") and n != "OPS_CHAT_ID_ENV")
+    assert len(ops_names) == 15, ops_names
+    names = ops_names + ["A3_STORE_RETRY_DELAYS_SECONDS", "TG_MAX_MESSAGE_CHARS"]
+    params = config.execution_params()
+    for n in names:
+        assert params[n] == getattr(config, n), n
+    assert not any(k.endswith("_ENV") for k in params), [k for k in params if k.endswith("_ENV")]
+    assert (config.OPS_ALERT_INSTANCE_LABEL, config.OPS_ALERT_POLL_SECONDS, config.OPS_ALERT_BATCH_SECONDS,
+            config.OPS_ALERT_REMIND_SECONDS, config.OPS_ALERT_STARTUP_GRACE_SECONDS, config.OPS_ALERT_QUEUE_MAX,
+            config.OPS_ALERT_ITEM_MAX_CHARS, config.OPS_ALERT_MAX_ITEMS, config.OPS_ALERT_STOP_TIMEOUT_SECONDS,
+            config.OPS_HEARTBEAT_TIME_TPE, config.OPS_A1_STALL_SECONDS, config.OPS_A5_STALL_SECONDS,
+            config.OPS_OUTBOX_STUCK_SECONDS, config.OPS_COUNTER_RAISE_POLLS, config.OPS_COUNTER_CLEAR_POLLS,
+            config.A3_STORE_RETRY_DELAYS_SECONDS, config.TG_MAX_MESSAGE_CHARS) == \
+        (None, 60, 30, 3600, 180, 1000, 200, 10, 30, "09:00", 660, 180, 600, 3, 5, (60, 120, 300, 600, 900), 4096)
+    assert config.SECRET_ENV_VARS[config.OPS_CHAT_ID_ENV] == "Telegram A4 維運告警私人聊天的 chat id"
+    for with_secrets in (True, False):
+        overrides = {config.TG_BOT_TOKEN_ENV: FAKE_TOKEN, config.TG_CHANNEL_ID_ENV: FAKE_CHAT,
+                     config.OPS_CHAT_ID_ENV: FAKE_OPS} if with_secrets else {}
+        r = subprocess.run([sys.executable, "-m", "live"], cwd=REPO_ROOT, env=tgt._child_env(**overrides),
+                           stdin=subprocess.DEVNULL, capture_output=True, timeout=120)
+        out = r.stdout.decode("utf-8", "replace")
+        err = r.stderr.decode("utf-8", "replace")
+        assert r.returncode == 0, (r.returncode, out[-2000:], err[-2000:])
+        for n in names:
+            assert "  %-28s: %s" % (n, params[n]) in out, n
+        state = "已設定" if with_secrets else "未設定"
+        line = "  %-28s: %s  (%s)" % (config.OPS_CHAT_ID_ENV, state, config.SECRET_ENV_VARS[config.OPS_CHAT_ID_ENV])
+        assert line in out, out[-1500:]
+        assert not find_leaks([out, err], SECRETS), "python -m live 印出了密鑰片段"
+
+
+def test_module_name_and_dependencies():
+    assert "ops_alert" not in sys.stdlib_module_names
+    with open(os.path.join(REPO_ROOT, "live", "ops_alert.py"), encoding="utf-8") as f:
+        tree = ast.parse(f.read())
+    top = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            top.update(a.name.split(".")[0] for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0:
+            top.add(node.module.split(".")[0])
+    extra = top - set(sys.stdlib_module_names) - {"live"}
+    assert not extra, "live/ops_alert.py 用了標準庫以外的套件：%s" % extra
+
+
+if __name__ == "__main__":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    # 測試輸出只看結果：根 logger 掛一個 NullHandler，WARNING 以上不會被 logging 的 lastResort 印到終端機
+    logging.getLogger().addHandler(logging.NullHandler())
+    runtime_existed = os.path.exists(paths.RUNTIME_DIR)
+    outbox_existed = os.path.exists(config.A_CHANNEL_OUTBOX_DB_PATH)
+    reports_existed = os.path.exists(config.A_CHANNEL_REPORT_DB_PATH)
+    pristine = (socket.socket.connect, socket.create_connection, socket.getaddrinfo, time.sleep)
+    tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
+    failed = 0
+    for name, fn in tests:
+        try:
+            fn()
+            print(f"PASS  {name}")
+        except Exception as e:  # noqa: BLE001
+            failed += 1
+            print(f"FAIL  {name}: {type(e).__name__}: {e}")
+    runner_failed = 0
+    if (socket.socket.connect, socket.create_connection, socket.getaddrinfo, time.sleep) != pristine:
+        runner_failed += 1
+        print("FAIL  <runner>: socket / time.sleep 沒有還原")
+    if os.path.exists(paths.RUNTIME_DIR) != runtime_existed or \
+            os.path.exists(config.A_CHANNEL_OUTBOX_DB_PATH) != outbox_existed or \
+            os.path.exists(config.A_CHANNEL_REPORT_DB_PATH) != reports_existed:
+        runner_failed += 1
+        print(f"FAIL  <runner>: 測試在真正的 runtime/ 留下了東西（{paths.RUNTIME_DIR}）")
+    leftover = [t.name for t in threading.enumerate()
+                if t.name in (OA.THREAD_NAME, OA.SENDER_THREAD_NAME, "tg-channel-sender") and t.is_alive()]
+    if leftover:
+        runner_failed += 1
+        print(f"FAIL  <runner>: 還有執行緒活著 {leftover}")
+    if any(isinstance(h, OA._AlertHandler) for h in logging.getLogger().handlers):
+        runner_failed += 1
+        print("FAIL  <runner>: root logger 上還掛著 A4 的 handler")
+    print(f"\n{len(tests) - failed} passed, {failed} failed"
+          + (f", {runner_failed} runner check(s) failed" if runner_failed else ""))
+    sys.exit(1 if failed or runner_failed else 0)

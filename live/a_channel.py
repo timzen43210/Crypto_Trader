@@ -19,22 +19,33 @@ live.a_channel — A 頻道的執行入口：A1 / A5（原始訊號）→ A3（�
     A1  live.signal_feed.SignalFeed      策略4；on_result = A3 的回呼（只排佇列，立刻返回）
     A5  live.s5_feed.S5Feed              策略5（自己的執行緒）；與 A1 共用閘門、價格緩衝、標的池，
                                          訊號送進 A3 的 submit_signal(strategy="s5")（只排佇列，立刻返回）
+    A4  live.ops_alert.OpsAlerter        維運告警（加 --push-tg 時）：root logger 上的 handler 收 ERROR / CRITICAL，
+                                         自己的執行緒 ops-alert 輪詢各元件狀態、每天心跳，經另一個 ChannelSender
+                                         （執行緒 tg-ops-sender）發到營運方的私人聊天（CRYPTO_TRADER_TG_OPS_CHAT_ID）
 
 **必須明確帶 --push-tg 才推播**（比照 T1′ 的 --smoke）。不帶時行為與 T2 之前完全相同：只有 EventLog，
 不開 outbox、不建報表的發送紀錄、沒有報表執行緒、不讀 TG 密鑰 —— 開發機的實跑（例如 A1 的長時間冒煙）不可以
 把訊息發進正式頻道。
 帶 --push-tg 時，**在 A3 啟動之前**依序做好（A3 的重啟補發會在啟動時就發布事件，T2 必須先接好）：
+  0. A4 維運告警（logsetup.setup() 之後、其他元件之前，之後各元件啟動時的 ERROR 都收得到）：維運發送器 start()、
+     掛 handler、啟動 ops-alert 執行緒。缺維運密鑰或啟動失敗 → 記 ERROR、exit 1，T2 / A3 / A1 都不啟動
   1. ChannelSender.start()：缺密鑰 → 記 ERROR、exit 1，A3 / A1 都不啟動
   2. ChannelPusher.start()：建 outbox、記一行 outbox 現況（待送幾則、各狀態累計）、啟動 T2 工作執行緒
   3. 訂閱兩種事件（EventLog 之後），接線自檢會列出 T2
   4. 主週期取自 A3 的策略規格（pusher.set_specs(tracker.specs)），再 tracker.start()
   5. A3 wait_ready 成功之後、A1 之前：ChannelReporter.start()（R-A；建發送紀錄、記一行現況、啟動報表執行緒）。
      建立或啟動失敗 → 記 ERROR、exit 1，A1 / A5 不啟動（已啟動的 A3 / T2 照 A5 啟動失敗的方式收掉）
+  6. 各元件建好之後交給 A4（alerter.attach(...)）；A1 的 on_result 包一層（先交給 A3，再記給 A4），
+     對帳的 on_result 是 A4 的 note_reconcile。全部啟動成功、feed.run() 之前 A4 發一則啟動訊息
+     （中途 exit 1 的路徑不發啟動訊息，只發結束訊息，原因寫「啟動失敗：<哪一步>」）
 關閉順序：A5（join）→ A1 → A3（join）→ R-A 報表（停止交出新的一則 → 記回已回報的結果 → 結束執行緒）
-→ T2（停止派送 → ChannelSender.stop() → 記回結果 → 結束工作執行緒）。
+→ T2（停止派送 → ChannelSender.stop() → 記回結果 → 結束工作執行緒）→ A4（加 --push-tg 時；最後停，
+結束訊息才寫得出 T2 停下來之後的待送數：停 ops-alert 執行緒 → 發結束訊息 → 拆 handler → 維運發送器 stop()）。
 訊號的產生者（A5、A1）都停了才停 A3，A3 停了才停報表與 T2；報表用 T2 的發送器，所以先停報表、再停 T2。
+開始關閉時先告訴 A4（begin_shutdown()），之後的 ERROR 不逐一告警，併進結束訊息。
 沒送完的留在 outbox，記 WARNING 寫明幾則，下次啟動再送；報表在途的那一則若結果沒記回來，下次啟動重送同一段文字。
 報表執行緒執行中意外結束 → 記 ERROR、不自動重啟（A1 / A5 / A3 / T2 照跑），結束時 exit 1。
+A4 的 ops-alert 執行緒執行中意外結束、或結束時停不下來 → 記 ERROR（其他元件照跑），結束時 exit 1。
 
 啟動時先做接線自檢：印出每種事件有幾個訂閱者（有任何一種是 0 就 exit 1，不跑）。A3 的工作執行緒開好
 資料庫之後才啟動 A1（開不了資料庫就 exit 1）；A3 的重啟復原在自己的執行緒裡做，期間 A1 / A5 交來的訊號
@@ -151,6 +162,23 @@ def start_push(bus, *, sender_factory=None, pusher_factory=None):
     return pusher
 
 
+def start_alerter(*, alerter_factory=None):
+    """--push-tg：logsetup.setup() 之後、start_push() 之前建立並啟動 A4 維運告警（OpsAlerter().start()）。
+    回傳 alerter；缺維運密鑰（MissingSecretError，訊息只含環境變數名）或啟動失敗記 ERROR 回 None，呼叫端 exit 1。
+    只有帶 --push-tg 才會 import / 建立告警器：不帶旗標時連維運的 chat id 都不讀。"""
+    from live.ops_alert import OpsAlerter
+    try:
+        alerter = (alerter_factory or OpsAlerter)()
+        alerter.start()
+    except config.MissingSecretError as e:
+        logger.error("--push-tg 需要維運告警的 Telegram 密鑰：%s 不啟動（T2 / A3 / A1 都沒有跑）", e)
+        return None
+    except Exception:  # noqa: BLE001 —— 收不到告警就不跑（FR-7）
+        logger.exception("--push-tg：維運告警（A4）建立或啟動失敗，不啟動（T2 / A3 / A1 都沒有跑）")
+        return None
+    return alerter
+
+
 def start_reporter(sender, *, reporter_factory=None):
     """--push-tg：A3 wait_ready 之後、A1 之前啟動 R-A 報表（ChannelReporter(sender).start()）。
     回傳 reporter；建立或啟動失敗（例如發送紀錄開不了）記 ERROR 回 None，呼叫端 exit 1。"""
@@ -188,7 +216,7 @@ def default_s5_feed(feed, tracker, **kw):
 
 
 def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=None, sender_factory=None,
-         pusher_factory=None, s5_feed_factory=None, reporter_factory=None):
+         pusher_factory=None, s5_feed_factory=None, reporter_factory=None, alerter_factory=None):
     """python -m live.a_channel 的進入點。回傳 exit code。
 
     tracker_factory(bus) / feed_factory(on_result) / s5_feed_factory(feed, tracker)：測試注入用（正式執行不給，
@@ -197,6 +225,7 @@ def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=No
     ChannelPusher(sender)）。
     reporter_factory(sender)：--push-tg 時 R-A 報表的測試注入（正式執行不給，用 ChannelReporter(sender)；
     sender 是 T2 的發送器）。
+    alerter_factory()：--push-tg 時 A4 維運告警的測試注入（正式執行不給，用 live.ops_alert.OpsAlerter()）。
     """
     parser = _SafeArgumentParser(
         prog="python -m live.a_channel",
@@ -207,7 +236,8 @@ def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=No
                         metavar="DIR", help="事件另外寫成 jsonl；只給旗標不給目錄時寫到 %s"
                                             % config.A3_EVENTS_RECORD_DIR)
     parser.add_argument("--push-tg", action="store_true",
-                        help="把進場 / 出場訊息與日報 / 10 日報 / 月報推播到 Telegram A 頻道（需要兩個 TG 密鑰；"
+                        help="把進場 / 出場訊息與日報 / 10 日報 / 月報推播到 Telegram A 頻道，並啟用 A4 維運告警"
+                             "（需要三個 TG 密鑰；"
                              "outbox 在 %s，報表發送紀錄在 %s）。不帶就只記錄事件，不讀密鑰、不建 outbox 與發送紀錄"
                              % (config.A_CHANNEL_OUTBOX_DB_PATH, config.A_CHANNEL_REPORT_DB_PATH))
     args = parser.parse_args(argv)
@@ -221,6 +251,17 @@ def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=No
             parser.error(str(e).replace("--record", "--events-jsonl"))
 
     log_path = logsetup.setup() if setup_logging else None
+    alerter = None
+    if args.push_tg:
+        # A4 最先啟動：之後各元件啟動時的 ERROR 都收得到
+        alerter = start_alerter(alerter_factory=alerter_factory)
+        if alerter is None:
+            return 1
+
+    def finish(reason, rc):
+        """最後一步：A4 發結束訊息、停下來，回傳最終的 exit code（不帶 --push-tg 時原樣回傳）。"""
+        return rc if alerter is None else alerter.finish(reason, rc)
+
     gate_box = []
 
     def gate():
@@ -233,7 +274,8 @@ def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=No
 
     def default_feed(on_result):
         from live.reconcile import Reconciler
-        return SignalFeed(gate=gate(), on_result=on_result, reconciler=Reconciler(gate()))
+        on_reconcile = None if alerter is None else alerter.note_reconcile
+        return SignalFeed(gate=gate(), on_result=on_result, reconciler=Reconciler(gate(), on_result=on_reconcile))
 
     bus = SignalBus()
     event_log = EventLog(events_dir)
@@ -245,7 +287,8 @@ def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=No
         push = start_push(bus, sender_factory=sender_factory, pusher_factory=pusher_factory)
         if push is None:
             event_log.close()
-            return 1
+            return finish("啟動失敗：T2（A 頻道推播）", 1)
+        alerter.attach(push=push)
     ok, text = wiring_report(bus)
     logger.info("A 頻道啟動：duration %s、事件 jsonl %s、日誌 %s", args.duration, event_log.path or "不寫",
                 log_path or "（未設定）")
@@ -256,7 +299,7 @@ def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=No
         if push is not None:
             push.shutdown()
         event_log.close()
-        return 1
+        return finish("啟動失敗：接線自檢", 1)
     logger.info("接線自檢：%s", text)
 
     tracker = (tracker_factory or default_tracker)(bus)
@@ -275,7 +318,9 @@ def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=No
         if push is not None:
             push.shutdown()
         event_log.close()
-        return 1
+        return finish("啟動失敗：A3 資料庫", 1)
+    if alerter is not None:
+        alerter.attach(tracker=tracker)
     reporter = None
     if push is not None:
         # R-A 報表用 T2 的發送器；A3 開好資料庫之後、A1 之前啟動
@@ -285,10 +330,15 @@ def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=No
             tracker.join(config.A3_JOIN_TIMEOUT_SECONDS)
             push.shutdown()
             event_log.close()
-            return 1
+            return finish("啟動失敗：R-A 報表", 1)
         logger.info("A 頻道報表：已啟用（--push-tg），發送紀錄 %s", reporter.path)
+        alerter.attach(reporter=reporter)
 
-    feed = (feed_factory or default_feed)(tracker.bar_result_handler(A1_STRATEGY))
+    on_result = tracker.bar_result_handler(A1_STRATEGY)
+    if alerter is not None:
+        # 先交給 A3（原本的回呼），finally 再記給 A4（C2 與心跳）；A3 那邊的例外照樣往外拋
+        on_result = alerter.wrap_on_result(on_result)
+    feed = (feed_factory or default_feed)(on_result)
     s5 = None
     try:
         s5 = (s5_feed_factory or default_s5_feed)(feed, tracker)
@@ -305,17 +355,33 @@ def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=No
         if push is not None:
             push.shutdown()
         event_log.close()
-        return 1
+        return finish("啟動失敗：A5", 1)
+    if alerter is not None:
+        alerter.attach(feed=feed, s5=s5)
+        alerter.announce_started(args.duration)
     rc = 0
+    if args.duration is None:
+        reason = "主迴圈結束"
+    else:
+        reason = "到達 --duration（%s 秒）" % format(args.duration, "g")
     try:
         feed.run(duration_s=args.duration)
     except KeyboardInterrupt:
         logger.info("收到 Ctrl+C，結束")
+        reason = "Ctrl+C"
     except UniverseUnavailable as e:
         logger.error("無法取得標的池，結束：%s", e)
+        reason = "UniverseUnavailable"
         rc = 1
+    except BaseException as e:
+        # 例外本身照原樣往外拋；先記下類型名稱給 A4 的結束訊息
+        reason = "未預期的例外 %s" % type(e).__name__
+        rc = 1
+        raise
     finally:
-        # 產生者先停（A5 → A1），再停 A3、報表，最後 T2
+        # 產生者先停（A5 → A1），再停 A3、報表，再 T2，最後 A4
+        if alerter is not None:
+            alerter.begin_shutdown()
         if not s5.close():
             rc = rc or 1
         s5_stats = s5.stats()
@@ -340,6 +406,8 @@ def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=No
         logger.info("A3 總結：%s；事件 %d 個%s", tracker.stats, event_log.count,
                     "；REST %s" % gate_box[0].stats() if gate_box else "")
         event_log.close()
+        # A4 最後停：結束訊息寫得出 T2 停下來之後的待送數
+        rc = finish(reason, rc)
     return rc
 
 

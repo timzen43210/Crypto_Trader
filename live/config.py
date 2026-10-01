@@ -369,6 +369,57 @@ A_CHANNEL_REPORT_DB_PATH = os.path.join(RUNTIME_DIR, "db", "a_channel_reports.sq
 A_CHANNEL_REPORT_READY_TIMEOUT_SECONDS = 30
 A_CHANNEL_REPORT_JOIN_TIMEOUT_SECONDS = 30
 
+# ---- A3 資料庫失敗退避（A3，live/notional_tracker.py）----
+# 連續第 k 次資料庫失敗之後，最早要過多少秒才再嘗試重建（開庫 + 重新判定 open 部位）：取第 min(k, 長度) 項。
+# 退避中的 tick 直接返回，不開庫、不取數；作廢期間收到的訊號照舊延後。任何一次重建成功就從頭算。
+# 寫成明列的表而不是算式：notional_tracker.py 不可以有 0、1、1000 以外的數字字面值（tests 的 test_ac7 掃描）。
+A3_STORE_RETRY_DELAYS_SECONDS = (60, 120, 300, 600, 900)
+
+# ---- 最小營運告警（A4，live/ops_alert.py；只在 python -m live.a_channel --push-tg 時啟用）----
+# 設計理由與各規則寫在 live/ops_alert.py 的 docstring，這裡只放值。
+# 每則訊息標題後面的機器標籤，用來分辨 laptop 測試與正式主機。None = socket.gethostname()。
+OPS_ALERT_INSTANCE_LABEL = None
+
+# 告警執行緒多久輪詢一次各元件的 stats（條件告警 C1～C6、R-A 跳過）。
+OPS_ALERT_POLL_SECONDS = 60
+
+# 日誌事件告警：一個新的鍵出現後，再等這麼多秒把同一段時間出現的新鍵收齊，併成一則 🔴。
+OPS_ALERT_BATCH_SECONDS = 30
+
+# 持續性的問題（還沒恢復的事件鍵與條件）多久提醒一次 ⏰；事件鍵在這段時間內沒有再發生就結束。
+OPS_ALERT_REMIND_SECONDS = 3600
+
+# 啟動後這麼多秒內的 ERROR 不逐一告警，寬限結束時併成一則 🟡（CRITICAL 不受限）。
+OPS_ALERT_STARTUP_GRACE_SECONDS = 180
+
+# 日誌 handler 的佇列上限（筆）。滿了丟最舊的並計數；emit() 不等、不做 I/O。
+OPS_ALERT_QUEUE_MAX = 1000
+
+# 訊息裡每一項的內容最多幾個字，超過截斷加「…」。
+OPS_ALERT_ITEM_MAX_CHARS = 200
+
+# 一則訊息最多列幾項，其餘寫「…另有 N 項（見日誌）」。
+OPS_ALERT_MAX_ITEMS = 10
+
+# 結束時維運發送器最多花幾秒把佇列送完；沒送完的記 WARNING。
+OPS_ALERT_STOP_TIMEOUT_SECONDS = 30
+
+# 每日心跳的時刻（台北時間，HH:MM）。
+OPS_HEARTBEAT_TIME_TPE = "09:00"
+
+# 條件 C2：距離上一次收到 A1 的 BarResult 超過這麼多秒就算 A1 停擺（兩根 5 分 K 加 1 分鐘）。
+OPS_A1_STALL_SECONDS = 660
+
+# 條件 C3：A5 處理的分鐘數超過這麼多秒沒有增加就算 A5 停擺。
+OPS_A5_STALL_SECONDS = 180
+
+# 條件 C4：outbox 裡最舊的待送列已經超過這麼多秒就算 A 頻道待送卡住。
+OPS_OUTBOX_STUCK_SECONDS = 600
+
+# 條件 C5／C6（計數器型）：連續這麼多輪都有增加才 raise；連續這麼多輪沒有增加才 clear。
+OPS_COUNTER_RAISE_POLLS = 3
+OPS_COUNTER_CLEAR_POLLS = 5
+
 
 def execution_params():
     """目前生效的執行參數，name -> value。給 `python -m live` 報告用。
@@ -460,6 +511,24 @@ def execution_params():
         "A_CHANNEL_REPORT_DB_PATH": A_CHANNEL_REPORT_DB_PATH,
         "A_CHANNEL_REPORT_READY_TIMEOUT_SECONDS": A_CHANNEL_REPORT_READY_TIMEOUT_SECONDS,
         "A_CHANNEL_REPORT_JOIN_TIMEOUT_SECONDS": A_CHANNEL_REPORT_JOIN_TIMEOUT_SECONDS,
+        # ---- A3 資料庫失敗退避（A3，live.notional_tracker）----
+        "A3_STORE_RETRY_DELAYS_SECONDS": A3_STORE_RETRY_DELAYS_SECONDS,
+        # ---- 最小營運告警（A4，live.ops_alert）----
+        "OPS_ALERT_INSTANCE_LABEL": OPS_ALERT_INSTANCE_LABEL,
+        "OPS_ALERT_POLL_SECONDS": OPS_ALERT_POLL_SECONDS,
+        "OPS_ALERT_BATCH_SECONDS": OPS_ALERT_BATCH_SECONDS,
+        "OPS_ALERT_REMIND_SECONDS": OPS_ALERT_REMIND_SECONDS,
+        "OPS_ALERT_STARTUP_GRACE_SECONDS": OPS_ALERT_STARTUP_GRACE_SECONDS,
+        "OPS_ALERT_QUEUE_MAX": OPS_ALERT_QUEUE_MAX,
+        "OPS_ALERT_ITEM_MAX_CHARS": OPS_ALERT_ITEM_MAX_CHARS,
+        "OPS_ALERT_MAX_ITEMS": OPS_ALERT_MAX_ITEMS,
+        "OPS_ALERT_STOP_TIMEOUT_SECONDS": OPS_ALERT_STOP_TIMEOUT_SECONDS,
+        "OPS_HEARTBEAT_TIME_TPE": OPS_HEARTBEAT_TIME_TPE,
+        "OPS_A1_STALL_SECONDS": OPS_A1_STALL_SECONDS,
+        "OPS_A5_STALL_SECONDS": OPS_A5_STALL_SECONDS,
+        "OPS_OUTBOX_STUCK_SECONDS": OPS_OUTBOX_STUCK_SECONDS,
+        "OPS_COUNTER_RAISE_POLLS": OPS_COUNTER_RAISE_POLLS,
+        "OPS_COUNTER_CLEAR_POLLS": OPS_COUNTER_CLEAR_POLLS,
     }
 
 
@@ -483,13 +552,17 @@ def strategy_params():
 # 前綴 CRYPTO_TRADER_ 是為了不跟主機上別的程式撞名（TG_BOT_TOKEN 這種名字太通用）。
 TG_BOT_TOKEN_ENV = "CRYPTO_TRADER_TG_BOT_TOKEN"
 TG_CHANNEL_ID_ENV = "CRYPTO_TRADER_TG_CHANNEL_ID"
+# A4 維運告警發到的私人聊天（使用者與機器人的對話）的 chat id；與 A 頻道共用同一個 bot token。
+# 當成密鑰：值不印、不進 execution_params()（跟上面兩個環境變數名稱一樣，只在冒煙檢查列名稱與是否有設）。
+OPS_CHAT_ID_ENV = "CRYPTO_TRADER_TG_OPS_CHAT_ID"
 
 # 目前這套系統用得到的密鑰：環境變數名 -> 用途說明。
 # 冒煙檢查與缺值時的錯誤訊息都吃這份，加新密鑰只要加這裡一行。
 # 派網 API key 不在這裡：A 頻道只走公開端點，等真的要下單的那個任務再加，不預留欄位。
 SECRET_ENV_VARS = {
-    TG_BOT_TOKEN_ENV: "Telegram bot token（A 頻道推播）",
+    TG_BOT_TOKEN_ENV: "Telegram bot token（A 頻道推播、A4 維運告警共用）",
     TG_CHANNEL_ID_ENV: "Telegram A 頻道的 channel id",
+    OPS_CHAT_ID_ENV: "Telegram A4 維運告警私人聊天的 chat id",
 }
 
 

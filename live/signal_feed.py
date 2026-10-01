@@ -111,8 +111,10 @@ FETCH_API_ERROR = "api_error"                    # 派網回錯誤 / 連線失�
 FETCH_BANNED = "banned"                          # 429 封鎖冷卻中，沒送
 FETCH_INSUFFICIENT_HISTORY = "insufficient_history"   # features 在目標列 ret2h / volr / turn 為 NaN
 FETCH_EXCEPTION = "exception"                    # 未預期的例外（從 future 或計算中取回）
+FETCH_INVALID_SYMBOL = "invalid_symbol"          # klines 回 MARKET_INVALID_SYMBOL（標的池有、klines 不收），不重試
 
 # 這些取數失敗代表「這根 K 棒沒有判完」→ degraded。歷史不足不算：回測在同一列也是 NaN、同樣不發訊號。
+# invalid_symbol 也不算：那個 symbol 本來就取不到 klines（補種子、A5、對帳三處同樣不算失敗），重試也不會變。
 _DEGRADING_FETCH_FAILURES = (FETCH_TARGET_MISSING, FETCH_API_ERROR, FETCH_BANNED, FETCH_EXCEPTION)
 
 
@@ -477,6 +479,7 @@ class SignalFeed:
         self._seed_inflight = set()
         self._seed_failed = set()
         self._seed_invalid_logged = {}  # symbol → 台北日期：klines 回 MARKET_INVALID_SYMBOL 的 INFO 當天記過了
+        self._target_invalid_logged = {}  # 同上，候選取數那條路（只在主迴圈的 _log_result 讀寫）
         self._seed_ok = 0
         self._initial_seed_started = None
         self._initial_seed_total = 0
@@ -805,6 +808,7 @@ class SignalFeed:
         """worker：打 klines 直到回應裡有開盤 = target_open 的那根。回傳 (狀態, rows, info)。
 
         API 錯誤與目標未到都在 TARGET_BAR_ATTEMPTS 次內重試；429 封鎖冷卻不重試。
+        MARKET_INVALID_SYMBOL（標的池有、klines 不收）不重試，回 FETCH_INVALID_SYMBOL（不算 degraded）。
         其他例外不在這裡接 —— 讓它進 future，由 _fetch_candidates 取出、計數、記 ERROR。
         """
         info = {"attempts": 0}
@@ -817,6 +821,9 @@ class SignalFeed:
             except rest_gate.RestBanned:
                 return FETCH_BANNED, None, info
             except ApiError as e:
+                if e.code == MARKET_INVALID_SYMBOL:
+                    info["error"] = str(e)
+                    return FETCH_INVALID_SYMBOL, None, info
                 status = FETCH_API_ERROR
                 info["error"] = str(e)
             else:
@@ -871,6 +878,16 @@ class SignalFeed:
                         "NaN" if sig.cpos is None else "%.3f" % sig.cpos, sig.turn)
         for reason, syms in sorted(res.fetch_failed.items()):
             if not syms:
+                continue
+            if reason == FETCH_INVALID_SYMBOL:
+                # 每根都會再碰到同一批 symbol：每個 symbol 每個台北日曆日只記一行 INFO（計數照樣在 summary 裡）
+                day = _taipei_day(self.gate.server_clock.now_ms())
+                for sym in syms:
+                    if self._target_invalid_logged.get(sym) == day:
+                        continue
+                    self._target_invalid_logged[sym] = day
+                    logger.info("K 棒 %s：候選 %s 的 klines 回 %s（標的池有、klines 不收），不重試、不算 degraded"
+                                "（同一個 symbol 當天不再記）", _taipei(res.bar_close_ms), sym, MARKET_INVALID_SYMBOL)
                 continue
             level = logging.INFO if reason == FETCH_INSUFFICIENT_HISTORY else logging.WARNING
             if reason == FETCH_BANNED:

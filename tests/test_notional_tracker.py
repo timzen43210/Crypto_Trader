@@ -15,6 +15,8 @@ A3（live.notional_tracker / live.a_channel）驗收測試 — 名目部位追�
         訂閱者去重後不重複
   AC-7  模組名不撞名；A3 程式碼沒有策略數值字面值（tokenize，含反向對照）；參數全部取自 strategy/；
         執行參數在 execution_params()；python -m live exit 0；執行入口的接線自檢與 --events-jsonl
+  A4 FR-10（TASK-118 AC-9）資料庫失敗退避：重建嘗試依序在上一次失敗 +60 / +120 / +300 / +600 / +900 / +900… 秒；
+        退避中的 tick 不開庫、不取數、不重試延後的訊號；成功一次歸零；退避表只在 config；資料庫正常時不跳過任何 tick
 
 全程離線：假交易所（取數注入）、假時鐘（不 sleep），每個測試關在 socket 籠子裡；runner 另外確認整輪沒有連網企圖、
 沒有在真正的 runtime/ 留下東西。策略參數一律由 strategy/ 推出來（exit_params / cooldown_bars），不寫數值。
@@ -2121,6 +2123,130 @@ def test_a_channel_wiring_self_check_and_events_jsonl():
                 assert e.code == 2
             else:
                 raise AssertionError("--events-jsonl 寫進 %s/ 沒有被擋" % bad)
+
+
+# ============================== A4（TASK-118）FR-10：資料庫失敗退避 ==============================
+@contextlib.contextmanager
+def _a3_records():
+    """收 live.notional_tracker 的 INFO 以上（runner 把 live 調到 CRITICAL；這裡暫時打開，結束時還原）。"""
+    lg = logging.getLogger("live.notional_tracker")
+    saved = lg.level
+    cap = _Capture()
+    lg.setLevel(logging.INFO)
+    lg.addHandler(cap)
+    try:
+        yield cap
+    finally:
+        lg.removeHandler(cap)
+        lg.setLevel(saved)
+
+
+def test_fr10_store_failure_backoff_schedule_skips_and_reset():
+    """AC-9：資料庫連續失敗時，重建嘗試的時刻依序是上一次失敗 +60、+120、+300、+600、+900、+900……秒；
+    退避中的 tick 不開庫、不取數、不重試延後的訊號（資料庫其實已經好了也一樣），只累計 store_backoff_skips；
+    重建成功一次就歸零（之後再失敗又從 +60 起算）。每次失敗照舊記 ERROR，另外記一行 INFO 寫明第幾次、幾秒後重建。"""
+    sym2 = "TEST2_USDT_PERP"
+    with tempdir() as tmp, _a3_records() as cap:
+        clock = Clock(T0 + WAIT)
+        ex = FakeExchange(clock)
+        for sym in (SYM, sym2):
+            ex.put_bars(sym, "1M", flat_bars(T0 - MAIN4, T0 + 200 * M1, 100.0))
+        rec = Recorder()
+        path = os.path.join(tmp, "d.sqlite3")
+        state = {"fail_left": 0}
+        opens = []
+
+        def factory():
+            opens.append(clock.now)
+            if state["fail_left"] > 0:
+                state["fail_left"] -= 1
+                raise sqlite3.OperationalError("unable to open database file（測試注入）")
+            return store.open_store(path, clock=clock)
+
+        tr = nt.NotionalTracker(bus=make_bus(rec), fetcher=ex.fetch, now_ms=clock, specs=SPECS,
+                                store_factory=factory)
+
+        def tick(minute):
+            t = T0 + minute * M1
+            clock.now = t + WAIT
+            tr.tick(t)
+
+        def submit(sym):
+            tr.submit_signal(strategy="s4", symbol=sym, bar_open_ms=T0 - MAIN4, bar_close_ms=T0, signal_price=100.0,
+                             features={"f": 1.0})
+            tr.process_pending()
+
+        try:
+            # 正常：SYM 進場、持倉中（平盤不會出場），正常的 tick 每次都取數
+            tr.open()
+            tr.recover()
+            submit(SYM)
+            tick(1)
+            assert [k for k, *_ in rec.raw] == ["entry"] and ex.calls, (rec.raw, ex.calls)
+            assert tr.stats["store_backoff_skips"] == 0 and tr._store_fail_streak == 0
+            # 連線中毒、接下來 8 次開庫都失敗：第 2 分鐘的 tick 是第 1 次失敗
+            tr.store._poison(sqlite3.OperationalError("disk I/O error（測試注入）"), RuntimeError("原本的錯誤"))
+            state["fail_left"] = 8
+            del opens[:]
+            tick(2)
+            submit(sym2)                    # 作廢期間收到的訊號照舊延後
+            assert len(tr.deferred()) == 1
+            attempts = [2]
+            for minute in range(3, 81):
+                before = (len(opens), len(ex.calls), len(rec.raw), len(tr.deferred()))
+                skips = tr.stats["store_backoff_skips"]
+                tick(minute)
+                if len(opens) == before[0]:
+                    # 退避中：不開庫、不取數、不重試延後的訊號（第 65 分鐘之後資料庫其實已經好了）
+                    assert (len(ex.calls), len(rec.raw), len(tr.deferred())) == before[1:], minute
+                    assert tr.stats["store_backoff_skips"] == skips + 1, minute
+                else:
+                    assert len(opens) == before[0] + 1 and tr.stats["store_backoff_skips"] == skips, minute
+                    attempts.append(minute)
+            assert attempts == [2, 3, 5, 10, 20, 35, 50, 65, 80], attempts
+            assert [(b - a) // 1000 for a, b in zip(opens, opens[1:])] == [60, 120, 300, 600, 900, 900, 900, 900]
+            # 第 80 分鐘重建成功：延後的訊號進場、持倉照常取數，退避歸零
+            assert [(k, sid) for k, sid, _ in rec.raw] == [("entry", nt.make_signal_id(S4, SYM, T0)),
+                                                           ("entry", nt.make_signal_id(S4, sym2, T0))], rec.raw
+            assert tr.deferred() == [] and tr._store_fail_streak == 0 and tr._store_retry_at_ms is None
+            assert tr.stats["store_backoff_skips"] == 70 and tr.stats["store_failures"] == 8, tr.stats
+            # 歸零之後再失敗一次：又從 +60 秒起算
+            tr.store._poison(sqlite3.OperationalError("disk I/O error（測試注入）"), RuntimeError("原本的錯誤"))
+            state["fail_left"] = 1
+            del opens[:]
+            tick(81)
+            calls = len(ex.calls)
+            tick(82)
+            assert [(b - a) // 1000 for a, b in zip(opens, opens[1:])] == [60] and len(ex.calls) > calls
+            assert tr._store_fail_streak == 0 and tr.stats["store_backoff_skips"] == 70
+        finally:
+            tr.close()
+    infos = [r.getMessage() for r in cap.records if r.levelno == logging.INFO and "連續失敗" in r.getMessage()]
+    assert infos == ["A3 資料庫第 %d 次連續失敗，下次重建在 %d 秒後" % kd for kd in
+                     ((1, 60), (2, 120), (3, 300), (4, 600), (5, 900), (6, 900), (7, 900), (8, 900), (1, 60))], infos
+    errors = [r for r in cap.records if r.levelno == logging.ERROR and "資料庫操作失敗" in r.getMessage()]
+    assert len(errors) == 9, [r.getMessage() for r in errors]
+
+
+def test_fr10_backoff_table_lives_in_config_and_healthy_runs_never_skip():
+    """FR-10：退避表只在 config（notional_tracker.py 只用索引取值）；資料庫正常時不會有任何 tick 被跳過。"""
+    assert config.A3_STORE_RETRY_DELAYS_SECONDS == (60, 120, 300, 600, 900)
+    assert config.execution_params()["A3_STORE_RETRY_DELAYS_SECONDS"] == (60, 120, 300, 600, 900)
+    with open(os.path.join(REPO_ROOT, "live", "notional_tracker.py"), encoding="utf-8") as f:
+        src = f.read()
+    assert "A3_STORE_RETRY_DELAYS_SECONDS" in src and not {60.0, 120.0, 300.0, 600.0, 900.0} & \
+        {v for _, _, v in _numeric_literals(src)}
+    with tempdir() as tmp:
+        h = Harness(tmp)
+        try:
+            p = 100.0
+            h.ex.put_bars(SYM, "1M", flat_bars(T0, T0 + 3 * MAIN4, p))
+            h.signal("s4", T0, p)
+            h.tick_until(T0 + 2 * MAIN4)
+            assert h.tracker.stats["store_backoff_skips"] == 0 and h.tracker.stats["store_failures"] == 0
+            assert h.tracker._store_retry_at_ms is None
+        finally:
+            h.close()
 
 
 # ============================== runner ==============================

@@ -529,9 +529,16 @@ class ChannelSender:
                  api_base_url=None, max_per_minute=None, min_interval=None,
                  max_attempts=None, backoff_base=None, backoff_max=None,
                  max_rate_limited_retries=None, retry_after_fallback=None,
-                 http_timeout=None, max_chars=None, stop_timeout=None, max_retry_after=None):
+                 http_timeout=None, max_chars=None, stop_timeout=None, max_retry_after=None,
+                 chat_id_env=None, thread_name=None, log_label=None):
         def pick(value, default):
             return default if value is None else value
+
+        # A4（FR-2）：同一個發送器也用來發維運告警。三個參數的預設值就是 A 頻道原本寫死的值，
+        # 不給時行為逐位元組不變。chat_id_env 是「環境變數名稱」，值照舊只在 start() 讀。
+        self._chat_id_env = pick(chat_id_env, config.TG_CHANNEL_ID_ENV)
+        self._thread_name = pick(thread_name, "tg-channel-sender")
+        self._log_label = pick(log_label, "A 頻道")
 
         self._api_base_url = pick(api_base_url, config.TG_API_BASE_URL).rstrip("/")
         self._max_per_minute = int(pick(max_per_minute, config.TG_MAX_MESSAGES_PER_MINUTE))
@@ -606,7 +613,7 @@ class ChannelSender:
         try:
             # 缺哪一個就在這裡拋；訊息只含環境變數名，不含值（live.config.require_secret）
             token = config.require_secret(config.TG_BOT_TOKEN_ENV)
-            chat_id = config.require_secret(config.TG_CHANNEL_ID_ENV)
+            chat_id = config.require_secret(self._chat_id_env)
             masker = SecretMasker((token, chat_id))
             session = None
             post = self._injected_post
@@ -616,7 +623,7 @@ class ChannelSender:
             log_filter = _MaskingFilter(masker)
             for name in _THIRD_PARTY_LOGGERS:
                 logging.getLogger(name).addFilter(log_filter)
-            thread = threading.Thread(target=self._run, name="tg-channel-sender", daemon=True)
+            thread = threading.Thread(target=self._run, name=self._thread_name, daemon=True)
         except BaseException:
             # 失敗就退回 NEW（補好環境變數後可以再 start），已經掛上的 filter 拆掉
             if log_filter is not None:
@@ -636,9 +643,9 @@ class ChannelSender:
             self._state = _RUNNING
         thread.start()
         self._log(logging.INFO,
-                  "A 頻道發送器已啟動：每 60 秒最多 %d 次請求、相鄰至少隔 %s 秒、"
+                  "%s發送器已啟動：每 60 秒最多 %d 次請求、相鄰至少隔 %s 秒、"
                   "5xx/連線錯誤總嘗試 %d 次、429 最多重送 %d 次",
-                  self._max_per_minute, self._min_interval, self._max_attempts,
+                  self._log_label, self._max_per_minute, self._min_interval, self._max_attempts,
                   self._max_rate_limited_retries)
 
     def send(self, text, key=None, *, on_done=None, expires_at=None):
@@ -679,7 +686,7 @@ class ChannelSender:
                 self._cond.notify_all()
                 return True
             self._rejected += 1
-        self._log(logging.ERROR, "拒收一則 A 頻道訊息（key=%s）：%s", _safe_repr(key), reason)
+        self._log(logging.ERROR, "拒收一則 %s訊息（key=%s）：%s", self._log_label, _safe_repr(key), reason)
         return False
 
     def stop(self, timeout=None):
@@ -720,7 +727,7 @@ class ChannelSender:
             self._wakeup.set()
             self._log(logging.ERROR,
                       "stop()：發送執行緒在期限內沒有結束（可能卡在一次 HTTP 請求），"
-                      "放棄 %d 則未送出的 A 頻道訊息", stuck)
+                      "放棄 %d 則未送出的 %s訊息", stuck, self._log_label)
             for item in dropped_items:
                 self._notify(item, _ABANDONED)
             if teardown_now:
@@ -735,8 +742,8 @@ class ChannelSender:
             remaining = self._stop_result
             sent, failed = self._sent, self._failed
         if not remaining:
-            self._log(logging.INFO, "A 頻道發送器已停止，佇列已處理完（已送出 %d、失敗 %d）",
-                      sent, failed)
+            self._log(logging.INFO, "%s發送器已停止，佇列已處理完（已送出 %d、失敗 %d）",
+                      self._log_label, sent, failed)
         return remaining
 
     def stats(self):
@@ -777,7 +784,8 @@ class ChannelSender:
         """本模組唯一的寫日誌出口：先完整格式化、再整段遮罩，最後才交給 logging。"""
         if args:
             msg = msg % args
-        logger.log(level, "%s", self._mask(msg))
+        # stacklevel=2：record 的 lineno／funcName 是呼叫 _log 的那一行（A4 用 (logger, 檔名, lineno) 分組）
+        logger.log(level, "%s", self._mask(msg), stacklevel=2)
 
     def _describe_exception(self, exc):
         """例外 → 「類別名: 遮罩後的訊息」。原始例外物件不離開呼叫端的 except 區塊。"""
@@ -791,8 +799,8 @@ class ChannelSender:
         """未預期的例外：整段 traceback（含 __cause__ / __context__ 鏈）組成字串、遮罩後記 ERROR。"""
         tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)).rstrip("\n")
         key = _safe_repr(item.key) if item is not None else "-"
-        self._log(logging.ERROR, "A 頻道發送執行緒在%s發生未預期的例外（key=%s），"
-                                 "這一則記為失敗，執行緒繼續運作。\n%s", where, key, tb)
+        self._log(logging.ERROR, "%s發送執行緒在%s發生未預期的例外（key=%s），"
+                                 "這一則記為失敗，執行緒繼續運作。\n%s", self._log_label, where, key, tb)
         self._set_last_error(self._describe_exception(exc))
 
     def _set_last_error(self, detail):
@@ -872,8 +880,8 @@ class ChannelSender:
         for other in dropped_items:
             self._notify(other, _ABANDONED)
         if result == _ABANDONED:
-            self._log(logging.ERROR, "stop() 的期限已到，放棄 %d 則未送出的 A 頻道訊息"
-                                     "（含處理中的 key=%s）", dropped, _safe_repr(item.key))
+            self._log(logging.ERROR, "stop() 的期限已到，放棄 %d 則未送出的 %s訊息"
+                                     "（含處理中的 key=%s）", dropped, self._log_label, _safe_repr(item.key))
             return False
         return True
 
@@ -893,8 +901,8 @@ class ChannelSender:
             callback(report)
         except Exception as exc:  # noqa: BLE001 — 呼叫端的 callback 出錯不可以弄死發送執行緒
             tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)).rstrip("\n")
-            self._log(logging.ERROR, "A 頻道訊息的 on_done 回報拋出例外（key=%s，結果 %s），忽略、發送執行緒繼續運作。\n%s",
-                      _safe_repr(item.key), status, tb)
+            self._log(logging.ERROR, "%s訊息的 on_done 回報拋出例外（key=%s，結果 %s），忽略、發送執行緒繼續運作。\n%s",
+                      self._log_label, _safe_repr(item.key), status, tb)
 
     def _deliver(self, item):
         """把一則送到成功、放棄、過期、或 stop 期限到為止。
@@ -908,7 +916,7 @@ class ChannelSender:
             # FR-3：期限在「每一次實際發出請求之前」檢查（限速、429、退避的等待都已經等完了）。
             # 之前有不確定的嘗試就不再檢查：頻道上可能已經有它（_expired_now 裡判斷）。
             if self._expired_now(item):
-                self._log(logging.WARNING, "A 頻道訊息已過送出期限（key=%s），不送出、回報 expired", key)
+                self._log(logging.WARNING, "%s訊息已過送出期限（key=%s），不送出、回報 expired", self._log_label, key)
                 return _EXPIRED
             outcome = self._attempt(item)
             if outcome.uncertain:
@@ -919,8 +927,8 @@ class ChannelSender:
                 with self._cond:
                     self._last_success_at = self._now_iso()
                     self._last_message_id = outcome.message_id
-                self._log(logging.INFO, "A 頻道訊息已送出（key=%s，message_id=%s）",
-                          key, outcome.message_id)
+                self._log(logging.INFO, "%s訊息已送出（key=%s，message_id=%s）",
+                          self._log_label, key, outcome.message_id)
                 return _SENT
 
             if outcome.kind == _RATE_LIMITED:
@@ -949,8 +957,8 @@ class ChannelSender:
                     return self._give_up(item, "嘗試 %d 次仍失敗，放棄這一則：%s"
                                          % (failures, outcome.detail))
                 delay = min(self._backoff_base * (2 ** (failures - 1)), self._backoff_max)
-                self._log(logging.WARNING, "A 頻道送出失敗（key=%s，第 %d/%d 次），%s 秒後重試：%s",
-                          key, failures, self._max_attempts, delay, outcome.detail)
+                self._log(logging.WARNING, "%s送出失敗（key=%s，第 %d/%d 次），%s 秒後重試：%s",
+                          self._log_label, key, failures, self._max_attempts, delay, outcome.detail)
                 if not self._sleep_until(self._clock() + delay):
                     return _ABANDONED
                 continue
@@ -962,7 +970,7 @@ class ChannelSender:
     def _give_up(self, item, detail, permanent=False):
         """放棄這一則：permanent = 永久失敗（不可重送）→ _FAILED；否則是「不確定 / 放棄」→ _GAVE_UP。
         兩者都記 ERROR、在 stats 裡都計入 failed（與以前相同）。"""
-        self._log(logging.ERROR, "A 頻道訊息送出失敗（key=%s）：%s", _safe_repr(item.key), detail)
+        self._log(logging.ERROR, "%s訊息送出失敗（key=%s）：%s", self._log_label, _safe_repr(item.key), detail)
         self._set_last_error(detail)
         item.detail = detail
         return _FAILED if permanent else _GAVE_UP

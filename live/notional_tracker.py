@@ -510,9 +510,12 @@ class NotionalTracker:
         self._ready_error = None
         self._thread = None
         self._publish_failures = {}
+        # FR-10（A4）資料庫失敗退避：連續失敗次數與下一次最早可以重建的時刻（ms）；重建成功就歸零 / 清掉
+        self._store_fail_streak = 0
+        self._store_retry_at_ms = None
         self.stats = {"signals": 0, "entries": 0, "exits": 0, "skipped_holding": 0, "skipped_cooldown": 0,
                       "deferred": 0, "fetches": 0, "fetch_failures": 0, "publish_failures": 0,
-                      "recovered_exits": 0, "store_failures": 0}
+                      "recovered_exits": 0, "store_failures": 0, "store_backoff_skips": 0}
 
     # ---------------- 別的執行緒呼叫的入口（只排佇列） ----------------
     def bar_result_handler(self, strategy):
@@ -558,6 +561,12 @@ class NotionalTracker:
     @property
     def ready_error(self):
         return self._ready_error
+
+    @property
+    def worker_alive(self):
+        """工作執行緒活著嗎（A4 的 C1 用）。還沒 start() 回 False —— 呼叫端自己分辨「還沒啟動」。"""
+        thread = self._thread
+        return thread is not None and thread.is_alive()
 
     def stop(self):
         self._stop_evt.set()
@@ -648,6 +657,12 @@ class NotionalTracker:
         logger.error("A3 %s 時資料庫操作失敗（%s: %s%s）：記憶體狀態作廢，下一次 tick 從資料庫重建；手上的訊號延後重試",
                      what, type(err).__name__, err, "；連線已中毒，下一次 tick 重新開啟" if poisoned else "",
                      exc_info=(type(err), err, err.__traceback__))
+        # FR-10 退避：連續第 k 次失敗後，最早在 失敗時刻 + delays[min(k, 長度) - 1] 秒才再重建
+        self._store_fail_streak += 1
+        delays = config.A3_STORE_RETRY_DELAYS_SECONDS
+        delay_s = delays[min(self._store_fail_streak, len(delays)) - 1]
+        self._store_retry_at_ms = self._now() + delay_s * 1000
+        logger.info("A3 資料庫第 %d 次連續失敗，下次重建在 %s 秒後", self._store_fail_streak, delay_s)
 
     def _ensure_store(self):
         """資料庫連線不在（之前開不了）或已中毒：關掉重開。重開之後記憶體一定要從資料庫重建。"""
@@ -743,13 +758,21 @@ class NotionalTracker:
         資料庫失敗在這裡吸收（記憶體作廢，下一次 tick 重建），不往外拋；每個部位各自隔離，一個部位出錯
         不會擋住其他部位、延後訊號的重試與補發。"""
         self._last_target = max(self._last_target or 0, int(target_close_ms))
+        if (not self._recovered and self._store_retry_at_ms is not None
+                and self._now() < self._store_retry_at_ms):
+            # FR-10：資料庫失敗的退避期間 —— 不開庫、不取數、不重試延後的訊號（訊號照舊延後）
+            self.stats["store_backoff_skips"] += 1
+            return
         try:
-            self._ensure_store()        # 之前開不了、或已中毒：每次 tick 再試一次
+            self._ensure_store()        # 之前開不了、或已中毒：退避到期的 tick 再試一次
             if not self._recovered:
                 self.recover()
         except _STORE_ERRORS as e:
             self._invalidate(e, "tick 重建記憶體狀態")
             return
+        if self._store_fail_streak:
+            self._store_fail_streak = 0     # 重建成功：退避從頭算
+            self._store_retry_at_ms = None
         self._flush_missed()
         for key in sorted(self._positions):
             if not self._recovered:

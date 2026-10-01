@@ -1196,10 +1196,37 @@ class FakeS5:
         return {"fake": True}
 
 
+class NullAlerter:
+    """A4 維運告警（TASK-118）的替身：什麼都不做。這裡的測試只驗 T2 的接線；A4 的接線另見 tests/test_ops_alert.py
+    （真的 OpsAlerter 要維運聊天的密鑰，而且會在 root logger 上掛 handler）。"""
+
+    def start(self):
+        pass
+
+    def attach(self, **kw):
+        pass
+
+    def wrap_on_result(self, fn):
+        return fn
+
+    def note_reconcile(self, result):
+        pass
+
+    def announce_started(self, duration_s):
+        pass
+
+    def begin_shutdown(self):
+        pass
+
+    def finish(self, reason, rc):
+        return rc
+
+
 def _run_a_channel(argv, **kw):
     from live import a_channel
     # FakeFeed 沒有 gate / buffer / universe，真的 A5（default_s5_feed）建不起來 → 一律注入替身
     kw.setdefault("s5_feed_factory", lambda feed, tracker: FakeS5())
+    kw.setdefault("alerter_factory", NullAlerter)
     with capture("live.a_channel", "live.a_channel_push") as cap:
         rc = a_channel.main(argv, setup_logging=False, **kw)
     return rc, cap

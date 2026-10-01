@@ -12,6 +12,8 @@ A1-f 驗收測試 — A1 後續小修：長停頓對帳不誤報且會補做、m
         HTTP 請求恰好 1 個（market_static / api_get 不重試、啟動重試落在冷卻中不送）；不注入時行為不變
   AC-4  只有個別候選取數失敗的根：同一根其他 symbol 的漏失照算（ERROR），失敗的候選個別排除；
         影響粗篩的 degraded（tickers 失敗 / tickers 被封鎖）整根排除，同修改前；"banned" 撞名用結構分辨
+  A4 FR-9（TASK-118 AC-10）候選取數遇到 MARKET_INVALID_SYMBOL：只打 1 次請求、進 fetch_failed["invalid_symbol"]、
+        不 degraded、FR-8 對帳成立、同一個 symbol 當天一行 INFO、背景對帳不算漏失；其他 ApiError 照舊重試、degraded
 
 鑑別力（DQA 拿修改前的程式 ee12b85 跑同一個情境）：每個情境的關鍵斷言放在最前面，而且只經過修改前也存在的
 介面（Reconciler.run_batch / _loop / add_bar、SignalFeed.refresh_universe、MarketUniverse），修改前的程式
@@ -531,14 +533,16 @@ _AC4_BAD_IDX = 390                     # EV_D 的真實訊號那根（test_signa
 _AC4_WINDOW_END = tsf._close_of(399)   # = T0：窗口 (T0-1h, T0] = 第 388..399 根
 
 
-def _ac4_window(fault):
+def _ac4_window(fault, extra=None):
     """test_signal_feed 的情境 K 棒 + 一個在第 390 根拉抬的候選 X_CAND。判定第 388..399 根、交給對帳。
     第 390 根：Y = EV_D 的收盤 tickers 價格壓低 1 成 → 近似 ret2h 落在門檻下、不在候選，但真實 ret2h >= MIN；
     fault 決定同一根另外發生什麼：
       api / klines_ban     X_CAND 的 klines 回 500 / 429（只影響這個候選）
       tickers_failed / tickers_ban
                            收盤那次 tickers 失敗 / 429（整根沒篩）
-    回傳 (第 390 根的 BarResult, 對帳結果, 對帳時的日誌)。"""
+      invalid              X_CAND 的 klines 從第 390 根起回 MARKET_INVALID_SYMBOL（判定與對帳都是；A4 FR-9）
+    回傳 (第 390 根的 BarResult, 對帳結果, 對帳時的日誌)。給了 extra（dict）就另外放進
+    ex（假交易所）、clock、feed、results（第 388..399 根的 BarResult）、judge_cap（判定期間的日誌）。"""
     m = tsf._min_ret()
     frames = tsf._scenario_frames()
     frames["X_CAND"] = tsf.make_frame(420, tsf._SCEN_FIRST_OPEN, 300, events={_AC4_BAD_IDX: m + 0.03})
@@ -555,11 +559,19 @@ def _ac4_window(fault):
                 raise lh.ApiError("/api/v1/market/klines: HTTP %d 模擬" % code, status_code=code)
             return rows
         ex.klines_hook["X_CAND"] = fail
+    if fault == "invalid":
+        def invalid(attempt, now, rows):
+            if now >= bad_close:                             # 標的池有、klines 不收：之後一直如此
+                raise lh.ApiError("/api/v1/market/klines: 假的 %s" % lh.MARKET_INVALID_SYMBOL,
+                                  code=lh.MARKET_INVALID_SYMBOL)
+            return rows
+        ex.klines_hook["X_CAND"] = invalid
     syms = sorted(frames)
     feed, gate = tsf.build_feed(clock, ex, syms)
     rec = Reconciler(gate, clock=clock, **tsf._RECON_KW)
     bad = None
-    with capture_logs():
+    results = []
+    with capture_logs() as judge_cap:
         feed.start_seeding(syms, initial=True)
         for idx in range(388, 400):
             close = tsf._close_of(idx)
@@ -571,10 +583,13 @@ def _ac4_window(fault):
                 ex.tickers_fail = [lh.ApiError("/api/v1/market/tickers: 重試 1 次仍失敗", status_code=429)]
             res = feed.judge_bar(close)
             rec.add_bar(res)
+            results.append(res)
             if idx == _AC4_BAD_IDX:
                 bad = res
     with capture_logs() as cap:
         rr = rec.run_batch(_AC4_WINDOW_END)
+    if extra is not None:
+        extra.update(ex=ex, clock=clock, feed=feed, results=results, judge_cap=judge_cap)
     return bad, rr, cap
 
 
@@ -632,6 +647,78 @@ def test_ac4_screen_affecting_degraded_still_excludes_whole_bar():
     for fault, rr in runs:                                     # A1-f 新增的欄位
         assert rr.excluded_fetch_failed == [] and (rr.bars_degraded_whole, rr.bars_degraded_partial) == (1, 0), \
             (fault, rr.excluded_fetch_failed, rr.bars_degraded_whole, rr.bars_degraded_partial)
+
+
+# ============================== A4（TASK-118）FR-9：候選取數遇到 MARKET_INVALID_SYMBOL ==============================
+def _klines_requests(ex, sym, t_from, t_to):
+    return [c for c in ex.calls if c[2] == klines.KLINES_PATH and c[3] == sym and t_from <= c[1] < t_to]
+
+
+def _invalid_infos(cap, sym):
+    return [m for m in cap.messages(logging.INFO)
+            if "候選 %s 的 klines 回 %s" % (sym, lh.MARKET_INVALID_SYMBOL) in m]
+
+
+def test_fr9_candidate_invalid_symbol_is_one_request_not_degraded_and_not_a_miss():
+    """AC-10：候選 X_CAND 的 klines 回 MARKET_INVALID_SYMBOL → 那根只打 1 次請求、進 fetch_failed["invalid_symbol"]、
+    那根不因此 degraded、FR-8 對帳成立、summary() 照樣列出計數；背景對帳把它算 invalid_symbols、不算漏失，
+    同一根其他 symbol（EV_D）的漏失照算（ERROR）；之後每根再碰到也不重試、不 degraded，當天只記一行 INFO。"""
+    extra = {}
+    bad, rr, cap = _ac4_window("invalid", extra)
+    bad_close = tsf._close_of(_AC4_BAD_IDX)
+    reqs = _klines_requests(extra["ex"], "X_CAND", bad_close, bad_close + BAR)
+    assert len(reqs) == 1, reqs
+    assert bad.fetch_failed == {signal_feed.FETCH_INVALID_SYMBOL: ["X_CAND"]}, bad.fetch_failed
+    assert "X_CAND" in {c.symbol for c in bad.candidates}
+    assert bad.degraded_reasons == [] and not bad.degraded and bad.accounting_problems() == []
+    assert "取數失敗 invalid_symbol=1" in bad.summary() and bad.summary().endswith("| OK"), bad.summary()
+    hit = [r for r in extra["results"] if r.fetch_failed.get(signal_feed.FETCH_INVALID_SYMBOL)]
+    assert hit and hit[0] is bad
+    for r in hit:
+        assert r.degraded_reasons == [] and r.accounting_problems() == [], (r.bar_close_ms, r.summary())
+        assert len(_klines_requests(extra["ex"], "X_CAND", r.bar_close_ms, r.bar_close_ms + BAR)) == 1
+    assert len(_invalid_infos(extra["judge_cap"], "X_CAND")) == 1, extra["judge_cap"].messages(logging.INFO)
+    assert not [m for m in extra["judge_cap"].messages(logging.WARNING) if "X_CAND" in m]
+    assert not extra["judge_cap"].messages(logging.ERROR), extra["judge_cap"].messages(logging.ERROR)
+    # 背景對帳：X_CAND 本來就是 invalid_symbols，不算漏失、不個別排除；EV_D 照算漏失
+    assert _misses(rr) == [("EV_D", bad_close)], (_misses(rr), rr.misses_on_degraded)
+    assert rr.misses_on_degraded == 0 and rr.excluded_fetch_failed == [] and rr.bars_degraded == 0
+    assert rr.invalid_symbols == ["X_CAND"], rr.invalid_symbols
+    assert "X_CAND" not in {s for v in rr.fetch_failed.values() for s in v}, rr.fetch_failed
+    errs = cap.messages(logging.ERROR)
+    assert len(errs) == 1 and "EV_D" in errs[0] and "X_CAND" not in errs[0], errs
+
+
+def test_fr9_invalid_symbol_info_is_once_per_symbol_per_taipei_day():
+    """AC-10：同一個 symbol 當天只記一行 INFO；換一個台北日曆日再記一行；不同 symbol 各自一行。"""
+    extra = {}
+    _ac4_window("invalid", extra)
+    feed, clock = extra["feed"], extra["clock"]
+    with capture_logs() as cap:
+        res = _bar_result(fetch_failed={"invalid_symbol": ["X_CAND", "Y_NEW"]}, candidates=("X_CAND", "Y_NEW"))
+        feed._log_result(res)
+        feed._log_result(res)
+        assert len(_invalid_infos(cap, "X_CAND")) == 0, "X_CAND 當天已經記過"
+        assert len(_invalid_infos(cap, "Y_NEW")) == 1
+        tsf.goto(clock, clock.time_ms() + 24 * HOUR)
+        feed._log_result(res)
+        assert len(_invalid_infos(cap, "X_CAND")) == 1 and len(_invalid_infos(cap, "Y_NEW")) == 2
+        assert not cap.messages(logging.WARNING) and not cap.messages(logging.ERROR)
+
+
+def test_fr9_other_api_errors_still_retry_and_degrade():
+    """AC-10 對照：其他 ApiError（HTTP 500）照樣重試 TARGET_BAR_ATTEMPTS 次、算 degraded，行為不變。"""
+    extra = {}
+    bad, rr, _ = _ac4_window("api", extra)
+    bad_close = tsf._close_of(_AC4_BAD_IDX)
+    reqs = _klines_requests(extra["ex"], "X_CAND", bad_close, bad_close + 60_000)
+    assert len(reqs) == config.TARGET_BAR_ATTEMPTS == 4, reqs
+    assert bad.fetch_failed == {signal_feed.FETCH_API_ERROR: ["X_CAND"]}
+    assert bad.degraded_reasons == [signal_feed.FETCH_API_ERROR] and bad.accounting_problems() == []
+    assert signal_feed.FETCH_INVALID_SYMBOL not in signal_feed._DEGRADING_FETCH_FAILURES
+    assert signal_feed.FETCH_INVALID_SYMBOL not in reconcile.FETCH_DEGRADED_REASONS
+    assert not _invalid_infos(extra["judge_cap"], "X_CAND")
+    assert rr.invalid_symbols == []
 
 
 # ============================== 不用 pytest 也能跑 ==============================

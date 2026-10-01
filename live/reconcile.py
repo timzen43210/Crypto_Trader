@@ -699,6 +699,12 @@ class Reconciler:
         if self._thread is not None:
             self._thread.join(timeout)
 
+    @property
+    def worker_alive(self):
+        """背景執行緒活著嗎（A4 的 C1 用）。還沒 start() 回 False —— 呼叫端自己分辨「還沒啟動」。"""
+        thread = self._thread
+        return thread is not None and thread.is_alive()
+
     def _loop(self, stop, server_clock):
         """排程：next_end 是下一個還沒處理的窗口。等到它的開始時刻，把到期的窗口一次處理掉（catch_up）。
         以前每一圈都從「現在」往後找下一個整點，停頓期間的窗口因此永遠不會補做。"""
