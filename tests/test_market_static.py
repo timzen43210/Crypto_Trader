@@ -267,6 +267,84 @@ def test_refresh_survives_unexpected_structure():
     assert ms.max_leverage("BTC_USDT_PERP") == 100
 
 
+# ============================== A6 AC-3：標的池的分類查詢（TASK-023） ==============================
+A6_SYMBOLS = SYMBOLS_FIXTURE + [
+    {"symbol": "AAPLX_USDT_PERP", "baseCurrency": "AAPLX", "quoteCurrency": "USDT", "status": "TRADING"},
+    {"symbol": "XAU_USDT_PERP", "baseCurrency": "XAU", "quoteCurrency": "USDT", "status": "TRADING"},
+    {"symbol": "USDC_USDT_PERP", "baseCurrency": "USDC", "quoteCurrency": "USDT", "status": "TRADING"},
+    {"symbol": "龙虾_USDT_PERP", "baseCurrency": "CNLX", "quoteCurrency": "USDT", "status": "TRADING"},
+    {"symbol": "OFFX_USDT_PERP", "baseCurrency": "OFFX", "quoteCurrency": "USDT", "status": "HALT"},
+    {"symbol": "DIS_USDT_PERP", "baseCurrency": "DIS", "quoteCurrency": "USDT", "status": "TRADING", "enable": False},
+]
+
+
+def _a6_loaded():
+    ms = _fresh_module()
+    fake, calls = _fake_api_get_factory(symbols=A6_SYMBOLS)
+    ms.api_get = fake
+    assert ms.refresh() is True
+    return ms, calls
+
+
+def test_a6_tradable_symbols_only_tradable_and_sorted():
+    ms, calls = _a6_loaded()
+    assert ms.tradable_symbols(quote="USDT") == ["ABC_USDT_PERP", "BTC_USDT_PERP", "龙虾_USDT_PERP"]
+    assert ms.tradable_symbols() == ms.tradable_symbols(quote="USDT")              # 預設就是 USDT
+    assert ms.tradable_symbols(quote="BTC") == ["ETH_BTC_PERP"]                    # 指定計價幣
+    # trading_symbols() 行為不變：不分類，被排除的照樣在裡面（HALT 的照樣不在）
+    assert ms.trading_symbols(quote="USDT") == sorted(["ABC_USDT_PERP", "AAPLX_USDT_PERP", "BTC_USDT_PERP",
+                                                       "DIS_USDT_PERP", "USDC_USDT_PERP", "XAU_USDT_PERP",
+                                                       "龙虾_USDT_PERP"])
+    assert ms.trading_symbols() == sorted(ms.trading_symbols(quote="USDT") + ["ETH_BTC_PERP"])
+    assert len(calls) == 2, "查詢不可以打 API"
+
+
+def test_a6_excluded_symbols_carry_category_and_reason():
+    ms, calls = _a6_loaded()
+    ex = ms.excluded_symbols(quote="USDT")
+    assert list(ex) == ["AAPLX_USDT_PERP", "DIS_USDT_PERP", "USDC_USDT_PERP", "XAU_USDT_PERP"], list(ex)
+    assert {s: c.category for s, c in ex.items()} == {"AAPLX_USDT_PERP": "stock", "DIS_USDT_PERP": "disabled",
+                                                       "USDC_USDT_PERP": "pegged", "XAU_USDT_PERP": "stock"}
+    assert "名稱 X 結尾" in ex["AAPLX_USDT_PERP"].reason
+    assert "在 NON_CRYPTO" in ex["XAU_USDT_PERP"].reason
+    assert "在 PEGGED" in ex["USDC_USDT_PERP"].reason
+    assert "enable=false" in ex["DIS_USDT_PERP"].reason
+    assert not any(c.tradable for c in ex.values())
+    every = ms.classified_symbols(quote="USDT")
+    assert list(every) == ms.trading_symbols(quote="USDT"), "分類的對象就是 TRADING USDT 的原始清單（過濾之前）"
+    assert sorted(set(every) - set(ex)) == ms.tradable_symbols(quote="USDT")
+    assert every["龙虾_USDT_PERP"].base == "CNLX" and every["龙虾_USDT_PERP"].tradable
+    assert len(calls) == 2, "查詢不可以打 API"
+
+
+def test_a6_new_queries_before_refresh_raise_not_loaded_and_make_no_request():
+    ms = _fresh_module()
+    calls = []
+
+    def boom(*a, **k):
+        calls.append(a)
+        raise AssertionError("查詢打了 API")
+    ms.api_get = boom
+    for fn in (ms.tradable_symbols, ms.excluded_symbols, ms.classified_symbols,
+               lambda: ms.tradable_symbols(quote="USDT")):
+        try:
+            fn()
+        except ms.NotLoadedError as e:
+            assert "refresh()" in str(e), str(e)
+        else:
+            raise AssertionError("未載入就查詢應該拋 NotLoadedError")
+    assert calls == []
+
+
+def test_a6_refresh_count_moves_only_on_success():
+    ms, _ = _a6_loaded()
+    assert ms.refresh_count == 1 and ms.status()["refresh_count"] == 1
+    ms.api_get = _fake_api_get_factory(fail_paths=("/api/v1/common/symbols",))[0]
+    assert ms.refresh() is False and ms.refresh_count == 1
+    ms.api_get = _fake_api_get_factory(symbols=A6_SYMBOLS)[0]
+    assert ms.refresh() is True and ms.refresh_count == 2
+
+
 # ============================== live.pionex_api：信封 / 429 / SSL ==============================
 class _Resp:
     def __init__(self, status_code, js=None, text=""):

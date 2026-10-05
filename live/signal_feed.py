@@ -12,6 +12,9 @@ live.signal_feed — A 頻道資料層（A1）：tickers 輪詢 → ret2h 粗篩
       → 用與回測逐欄位一致的補洞規則整理（live.klines.prepare_klines），
         跑 s4_signal.signal_from_features(features(df, bars_per_hour))，取目標 K 棒那一列
 
+標的池（A6）由 MarketUniverse 提供：live.market_static.tradable_symbols(quote="USDT")（TRADING、USDT 計價、
+strategy.universe 判定可交易）。A5 與背景對帳用的是同一份（feed.universe / BarResult），不各自過濾。
+
 每根 K 棒交出一個 BarResult（FR-7），以回呼交給呼叫端（日後的 A3、或 --record 寫 jsonl）。
 本模組**無狀態**（除了價格緩衝）：不發 TG、不判斷冷卻、不追蹤出場、不寫資料庫 —— 那些要知道
 「哪些部位開著」，是 A3 的事。同一個幣連續幾根都滿足條件時，這裡每根都會交出原始訊號。
@@ -85,6 +88,7 @@ from live.paths import REPO_ROOT
 from live.pionex_api import MARKET_INVALID_SYMBOL, ApiError
 from live.price_buffer import PriceBuffer
 from strategy import s4_signal
+from strategy import universe as universe_rules
 
 logger = logging.getLogger(__name__)
 
@@ -369,7 +373,9 @@ class UniverseUnavailable(RuntimeError):
 
 
 class MarketUniverse:
-    """標的池 = live.market_static.trading_symbols(quote="USDT")，依 B5 既有機制刷新。
+    """標的池 = live.market_static.tradable_symbols(quote="USDT")：TRADING、USDT 計價、而且 strategy.universe
+    判定可交易（A6）。依 B5 既有機制刷新。A1（SignalFeed.universe()）、A5（universe_fn=feed.universe）、背景對帳
+    （BarResult 的未篩 / 有篩到）都從這裡拿同一份，不在各消費端各自過濾。
 
     刷新請求經過共用閘門（A1-f）：把 gate.get（PRIORITY_NORMAL）注入 market_static 當取數函式。
       * 每一個刷新請求都受速率上限約束、計入閘門統計（gate.stats() / recent_requests()）
@@ -378,14 +384,27 @@ class MarketUniverse:
       * 封鎖冷卻中不嘗試刷新（看閘門的冷卻狀態，不看錯誤訊息字串）；啟動時的重試（STARTUP_ATTEMPTS）
         落在冷卻期間也一樣不送
     非 429 的失敗（5xx、連線錯誤）這裡也不重試：舊清單繼續用，下一根 K 棒再試（逾時看的是上次成功）。
+
+    每次 market_static 刷新成功（market_static.refresh_count 變了）之後做一次，其他時候沿用上次的結果：
+      * 分類（market_static.classified_symbols）→ 標的池清單
+      * 日誌（A6 FR-3）：第一次一行 INFO 寫 TRADING USDT 總數、納入數、各類別排除數與被排除的 symbol；
+        之後只有納入 / 排除的集合有變才記一行 INFO，只寫新增與移除的部分
+      * 新上架追蹤（A6 FR-4）：listings（live.universe_seen.ListingTracker）有給才做，拿的是過濾之前的分類結果；
+        它自己接住所有例外，這裡再包一層，標的池刷新與 A1 主迴圈照常
     """
 
     STARTUP_ATTEMPTS = 3
     STARTUP_RETRY_SECONDS = 10
 
-    def __init__(self, gate, clock=None):
+    def __init__(self, gate, clock=None, listings=None):
         self.gate = gate
         self.clock = clock or rest_gate.SystemClock()
+        self.listings = listings
+        self._seen_refresh = None        # 上一次處理過的 market_static.refresh_count
+        self._tradable = []
+        self._included = None           # 上一次的納入集合（None = 還沒載入過）
+        self._excluded = None           # 上一次的排除：symbol → Classification
+        self._startup_summary = None     # 第一次載入時的分類統計（strategy.universe.summarize）
 
     def __call__(self, initial=False):
         from live import market_static as ms
@@ -399,7 +418,53 @@ class MarketUniverse:
                 raise UniverseUnavailable(f"market_static 載入失敗：{ms.last_error}")
         elif self._stale(ms):
             self._refresh(ms, force=False)
-        return ms.trading_symbols(quote="USDT")
+        if ms.refresh_count != self._seen_refresh:
+            self._after_refresh(ms)
+            self._seen_refresh = ms.refresh_count
+        return list(self._tradable)
+
+    def summary(self):
+        """第一次載入時的分類統計 {"total", "included", "excluded", "by_category"}；還沒載入過回 None。"""
+        return None if self._startup_summary is None else dict(self._startup_summary)
+
+    def _after_refresh(self, ms):
+        """market_static 刷新成功之後：分類 → 日誌 → 新上架追蹤。分類本身出錯照樣往外拋（程式錯誤，不悄悄沿用）。"""
+        classes = ms.classified_symbols(quote=universe_rules.QUOTE)
+        tradable = [sym for sym, c in classes.items() if c.tradable]
+        excluded = {sym: c for sym, c in classes.items() if not c.tradable}
+        self._log_universe(classes, tradable, excluded)
+        self._tradable = tradable
+        self._included, self._excluded = set(tradable), excluded
+        if self._startup_summary is None:
+            self._startup_summary = universe_rules.summarize(classes.values())
+        if self.listings is not None:
+            try:
+                self.listings.observe(classes)
+            except Exception:  # noqa: BLE001 —— 監控路徑不可以擋住訊號路徑（observe 本身也不拋）
+                logger.exception("新上架追蹤發生未預期的例外，這一次不通知（標的池照常）")
+
+    def _log_universe(self, classes, tradable, excluded):
+        quote = universe_rules.QUOTE
+        if self._included is None:
+            summary = universe_rules.summarize(classes.values())
+            logger.info("標的池第一次載入：TRADING %s 共 %d 個，%s；被排除的 symbol：%s",
+                        quote, summary["total"], universe_rules.summary_text(summary), _excluded_listing(excluded))
+            return
+        inc = set(tradable)
+        parts = []
+        for label, syms in (("納入新增", sorted(inc - self._included)), ("納入移除", sorted(self._included - inc))):
+            if syms:
+                parts.append("%s %d 個：%s" % (label, len(syms), "、".join(syms)))
+        added = sorted(set(excluded) - set(self._excluded))
+        removed = sorted(set(self._excluded) - set(excluded))
+        if added:
+            parts.append("排除新增 %d 個：%s" % (len(added), "、".join(
+                "%s（%s）" % (s, excluded[s].reason) for s in added)))
+        if removed:
+            parts.append("排除移除 %d 個：%s" % (len(removed), "、".join(removed)))
+        if parts:
+            logger.info("標的池變動（TRADING %s 共 %d 個，納入 %d、排除 %d）：%s", quote, len(classes), len(tradable),
+                        len(excluded), "；".join(parts))
 
     @staticmethod
     def _stale(ms):
@@ -429,7 +494,9 @@ class SignalFeed:
 
     gate          live.rest_gate.RestGate（正式用 shared_gate()）
     clock         與 gate 同一個時鐘物件
-    universe_fn   universe_fn(initial: bool) → symbol 清單；預設 MarketUniverse(gate)
+    universe_fn   universe_fn(initial: bool) → symbol 清單；預設 MarketUniverse(gate, clock, listings=listings)
+    listings      新上架追蹤（live.universe_seen.ListingTracker）；只用在預設的 MarketUniverse，None = 不追蹤
+                  （python -m live.a_channel 一定會給；觀察用的 python -m live.signal_feed 不給）
     params_fn     回傳策略參數 dict；預設 config.strategy_params（每根 K 棒現場取）
     force_candidates
                   壓測用：每根 K 棒至少取近似 ret2h 最高的 N 個當候選
@@ -443,7 +510,7 @@ class SignalFeed:
 
     def __init__(self, *, gate, clock=None, universe_fn=None, params_fn=None, interval=None,
                  force_candidates=0, fg_executor=None, bg_executor=None, on_result=None, reconciler=None,
-                 finality_prober=None):
+                 finality_prober=None, listings=None):
         self.gate = gate
         self.clock = clock or rest_gate.SystemClock()
         self.interval = interval or config.KLINE_INTERVAL
@@ -457,7 +524,8 @@ class SignalFeed:
         self.base_tolerance_ms = int(round(config.SCREEN_BASE_TOLERANCE_SECONDS * 1000))
         self.buffer = PriceBuffer(self.horizon_ms + self.base_tolerance_ms
                                   + int(config.PRICE_BUFFER_EXTRA_SECONDS * 1000))
-        self._universe_fn = universe_fn or MarketUniverse(gate, self.clock)
+        self._universe_fn = universe_fn or MarketUniverse(gate, self.clock, listings=listings)
+        self._universe_loaded = False  # load_universe() 做過了：run() 不再重載
         self._params_fn = params_fn or config.strategy_params
         if int(force_candidates) < 0:
             raise ValueError("force_candidates 不可以是負數")
@@ -493,6 +561,20 @@ class SignalFeed:
 
     def universe(self):
         return list(self._universe)
+
+    def load_universe(self):
+        """啟動時先載入標的池（失敗拋 UniverseUnavailable），之後的 run() 不再重載。回傳標的池。
+
+        live.a_channel 在 A5 與 A4 的 🟢 之前呼叫：🟢 要寫啟動時的分類結果，A5 一啟動就看得到標的池。
+        不呼叫也可以：run() 一開始照舊自己載入。"""
+        syms = self.refresh_universe(initial=True)
+        self._universe_loaded = True
+        return syms
+
+    def universe_summary(self):
+        """啟動時標的池的分類統計（MarketUniverse.summary()）；universe_fn 不是 MarketUniverse 或還沒載入回 None。"""
+        fn = getattr(self._universe_fn, "summary", None)
+        return fn() if callable(fn) else None
 
     def cold_start_active(self):
         with self._lock:
@@ -910,9 +992,10 @@ class SignalFeed:
         行程停頓（闔蓋、VM 暫停）、例行輪詢卡住、或只是醒來時剛好跨過收盤幾百毫秒，都不會讓某一根
         悄悄消失。收盤（或它的前景保留期）已經到了，就不再跑例行輪詢，先處理收盤；
         睡過頭的例行輪詢時刻（已過超過一個間隔）直接略過，不跑過期的輪詢。
-        啟動前已經收盤的根不算這次運作的範圍。
+        啟動前已經收盤的根不算這次運作的範圍。已經 load_universe() 過就不再載入標的池。
         """
-        self.refresh_universe(initial=True)
+        if not self._universe_loaded:
+            self.refresh_universe(initial=True)
         self.start_seeding(self._universe, initial=True)
         start = self.gate.server_clock.now_ms()
         self._last_close_ms = (start // self.bar_ms) * self.bar_ms
@@ -1366,6 +1449,16 @@ def main(argv=None):
 
 
 # ============================== 小工具 ==============================
+def _excluded_listing(excluded):
+    """被排除的 symbol 依類別分組：「[股票／ETF／商品 3] A、B、C；[強掛勾／穩定幣／包裝幣 1] D」；沒有就是「無」。"""
+    groups = {}
+    for sym, c in sorted(excluded.items()):
+        groups.setdefault(c.category, []).append(c.display_symbol)
+    parts = ["[%s %d] %s" % (universe_rules.CATEGORY_LABELS[cat], len(groups[cat]), "、".join(groups[cat]))
+             for cat in universe_rules.EXCLUDED_CATEGORIES if groups.get(cat)]
+    return "；".join(parts) if parts else "無"
+
+
 def _num(x):
     """數值 → float；NaN / inf / None → None。"""
     try:

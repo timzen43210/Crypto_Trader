@@ -216,6 +216,16 @@ CLOCK_OFFSET_WARN_MS = 1000
 # python -m live.signal_feed --record 不給目錄時的預設位置（runtime/ 底下，不進版控）。
 SIGNAL_FEED_RECORD_DIR = os.path.join(RUNTIME_DIR, "signal_feed")
 
+# ---- 標的池的新上架追蹤（A6，live/universe_seen.py；分類規則在 strategy/universe.py）----
+# 看過的合約（TRADING、USDT 計價，過濾之前）記在這個 SQLite 檔。一律在 runtime/ 底下（已 .gitignore），不可以放進
+# state/ 或 output/。不需要事先存在：第一次啟動時建檔、把當時的清單記成初始列、不發新上架通知；之後每次標的池刷新
+# 成功，不在表裡的就是新上架。目錄由 live.universe_seen 自己建（live.paths 刻意不建目錄）。
+UNIVERSE_SEEN_DB_PATH = os.path.join(RUNTIME_DIR, "db", "universe_seen.sqlite3")
+
+# 讀寫 universe_seen.sqlite3 時資料庫被鎖住最多等幾秒。寫入在 A1 的標的池刷新裡做（監控路徑不可以擋住訊號路徑），
+# 所以跟 A_CHANNEL_OUTBOX_BUSY_TIMEOUT_SECONDS 一樣刻意比 sqlite3 預設的 5 秒短；等不到就記 ERROR、這一批下次再試。
+UNIVERSE_SEEN_BUSY_TIMEOUT_SECONDS = 2
+
 # ---- Telegram Channel 發送（live.tg_channel）----
 # 設計理由與各參數之間的交互作用寫在 live/tg_channel.py 的 docstring，這裡只放值。
 # Bot API 的根位址。端點路徑（/bot<token>/sendMessage）是程式邏輯，不放這裡。
@@ -407,6 +417,10 @@ OPS_ALERT_STOP_TIMEOUT_SECONDS = 30
 # 每日心跳的時刻（台北時間，HH:MM）。
 OPS_HEARTBEAT_TIME_TPE = "09:00"
 
+# 心跳的「新上架」欄位列出第一次看到的時刻在過去幾小時內的合約（讀 UNIVERSE_SEEN_DB_PATH，不含初始列）。
+# 用固定的時間窗、不用「本次啟動以來」：程式中途重啟也不會漏列。
+OPS_HEARTBEAT_LISTING_HOURS = 24
+
 # 條件 C2：距離上一次收到 A1 的 BarResult 超過這麼多秒就算 A1 停擺（兩根 5 分 K 加 1 分鐘）。
 OPS_A1_STALL_SECONDS = 660
 
@@ -466,6 +480,9 @@ def execution_params():
         "RECONCILE_START_DELAY_SECONDS": RECONCILE_START_DELAY_SECONDS,
         "CLOCK_OFFSET_WARN_MS": CLOCK_OFFSET_WARN_MS,
         "SIGNAL_FEED_RECORD_DIR": SIGNAL_FEED_RECORD_DIR,
+        # ---- 標的池的新上架追蹤（A6，live.universe_seen）----
+        "UNIVERSE_SEEN_DB_PATH": UNIVERSE_SEEN_DB_PATH,
+        "UNIVERSE_SEEN_BUSY_TIMEOUT_SECONDS": UNIVERSE_SEEN_BUSY_TIMEOUT_SECONDS,
         # ---- Telegram Channel 發送（live.tg_channel）----
         "TG_API_BASE_URL": TG_API_BASE_URL,
         "TG_MAX_MESSAGES_PER_MINUTE": TG_MAX_MESSAGES_PER_MINUTE,
@@ -524,6 +541,7 @@ def execution_params():
         "OPS_ALERT_MAX_ITEMS": OPS_ALERT_MAX_ITEMS,
         "OPS_ALERT_STOP_TIMEOUT_SECONDS": OPS_ALERT_STOP_TIMEOUT_SECONDS,
         "OPS_HEARTBEAT_TIME_TPE": OPS_HEARTBEAT_TIME_TPE,
+        "OPS_HEARTBEAT_LISTING_HOURS": OPS_HEARTBEAT_LISTING_HOURS,
         "OPS_A1_STALL_SECONDS": OPS_A1_STALL_SECONDS,
         "OPS_A5_STALL_SECONDS": OPS_A5_STALL_SECONDS,
         "OPS_OUTBOX_STUCK_SECONDS": OPS_OUTBOX_STUCK_SECONDS,

@@ -1,0 +1,4277 @@
+{
+ "source": "GET https://api.pionex.com/api/v1/common/symbols?type=PERP（laptop，TASK-023 AC-2，只抓一次）",
+ "fetched_at_tpe": "2026-10-04 04:26:27",
+ "server_timestamp_ms": 1791059187732,
+ "kept_fields": [
+  "symbol",
+  "name",
+  "baseCurrency",
+  "quoteCurrency",
+  "status"
+ ],
+ "symbols": [
+  {
+   "symbol": "0G_USDT_PERP",
+   "name": "0G USDT PERPETUAL",
+   "baseCurrency": "ZEROG",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "1INCH_USDT_PERP",
+   "name": "1INCH USDT PERPETUAL",
+   "baseCurrency": "INCH",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "2Z_USDT_PERP",
+   "name": "2Z USDT PERPETUAL",
+   "baseCurrency": "TWOZ",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "4_USDT_PERP",
+   "name": "4 USDT PERPETUAL",
+   "baseCurrency": "FOUR",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AAOIX_USDT_PERP",
+   "name": "AAOIX USDT PERPETUAL",
+   "baseCurrency": "AAOIX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AAPLX_USDT_PERP",
+   "name": "AAPLX USDT PERPETUAL",
+   "baseCurrency": "AAPLX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AAVE_ETH_PERP",
+   "name": "AAVE ETH PERPETUAL",
+   "baseCurrency": "AAVE",
+   "quoteCurrency": "ETH",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AAVE_USDT_PERP",
+   "name": "AAVE USDT PERPETUAL",
+   "baseCurrency": "AAVE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AAX_USDT_PERP",
+   "name": "AAX USDT PERPETUAL",
+   "baseCurrency": "AAX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ACE_USDT_PERP",
+   "name": "ACE USDT PERPETUAL",
+   "baseCurrency": "ACE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ACH_USDT_PERP",
+   "name": "ACH USDT PERPETUAL",
+   "baseCurrency": "ACH",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ACT_USDT_PERP",
+   "name": "ACT USDT PERPETUAL",
+   "baseCurrency": "ACT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ADA_BTC_PERP",
+   "name": "ADA BTC PERPETUAL",
+   "baseCurrency": "ADA",
+   "quoteCurrency": "BTC",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ADA_ETH_PERP",
+   "name": "ADA ETH PERPETUAL",
+   "baseCurrency": "ADA",
+   "quoteCurrency": "ETH",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ADA_USDT_PERP",
+   "name": "ADA USDT PERPETUAL",
+   "baseCurrency": "ADA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AERO_USDT_PERP",
+   "name": "AERO USDT PERPETUAL",
+   "baseCurrency": "AERO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AEVO_USDT_PERP",
+   "name": "AEVO USDT PERPETUAL",
+   "baseCurrency": "AEVO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AGT_USDT_PERP",
+   "name": "AGT USDT PERPETUAL",
+   "baseCurrency": "AGT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AIA_USDT_PERP",
+   "name": "AIA USDT PERPETUAL",
+   "baseCurrency": "DEAGENTAI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AIGENSYN_USDT_PERP",
+   "name": "AIGENSYN USDT PERPETUAL",
+   "baseCurrency": "AIGENSYN",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AIN_USDT_PERP",
+   "name": "AIN USDT PERPETUAL",
+   "baseCurrency": "AIN",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AIO_USDT_PERP",
+   "name": "AIO USDT PERPETUAL",
+   "baseCurrency": "AIO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AIXBT_USDT_PERP",
+   "name": "AIXBT USDT PERPETUAL",
+   "baseCurrency": "AIXBT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AKE_USDT_PERP",
+   "name": "AKE USDT PERPETUAL",
+   "baseCurrency": "AKE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AKT_USDT_PERP",
+   "name": "AKT USDT PERPETUAL",
+   "baseCurrency": "AKT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ALABX_USDT_PERP",
+   "name": "ALABX USDT PERPETUAL",
+   "baseCurrency": "ALABX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ALCH_USDT_PERP",
+   "name": "ALCH USDT PERPETUAL",
+   "baseCurrency": "ALCH",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ALGO_USDT_PERP",
+   "name": "ALGO USDT PERPETUAL",
+   "baseCurrency": "ALGO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ALLO_USDT_PERP",
+   "name": "ALLO USDT PERPETUAL",
+   "baseCurrency": "ALLO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ALL_USDT_PERP",
+   "name": "ALL USDT PERPETUAL",
+   "baseCurrency": "ALL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ALT_USDT_PERP",
+   "name": "ALT USDT PERPETUAL",
+   "baseCurrency": "ALT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AMATX_USDT_PERP",
+   "name": "AMATX USDT PERPETUAL",
+   "baseCurrency": "AMATX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AMDX_USDT_PERP",
+   "name": "AMDX USDT PERPETUAL",
+   "baseCurrency": "AMDX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AMZNX_USDT_PERP",
+   "name": "AMZNX USDT PERPETUAL",
+   "baseCurrency": "AMZNX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ANIME_USDT_PERP",
+   "name": "ANIME USDT PERPETUAL",
+   "baseCurrency": "ANIME",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ANTHROPIC_USDT_PERP",
+   "name": "ANTHROPIC USDT PERPETUAL",
+   "baseCurrency": "ANTHROPIC",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "APE_USDT_PERP",
+   "name": "APE USDT PERPETUAL",
+   "baseCurrency": "APE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "API3_USDT_PERP",
+   "name": "API3 USDT PERPETUAL",
+   "baseCurrency": "API3",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "APPX_USDT_PERP",
+   "name": "APPX USDT PERPETUAL",
+   "baseCurrency": "APPX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "APR_USDT_PERP",
+   "name": "APR USDT PERPETUAL",
+   "baseCurrency": "APR",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "APT_USDT_PERP",
+   "name": "APT USDT PERPETUAL",
+   "baseCurrency": "APT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ARB_USDT_PERP",
+   "name": "ARB USDT PERPETUAL",
+   "baseCurrency": "ARB",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ARC_USDT_PERP",
+   "name": "ARC USDT PERPETUAL",
+   "baseCurrency": "ARC",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ARIA_USDT_PERP",
+   "name": "ARIA USDT PERPETUAL",
+   "baseCurrency": "ARIA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ARKM_USDT_PERP",
+   "name": "ARKM USDT PERPETUAL",
+   "baseCurrency": "ARKM",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ARMX_USDT_PERP",
+   "name": "ARMX USDT PERPETUAL",
+   "baseCurrency": "ARMX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ARPA_USDT_PERP",
+   "name": "ARPA USDT PERPETUAL",
+   "baseCurrency": "ARPA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ARX_USDT_PERP",
+   "name": "ARX USDT PERPETUAL",
+   "baseCurrency": "ARX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AR_USDT_PERP",
+   "name": "AR USDT PERPETUAL",
+   "baseCurrency": "AR",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ASMLX_USDT_PERP",
+   "name": "ASMLX USDT PERPETUAL",
+   "baseCurrency": "ASMLX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ASTER_USDT_PERP",
+   "name": "ASTER USDT PERPETUAL",
+   "baseCurrency": "ASTER",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ASTR_USDT_PERP",
+   "name": "ASTR USDT PERPETUAL",
+   "baseCurrency": "ASTR",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ASTSX_USDT_PERP",
+   "name": "ASTSX USDT PERPETUAL",
+   "baseCurrency": "ASTSX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ATH_USDT_PERP",
+   "name": "ATH USDT PERPETUAL",
+   "baseCurrency": "ATH",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ATOM_USDT_PERP",
+   "name": "ATOM USDT PERPETUAL",
+   "baseCurrency": "ATOM",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AT_USDT_PERP",
+   "name": "AT USDT PERPETUAL",
+   "baseCurrency": "AT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AUCTION_USDT_PERP",
+   "name": "AUCTION USDT PERPETUAL",
+   "baseCurrency": "AUCTION",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AVAX_USDT_PERP",
+   "name": "AVAX USDT PERPETUAL",
+   "baseCurrency": "AVAX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AVGOX_USDT_PERP",
+   "name": "AVGOX USDT PERPETUAL",
+   "baseCurrency": "AVGOX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AVNT_USDT_PERP",
+   "name": "AVNT USDT PERPETUAL",
+   "baseCurrency": "AVNT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AWE_USDT_PERP",
+   "name": "AWE USDT PERPETUAL",
+   "baseCurrency": "AWE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AXL_USDT_PERP",
+   "name": "AXL USDT PERPETUAL",
+   "baseCurrency": "AXL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AXS_USDT_PERP",
+   "name": "AXS USDT PERPETUAL",
+   "baseCurrency": "AXS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "AXTIX_USDT_PERP",
+   "name": "AXTIX USDT PERPETUAL",
+   "baseCurrency": "AXTIX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "A_USDT_PERP",
+   "name": "A USDT PERPETUAL",
+   "baseCurrency": "A",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BABAX_USDT_PERP",
+   "name": "BABAX USDT PERPETUAL",
+   "baseCurrency": "BABAX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BABY_USDT_PERP",
+   "name": "BABY USDT PERPETUAL",
+   "baseCurrency": "BABY",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BANANAS31_USDT_PERP",
+   "name": "BANANAS31 USDT PERPETUAL",
+   "baseCurrency": "BANANAS31",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BANANA_USDT_PERP",
+   "name": "BANANA USDT PERPETUAL",
+   "baseCurrency": "BANANA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BAND_USDT_PERP",
+   "name": "BAND USDT PERPETUAL",
+   "baseCurrency": "BAND",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BANK_USDT_PERP",
+   "name": "BANK USDT PERPETUAL",
+   "baseCurrency": "BANK",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BAN_USDT_PERP",
+   "name": "BAN USDT PERPETUAL",
+   "baseCurrency": "BAN",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BARD_USDT_PERP",
+   "name": "BARD USDT PERPETUAL",
+   "baseCurrency": "BARD",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BASED_USDT_PERP",
+   "name": "BASED USDT PERPETUAL",
+   "baseCurrency": "BASED",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BAS_USDT_PERP",
+   "name": "BAS USDT PERPETUAL",
+   "baseCurrency": "BAS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BAT_USDT_PERP",
+   "name": "BAT USDT PERPETUAL",
+   "baseCurrency": "BAT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BB_USDT_PERP",
+   "name": "BB USDT PERPETUAL",
+   "baseCurrency": "BB",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BCH_USDT_PERP",
+   "name": "BCH USDT PERPETUAL",
+   "baseCurrency": "BCH",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BEAMX_USDT_PERP",
+   "name": "BEAMX USDT PERPETUAL",
+   "baseCurrency": "BEAMX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BEAT_USDT_PERP",
+   "name": "BEAT USDT PERPETUAL",
+   "baseCurrency": "BEAT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BERA_USDT_PERP",
+   "name": "BERA USDT PERPETUAL",
+   "baseCurrency": "BERA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BEX_USDT_PERP",
+   "name": "BEX USDT PERPETUAL",
+   "baseCurrency": "BEX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BICO_USDT_PERP",
+   "name": "BICO USDT PERPETUAL",
+   "baseCurrency": "BICO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BILL_USDT_PERP",
+   "name": "BILL USDT PERPETUAL",
+   "baseCurrency": "BILL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BIO_USDT_PERP",
+   "name": "BIO USDT PERPETUAL",
+   "baseCurrency": "BIO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BIRB_USDT_PERP",
+   "name": "BIRB USDT PERPETUAL",
+   "baseCurrency": "BIRB",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BLEND_USDT_PERP",
+   "name": "BLEND USDT PERPETUAL",
+   "baseCurrency": "BLEND",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BLESS_USDT_PERP",
+   "name": "BLESS USDT PERPETUAL",
+   "baseCurrency": "BLESS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BLUAI_USDT_PERP",
+   "name": "BLUAI USDT PERPETUAL",
+   "baseCurrency": "BLUAI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BLUR_USDT_PERP",
+   "name": "BLUR USDT PERPETUAL",
+   "baseCurrency": "BLUR",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BMNRX_ETH_PERP",
+   "name": "BMNRX ETH PERPETUAL",
+   "baseCurrency": "BMNRX",
+   "quoteCurrency": "ETH",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BMNRX_USDT_PERP",
+   "name": "BMNRX USDT PERPETUAL",
+   "baseCurrency": "BMNRX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BNB_BTC_PERP",
+   "name": "BNB BTC PERPETUAL",
+   "baseCurrency": "BNB",
+   "quoteCurrency": "BTC",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BNB_USDT_PERP",
+   "name": "BNB USDT PERPETUAL",
+   "baseCurrency": "BNB",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BNCX_USDT_PERP",
+   "name": "BNCX USDT PERPETUAL",
+   "baseCurrency": "BNCX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BNOX_USDT_PERP",
+   "name": "BNOX USDT PERPETUAL",
+   "baseCurrency": "BNOX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BOME_USDT_PERP",
+   "name": "BOME USDT PERPETUAL",
+   "baseCurrency": "BOME",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BONK_USDT_PERP",
+   "name": "BONK USDT PERPETUAL",
+   "baseCurrency": "BONK",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BOTX_USDT_PERP",
+   "name": "BOTX USDT PERPETUAL",
+   "baseCurrency": "BOTX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BRENTOIL_USDT_PERP",
+   "name": "BRENTOIL USDT PERPETUAL",
+   "baseCurrency": "BRENTOIL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BRETT_USDT_PERP",
+   "name": "BRETT USDT PERPETUAL",
+   "baseCurrency": "BRETT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BREV_USDT_PERP",
+   "name": "BREV USDT PERPETUAL",
+   "baseCurrency": "BREV",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BROCCOLI_USDT_PERP",
+   "name": "BROCCOLI USDT PERPETUAL",
+   "baseCurrency": "BROCCOLI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BR_USDT_PERP",
+   "name": "BR USDT PERPETUAL",
+   "baseCurrency": "BR",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BSB_USDT_PERP",
+   "name": "BSB USDT PERPETUAL",
+   "baseCurrency": "BSB",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BSPX_USDT_PERP",
+   "name": "BSPX USDT PERPETUAL",
+   "baseCurrency": "BSPX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BSV_USDT_PERP",
+   "name": "BSV USDT PERPETUAL",
+   "baseCurrency": "BSV",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BTC_ETH_PERP",
+   "name": "BTC ETH PERPETUAL",
+   "baseCurrency": "BTC",
+   "quoteCurrency": "ETH",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BTC_SOL_PERP",
+   "name": "BTC SOL PERPETUAL",
+   "baseCurrency": "BTC",
+   "quoteCurrency": "SOL",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BTC_USDT_PERP",
+   "name": "BTC USDT PERPETUAL",
+   "baseCurrency": "BTC",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BTR_USDT_PERP",
+   "name": "BTR USDT PERPETUAL",
+   "baseCurrency": "BTR",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BTW_USDT_PERP",
+   "name": "BTW USDT PERPETUAL",
+   "baseCurrency": "BTW",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "BULLA_USDT_PERP",
+   "name": "BULLA USDT PERPETUAL",
+   "baseCurrency": "BULLA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "B_USDT_PERP",
+   "name": "B USDT PERPETUAL",
+   "baseCurrency": "B",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CAKE_USDT_PERP",
+   "name": "CAKE USDT PERPETUAL",
+   "baseCurrency": "CAKE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CAP_USDT_PERP",
+   "name": "CAP USDT PERPETUAL",
+   "baseCurrency": "CAP",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CARX_USDT_PERP",
+   "name": "CARX USDT PERPETUAL",
+   "baseCurrency": "CARX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CASHCAT_USDT_PERP",
+   "name": "CASHCAT USDT PERPETUAL",
+   "baseCurrency": "CASHCAT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CATI_USDT_PERP",
+   "name": "CATI USDT PERPETUAL",
+   "baseCurrency": "CATI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CBRS_USDT_PERP",
+   "name": "CBRS USDT PERPETUAL",
+   "baseCurrency": "CBRS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CC_USDT_PERP",
+   "name": "CC USDT PERPETUAL",
+   "baseCurrency": "CC",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CEGX_USDT_PERP",
+   "name": "CEGX USDT PERPETUAL",
+   "baseCurrency": "CEGX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CETUS_USDT_PERP",
+   "name": "CETUS USDT PERPETUAL",
+   "baseCurrency": "CETUS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CFG_USDT_PERP",
+   "name": "CFG USDT PERPETUAL",
+   "baseCurrency": "CFG",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CFX_USDT_PERP",
+   "name": "CFX USDT PERPETUAL",
+   "baseCurrency": "CFX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CF_USDT_PERP",
+   "name": "CF USDT PERPETUAL",
+   "baseCurrency": "CF",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CHIP_USDT_PERP",
+   "name": "CHIP USDT PERPETUAL",
+   "baseCurrency": "CHIP",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CHZ_USDT_PERP",
+   "name": "CHZ USDT PERPETUAL",
+   "baseCurrency": "CHZ",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CIFRX_USDT_PERP",
+   "name": "CIFRX USDT PERPETUAL",
+   "baseCurrency": "CIFRX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CKB_USDT_PERP",
+   "name": "CKB USDT PERPETUAL",
+   "baseCurrency": "CKB",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CLANKER_USDT_PERP",
+   "name": "CLANKER USDT PERPETUAL",
+   "baseCurrency": "CLANKER",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CLO_USDT_PERP",
+   "name": "CLO USDT PERPETUAL",
+   "baseCurrency": "CLO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "COAI_USDT_PERP",
+   "name": "COAI USDT PERPETUAL",
+   "baseCurrency": "COAI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "COHRX_USDT_PERP",
+   "name": "COHRX USDT PERPETUAL",
+   "baseCurrency": "COHRX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "COINX_USDT_PERP",
+   "name": "COINX USDT PERPETUAL",
+   "baseCurrency": "COINX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "COLLECT_USDT_PERP",
+   "name": "COLLECT USDT PERPETUAL",
+   "baseCurrency": "COLLECT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "COMP_USDT_PERP",
+   "name": "COMP USDT PERPETUAL",
+   "baseCurrency": "COMP",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "COOKIE_USDT_PERP",
+   "name": "COOKIE USDT PERPETUAL",
+   "baseCurrency": "COOKIE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "COPPER_USDT_PERP",
+   "name": "COPPER USDT PERPETUAL",
+   "baseCurrency": "COPPER",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "COTI_USDT_PERP",
+   "name": "COTI USDT PERPETUAL",
+   "baseCurrency": "COTI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CPERX_USDT_PERP",
+   "name": "CPERX USDT PERPETUAL",
+   "baseCurrency": "CPERX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CRCLX_USDT_PERP",
+   "name": "CRCLX USDT PERPETUAL",
+   "baseCurrency": "CRCLX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CRDOX_USDT_PERP",
+   "name": "CRDOX USDT PERPETUAL",
+   "baseCurrency": "CRDOX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CRMX_USDT_PERP",
+   "name": "CRMX USDT PERPETUAL",
+   "baseCurrency": "CRMX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CROSS_USDT_PERP",
+   "name": "CROSS USDT PERPETUAL",
+   "baseCurrency": "CROSS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CRO_USDT_PERP",
+   "name": "CRO USDT PERPETUAL",
+   "baseCurrency": "CRO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CRV_USDT_PERP",
+   "name": "CRV USDT PERPETUAL",
+   "baseCurrency": "CRV",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CRWVX_USDT_PERP",
+   "name": "CRWVX USDT PERPETUAL",
+   "baseCurrency": "CRWVX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CSCOX_USDT_PERP",
+   "name": "CSCOX USDT PERPETUAL",
+   "baseCurrency": "CSCOX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CTR_USDT_PERP",
+   "name": "CTR USDT PERPETUAL",
+   "baseCurrency": "CTR",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CT_USDT_PERP",
+   "name": "CT USDT PERPETUAL",
+   "baseCurrency": "CT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CVXX_USDT_PERP",
+   "name": "CVXX USDT PERPETUAL",
+   "baseCurrency": "CVXX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CVX_USDT_PERP",
+   "name": "CVX USDT PERPETUAL",
+   "baseCurrency": "CVX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CXMTX_USDT_PERP",
+   "name": "CXMTX USDT PERPETUAL",
+   "baseCurrency": "CXMTX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "CYS_USDT_PERP",
+   "name": "CYS USDT PERPETUAL",
+   "baseCurrency": "CYS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "DASH_USDT_PERP",
+   "name": "DASH USDT PERPETUAL",
+   "baseCurrency": "DASH",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "DATA_USDT_PERP",
+   "name": "DATASPOT USDT PERPETUAL",
+   "baseCurrency": "DATASPOT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "DELLX_USDT_PERP",
+   "name": "DELLX USDT PERPETUAL",
+   "baseCurrency": "DELLX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "DODO_USDT_PERP",
+   "name": "DODO USDT PERPETUAL",
+   "baseCurrency": "DODO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "DOGE_BTC_PERP",
+   "name": "DOGE BTC PERPETUAL",
+   "baseCurrency": "DOGE",
+   "quoteCurrency": "BTC",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "DOGE_ETH_PERP",
+   "name": "DOGE ETH PERPETUAL",
+   "baseCurrency": "DOGE",
+   "quoteCurrency": "ETH",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "DOGE_SOL_PERP",
+   "name": "DOGE SOL PERPETUAL",
+   "baseCurrency": "DOGE",
+   "quoteCurrency": "SOL",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "DOGE_USDT_PERP",
+   "name": "DOGE USDT PERPETUAL",
+   "baseCurrency": "DOGE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "DOGS_USDT_PERP",
+   "name": "DOGS USDT PERPETUAL",
+   "baseCurrency": "DOGS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "DOLO_USDT_PERP",
+   "name": "DOLO USDT PERPETUAL",
+   "baseCurrency": "DOLO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "DOS_USDT_PERP",
+   "name": "DOS USDT PERPETUAL",
+   "baseCurrency": "DOS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "DOT_USDT_PERP",
+   "name": "DOT USDT PERPETUAL",
+   "baseCurrency": "DOT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "DRAMX_USDT_PERP",
+   "name": "DRAMX USDT PERPETUAL",
+   "baseCurrency": "DRAMX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "DRIFT_USDT_PERP",
+   "name": "DRIFT USDT PERPETUAL",
+   "baseCurrency": "DRIFT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "DUSK_USDT_PERP",
+   "name": "DUSK USDT PERPETUAL",
+   "baseCurrency": "DUSK",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "DYM_USDT_PERP",
+   "name": "DYM USDT PERPETUAL",
+   "baseCurrency": "DYM",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "EDEN_USDT_PERP",
+   "name": "EDEN USDT PERPETUAL",
+   "baseCurrency": "OPENEDEN",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "EDGE_USDT_PERP",
+   "name": "EDGE USDT PERPETUAL",
+   "baseCurrency": "EDGE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "EDU_USDT_PERP",
+   "name": "EDU USDT PERPETUAL",
+   "baseCurrency": "EDU",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "EGLD_USDT_PERP",
+   "name": "EGLD USDT PERPETUAL",
+   "baseCurrency": "EGLD",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "EIGEN_USDT_PERP",
+   "name": "EIGEN USDT PERPETUAL",
+   "baseCurrency": "EIGEN",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ELSA_USDT_PERP",
+   "name": "ELSA USDT PERPETUAL",
+   "baseCurrency": "ELSA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ENA_ETH_PERP",
+   "name": "ENA ETH PERPETUAL",
+   "baseCurrency": "ENA",
+   "quoteCurrency": "ETH",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ENA_USDT_PERP",
+   "name": "ENA USDT PERPETUAL",
+   "baseCurrency": "ENA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ENJ_USDT_PERP",
+   "name": "ENJ USDT PERPETUAL",
+   "baseCurrency": "ENJ",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ENSO_USDT_PERP",
+   "name": "ENSO USDT PERPETUAL",
+   "baseCurrency": "ENSO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ENS_USDT_PERP",
+   "name": "ENS USDT PERPETUAL",
+   "baseCurrency": "ENS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ESP_USDT_PERP",
+   "name": "ESP USDT PERPETUAL",
+   "baseCurrency": "ESP",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ETC_USDT_PERP",
+   "name": "ETC USDT PERPETUAL",
+   "baseCurrency": "ETC",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ETHFI_USDT_PERP",
+   "name": "ETHFI USDT PERPETUAL",
+   "baseCurrency": "ETHFI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ETH_BTC_PERP",
+   "name": "ETH BTC PERPETUAL",
+   "baseCurrency": "ETH",
+   "quoteCurrency": "BTC",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ETH_SOL_PERP",
+   "name": "ETH SOL PERPETUAL",
+   "baseCurrency": "ETH",
+   "quoteCurrency": "SOL",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ETH_USDT_PERP",
+   "name": "ETH USDT PERPETUAL",
+   "baseCurrency": "ETH",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "EUL_USDT_PERP",
+   "name": "EUL USDT PERPETUAL",
+   "baseCurrency": "EUL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "EVAA_USDT_PERP",
+   "name": "EVAA USDT PERPETUAL",
+   "baseCurrency": "EVAA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "EWJX_USDT_PERP",
+   "name": "EWJX USDT PERPETUAL",
+   "baseCurrency": "EWJX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "EWYX_USDT_PERP",
+   "name": "EWYX USDT PERPETUAL",
+   "baseCurrency": "EWYX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "FARTCOIN_USDT_PERP",
+   "name": "FARTCOIN USDT PERPETUAL",
+   "baseCurrency": "FARTCOIN",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "FET_USDT_PERP",
+   "name": "FET USDT PERPETUAL",
+   "baseCurrency": "FET",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "FF_USDT_PERP",
+   "name": "FF USDT PERPETUAL",
+   "baseCurrency": "FF",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "FHE_USDT_PERP",
+   "name": "FHE USDT PERPETUAL",
+   "baseCurrency": "FHE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "FIL_USDT_PERP",
+   "name": "FIL USDT PERPETUAL",
+   "baseCurrency": "FIL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "FLNCX_USDT_PERP",
+   "name": "FLNCX USDT PERPETUAL",
+   "baseCurrency": "FLNCX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "FLOKI_USDT_PERP",
+   "name": "FLOKI USDT PERPETUAL",
+   "baseCurrency": "FLOKI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "FLUID_USDT_PERP",
+   "name": "FLUID USDT PERPETUAL",
+   "baseCurrency": "FLUID",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "FOGO_USDT_PERP",
+   "name": "FOGO USDT PERPETUAL",
+   "baseCurrency": "FOGO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "FOLKS_USDT_PERP",
+   "name": "FOLKS USDT PERPETUAL",
+   "baseCurrency": "FOLKS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "FRAX_USDT_PERP",
+   "name": "FRAX USDT PERPETUAL",
+   "baseCurrency": "FRAX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "FUTUX_USDT_PERP",
+   "name": "FUTUX USDT PERPETUAL",
+   "baseCurrency": "FUTUX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "GALA_USDT_PERP",
+   "name": "GALA USDT PERPETUAL",
+   "baseCurrency": "GALA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "GAS_USDT_PERP",
+   "name": "GAS USDT PERPETUAL",
+   "baseCurrency": "GAS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "GENIUS_USDT_PERP",
+   "name": "GENIUS USDT PERPETUAL",
+   "baseCurrency": "GENIUS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "GEVX_USDT_PERP",
+   "name": "GEVX USDT PERPETUAL",
+   "baseCurrency": "GEVX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "GIGGLE_USDT_PERP",
+   "name": "GIGGLE USDT PERPETUAL",
+   "baseCurrency": "GIGGLE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "GLWX_USDT_PERP",
+   "name": "GLWX USDT PERPETUAL",
+   "baseCurrency": "GLWX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "GMEX_USDT_PERP",
+   "name": "GMEX USDT PERPETUAL",
+   "baseCurrency": "GMEX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "GMT_USDT_PERP",
+   "name": "GMT USDT PERPETUAL",
+   "baseCurrency": "GMT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "GMX_USDT_PERP",
+   "name": "GMX USDT PERPETUAL",
+   "baseCurrency": "GMX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "GOAT_USDT_PERP",
+   "name": "GOAT USDT PERPETUAL",
+   "baseCurrency": "GOAT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "GOOGLX_USDT_PERP",
+   "name": "GOOGLX USDT PERPETUAL",
+   "baseCurrency": "GOOGLX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "GPS_USDT_PERP",
+   "name": "GPS USDT PERPETUAL",
+   "baseCurrency": "GPS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "GRAM_USDT_PERP",
+   "name": "GRAM USDT PERPETUAL",
+   "baseCurrency": "GRAM",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "GRASS_USDT_PERP",
+   "name": "GRASS USDT PERPETUAL",
+   "baseCurrency": "GRASS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "GRIFFAIN_USDT_PERP",
+   "name": "GRIFFAIN USDT PERPETUAL",
+   "baseCurrency": "GRIFFAIN",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "GRT_USDT_PERP",
+   "name": "GRT USDT PERPETUAL",
+   "baseCurrency": "GRT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "GRVT_USDT_PERP",
+   "name": "GRVT USDT PERPETUAL",
+   "baseCurrency": "GRVT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "GSGX_USDT_PERP",
+   "name": "GSGX USDT PERPETUAL",
+   "baseCurrency": "GSGX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "GUA_USDT_PERP",
+   "name": "GUA USDT PERPETUAL",
+   "baseCurrency": "GUA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "GUN_USDT_PERP",
+   "name": "GUN USDT PERPETUAL",
+   "baseCurrency": "GUN",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "GWEI_USDT_PERP",
+   "name": "GWEI USDT PERPETUAL",
+   "baseCurrency": "GWEI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "HAEDAL_USDT_PERP",
+   "name": "HAEDAL USDT PERPETUAL",
+   "baseCurrency": "HAEDAL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "HANA_USDT_PERP",
+   "name": "HANA USDT PERPETUAL",
+   "baseCurrency": "HANA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "HBAR_USDT_PERP",
+   "name": "HBAR USDT PERPETUAL",
+   "baseCurrency": "HBAR",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "HEMI_USDT_PERP",
+   "name": "HEMI USDT PERPETUAL",
+   "baseCurrency": "HEMI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "HIMSX_USDT_PERP",
+   "name": "HIMSX USDT PERPETUAL",
+   "baseCurrency": "HIMSX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "HMSTR_USDT_PERP",
+   "name": "HMSTR USDT PERPETUAL",
+   "baseCurrency": "HMSTR",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "HOLO_USDT_PERP",
+   "name": "HOLO USDT PERPETUAL",
+   "baseCurrency": "HOLO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "HOME_USDT_PERP",
+   "name": "HOME USDT PERPETUAL",
+   "baseCurrency": "HOME",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "HOODX_USDT_PERP",
+   "name": "HOODX USDT PERPETUAL",
+   "baseCurrency": "HOODX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "HPEX_USDT_PERP",
+   "name": "HPEX USDT PERPETUAL",
+   "baseCurrency": "HPEX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "HUMA_USDT_PERP",
+   "name": "HUMA USDT PERPETUAL",
+   "baseCurrency": "HUMA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "HYPE_USDT_PERP",
+   "name": "HYPE USDT PERPETUAL",
+   "baseCurrency": "HYPE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "HYUNDAI_USDT_PERP",
+   "name": "HYUNDAI USDT PERPETUAL",
+   "baseCurrency": "HYUNDAI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "H_USDT_PERP",
+   "name": "H USDT PERPETUAL",
+   "baseCurrency": "H",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "IBMX_USDT_PERP",
+   "name": "IBMX USDT PERPETUAL",
+   "baseCurrency": "IBMX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ICNT_USDT_PERP",
+   "name": "ICNT USDT PERPETUAL",
+   "baseCurrency": "ICNT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ICP_USDT_PERP",
+   "name": "ICP USDT PERPETUAL",
+   "baseCurrency": "ICP",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "IDOL_USDT_PERP",
+   "name": "IDOL USDT PERPETUAL",
+   "baseCurrency": "IDOL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "IMX_USDT_PERP",
+   "name": "IMX USDT PERPETUAL",
+   "baseCurrency": "IMX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "INFQX_USDT_PERP",
+   "name": "INFQX USDT PERPETUAL",
+   "baseCurrency": "INFQX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "INIT_USDT_PERP",
+   "name": "INIT USDT PERPETUAL",
+   "baseCurrency": "INIT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "INJ_USDT_PERP",
+   "name": "INJ USDT PERPETUAL",
+   "baseCurrency": "INJ",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "INTCX_USDT_PERP",
+   "name": "INTCX USDT PERPETUAL",
+   "baseCurrency": "INTCX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "INX_USDT_PERP",
+   "name": "INX USDT PERPETUAL",
+   "baseCurrency": "INX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "IOST_USDT_PERP",
+   "name": "IOST USDT PERPETUAL",
+   "baseCurrency": "IOST",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "IOTA_USDT_PERP",
+   "name": "IOTA USDT PERPETUAL",
+   "baseCurrency": "IOTA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "IO_USDT_PERP",
+   "name": "IO USDT PERPETUAL",
+   "baseCurrency": "IO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "IRENX_USDT_PERP",
+   "name": "IRENX USDT PERPETUAL",
+   "baseCurrency": "IRENX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "IRYS_USDT_PERP",
+   "name": "IRYS USDT PERPETUAL",
+   "baseCurrency": "IRYS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "JASMY_USDT_PERP",
+   "name": "JASMY USDT PERPETUAL",
+   "baseCurrency": "JASMY",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "JELLYJELLY_USDT_PERP",
+   "name": "JELLYJELLY USDT PERPETUAL",
+   "baseCurrency": "JELLYJELLY",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "JTO_USDT_PERP",
+   "name": "JTO USDT PERPETUAL",
+   "baseCurrency": "JTO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "JUP_USDT_PERP",
+   "name": "JUP USDT PERPETUAL",
+   "baseCurrency": "JUP",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "KAIA_USDT_PERP",
+   "name": "KAIA USDT PERPETUAL",
+   "baseCurrency": "KAIA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "KAITO_USDT_PERP",
+   "name": "KAITO USDT PERPETUAL",
+   "baseCurrency": "KAITO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "KAS_USDT_PERP",
+   "name": "KAS USDT PERPETUAL",
+   "baseCurrency": "KAS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "KAT_USDT_PERP",
+   "name": "KAT USDT PERPETUAL",
+   "baseCurrency": "KAT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "KAVA_USDT_PERP",
+   "name": "KAVA USDT PERPETUAL",
+   "baseCurrency": "KAVA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "KERNEL_USDT_PERP",
+   "name": "KERNEL USDT PERPETUAL",
+   "baseCurrency": "KERNEL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "KGEN_USDT_PERP",
+   "name": "KGEN USDT PERPETUAL",
+   "baseCurrency": "KGEN",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "KII_USDT_PERP",
+   "name": "KII USDT PERPETUAL",
+   "baseCurrency": "KII",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "KITE_USDT_PERP",
+   "name": "KITE USDT PERPETUAL",
+   "baseCurrency": "KITE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "KLACX_USDT_PERP",
+   "name": "KLACX USDT PERPETUAL",
+   "baseCurrency": "KLACX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "KMNO_USDT_PERP",
+   "name": "KMNO USDT PERPETUAL",
+   "baseCurrency": "KMNO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "KNC_USDT_PERP",
+   "name": "KNC USDT PERPETUAL",
+   "baseCurrency": "KNC",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "KORUX_USDT_PERP",
+   "name": "KORUX USDT PERPETUAL",
+   "baseCurrency": "KORUX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "LAB_USDT_PERP",
+   "name": "LAB USDT PERPETUAL",
+   "baseCurrency": "LAB",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "LAYER_USDT_PERP",
+   "name": "LAYER USDT PERPETUAL",
+   "baseCurrency": "LAYER",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "LA_USDT_PERP",
+   "name": "LA USDT PERPETUAL",
+   "baseCurrency": "LA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "LDO_USDT_PERP",
+   "name": "LDO USDT PERPETUAL",
+   "baseCurrency": "LDO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "LIGHT_USDT_PERP",
+   "name": "LIGHT USDT PERPETUAL",
+   "baseCurrency": "LIGHT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "LINEA_USDT_PERP",
+   "name": "LINEA USDT PERPETUAL",
+   "baseCurrency": "LINEA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "LINK_BTC_PERP",
+   "name": "LINK BTC PERPETUAL",
+   "baseCurrency": "LINK",
+   "quoteCurrency": "BTC",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "LINK_ETH_PERP",
+   "name": "LINK ETH PERPETUAL",
+   "baseCurrency": "LINK",
+   "quoteCurrency": "ETH",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "LINK_USDT_PERP",
+   "name": "LINK USDT PERPETUAL",
+   "baseCurrency": "LINK",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "LISTA_USDT_PERP",
+   "name": "LISTA USDT PERPETUAL",
+   "baseCurrency": "LISTA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "LITEX_USDT_PERP",
+   "name": "LITEX USDT PERPETUAL",
+   "baseCurrency": "LITEX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "LIT_USDT_PERP",
+   "name": "LIT USDT PERPETUAL",
+   "baseCurrency": "LIGHTER",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "LLYX_USDT_PERP",
+   "name": "LLYX USDT PERPETUAL",
+   "baseCurrency": "LLYX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "LMTX_USDT_PERP",
+   "name": "LMTX USDT PERPETUAL",
+   "baseCurrency": "LMTX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "LNGX_USDT_PERP",
+   "name": "LNGX USDT PERPETUAL",
+   "baseCurrency": "LNGX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "LPT_USDT_PERP",
+   "name": "LPT USDT PERPETUAL",
+   "baseCurrency": "LPT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "LRCXX_USDT_PERP",
+   "name": "LRCXX USDT PERPETUAL",
+   "baseCurrency": "LRCXX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "LRC_USDT_PERP",
+   "name": "LRC USDT PERPETUAL",
+   "baseCurrency": "LRC",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "LSK_USDT_PERP",
+   "name": "LSK USDT PERPETUAL",
+   "baseCurrency": "LSK",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "LTC_USDT_PERP",
+   "name": "LTC USDT PERPETUAL",
+   "baseCurrency": "LTC",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "LUNA2_USDT_PERP",
+   "name": "LUNA2 USDT PERPETUAL",
+   "baseCurrency": "LUNA2",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "LUNC_USDT_PERP",
+   "name": "LUNC USDT PERPETUAL",
+   "baseCurrency": "LUNC",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "LYN_USDT_PERP",
+   "name": "LYN USDT PERPETUAL",
+   "baseCurrency": "LYN",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MAGIC_USDT_PERP",
+   "name": "MAGIC USDT PERPETUAL",
+   "baseCurrency": "MAGIC",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MAGMA_USDT_PERP",
+   "name": "MAGMA USDT PERPETUAL",
+   "baseCurrency": "MAGMA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MANA_USDT_PERP",
+   "name": "MANA USDT PERPETUAL",
+   "baseCurrency": "MANA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MANTA_USDT_PERP",
+   "name": "MANTA USDT PERPETUAL",
+   "baseCurrency": "MANTA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MANTRA_USDT_PERP",
+   "name": "MANTRA USDT PERPETUAL",
+   "baseCurrency": "MANTRA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MARSCOIN_USDT_PERP",
+   "name": "MARSCOIN USDT PERPETUAL",
+   "baseCurrency": "MARSCOIN",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MASK_USDT_PERP",
+   "name": "MASK USDT PERPETUAL",
+   "baseCurrency": "MASK",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MAV_USDT_PERP",
+   "name": "MAV USDT PERPETUAL",
+   "baseCurrency": "MAV",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MEGA_USDT_PERP",
+   "name": "MEGA USDT PERPETUAL",
+   "baseCurrency": "MEGA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MELANIA_USDT_PERP",
+   "name": "MELANIA USDT PERPETUAL",
+   "baseCurrency": "MELANIA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MEME_USDT_PERP",
+   "name": "MEME USDT PERPETUAL",
+   "baseCurrency": "MEME",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MERL_USDT_PERP",
+   "name": "MERL USDT PERPETUAL",
+   "baseCurrency": "MERL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "METAX_USDT_PERP",
+   "name": "METAX USDT PERPETUAL",
+   "baseCurrency": "METAX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "METIS_USDT_PERP",
+   "name": "METIS USDT PERPETUAL",
+   "baseCurrency": "METIS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MET_USDT_PERP",
+   "name": "MET USDT PERPETUAL",
+   "baseCurrency": "MET",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MEW_USDT_PERP",
+   "name": "MEW USDT PERPETUAL",
+   "baseCurrency": "MEW",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ME_USDT_PERP",
+   "name": "ME USDT PERPETUAL",
+   "baseCurrency": "ME",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MITO_USDT_PERP",
+   "name": "MITO USDT PERPETUAL",
+   "baseCurrency": "MITO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MMT_USDT_PERP",
+   "name": "MMT USDT PERPETUAL",
+   "baseCurrency": "MMT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MNT_USDT_PERP",
+   "name": "MNT USDT PERPETUAL",
+   "baseCurrency": "MNT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MON_USDT_PERP",
+   "name": "MON USDT PERPETUAL",
+   "baseCurrency": "MON",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MOODENG_USDT_PERP",
+   "name": "MOODENG USDT PERPETUAL",
+   "baseCurrency": "MOODENG",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MOONSHOT_USDT_PERP",
+   "name": "MOONSHOT USDT PERPETUAL",
+   "baseCurrency": "MOONSHOT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MOSX_USDT_PERP",
+   "name": "MOSX USDT PERPETUAL",
+   "baseCurrency": "MOSX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MOVE_USDT_PERP",
+   "name": "MOVE USDT PERPETUAL",
+   "baseCurrency": "MOVE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MOVR_USDT_PERP",
+   "name": "MOVR USDT PERPETUAL",
+   "baseCurrency": "MOVR",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MPX_USDT_PERP",
+   "name": "MPX USDT PERPETUAL",
+   "baseCurrency": "MPX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MRNAX_USDT_PERP",
+   "name": "MRNAX USDT PERPETUAL",
+   "baseCurrency": "MRNAX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MRVLX_USDT_PERP",
+   "name": "MRVLX USDT PERPETUAL",
+   "baseCurrency": "MRVLX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MSFTX_USDT_PERP",
+   "name": "MSFTX USDT PERPETUAL",
+   "baseCurrency": "MSFTX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MSTRX_BTC_PERP",
+   "name": "MSTRX BTC PERPETUAL",
+   "baseCurrency": "MSTRX",
+   "quoteCurrency": "BTC",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MSTRX_USDT_PERP",
+   "name": "MSTRX USDT PERPETUAL",
+   "baseCurrency": "MSTRX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MUBARAK_USDT_PERP",
+   "name": "MUBARAK USDT PERPETUAL",
+   "baseCurrency": "MUBARAK",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MUX_USDT_PERP",
+   "name": "MUX USDT PERPETUAL",
+   "baseCurrency": "MUX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "MYX_USDT_PERP",
+   "name": "MYX USDT PERPETUAL",
+   "baseCurrency": "MYX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "NAORIS_USDT_PERP",
+   "name": "NAORIS USDT PERPETUAL",
+   "baseCurrency": "NAORIS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "NATGAS_USDT_PERP",
+   "name": "NATGAS USDT PERPETUAL",
+   "baseCurrency": "NATGAS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "NBISX_USDT_PERP",
+   "name": "NBISX USDT PERPETUAL",
+   "baseCurrency": "NBISX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "NEAR_USDT_PERP",
+   "name": "NEAR USDT PERPETUAL",
+   "baseCurrency": "NEAR",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "NEIRO_USDT_PERP",
+   "name": "NEIRO USDT PERPETUAL",
+   "baseCurrency": "NEIROCTO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "NEO_USDT_PERP",
+   "name": "NEO USDT PERPETUAL",
+   "baseCurrency": "NEO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "NETX_USDT_PERP",
+   "name": "NETX USDT PERPETUAL",
+   "baseCurrency": "NETX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "NFLXX_USDT_PERP",
+   "name": "NFLXX USDT PERPETUAL",
+   "baseCurrency": "NFLXX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "NIGHT_USDT_PERP",
+   "name": "NIGHT USDT PERPETUAL",
+   "baseCurrency": "NIGHT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "NIL_USDT_PERP",
+   "name": "NIl USDT PERPETUAL",
+   "baseCurrency": "NIL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "NIOX_USDT_PERP",
+   "name": "NIOX USDT PERPETUAL",
+   "baseCurrency": "NIOX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "NKEX_USDT_PERP",
+   "name": "NKEX USDT PERPETUAL",
+   "baseCurrency": "NKEX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "NMR_USDT_PERP",
+   "name": "NMR USDT PERPETUAL",
+   "baseCurrency": "NMR",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "NOKX_USDT_PERP",
+   "name": "NOKX USDT PERPETUAL",
+   "baseCurrency": "NOKX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "NOM_USDT_PERP",
+   "name": "NOM USDT PERPETUAL",
+   "baseCurrency": "NOM",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "NOT_USDT_PERP",
+   "name": "NOT USDT PERPETUAL",
+   "baseCurrency": "NOT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "NOWX_USDT_PERP",
+   "name": "NOWX USDT PERPETUAL",
+   "baseCurrency": "NOWX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "NTRX_USDT_PERP",
+   "name": "NTRX USDT PERPETUAL",
+   "baseCurrency": "NTRX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "NVDAX_USDT_PERP",
+   "name": "NVDAX USDT PERPETUAL",
+   "baseCurrency": "NVDAX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "NVDLX_USDT_PERP",
+   "name": "NVDLX USDT PERPETUAL",
+   "baseCurrency": "NVDLX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "NXPC_USDT_PERP",
+   "name": "NXPC USDT PERPETUAL",
+   "baseCurrency": "NXPC",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "OFC_USDT_PERP",
+   "name": "OFC USDT PERPETUAL",
+   "baseCurrency": "OFC",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "OGN_USDT_PERP",
+   "name": "OGN USDT PERPETUAL",
+   "baseCurrency": "OGN",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "OG_USDT_PERP",
+   "name": "OG USDT PERPETUAL",
+   "baseCurrency": "OG",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "OKB_USDT_PERP",
+   "name": "OKB USDT PERPETUAL",
+   "baseCurrency": "OKB",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "OKLOX_USDT_PERP",
+   "name": "OKLOX USDT PERPETUAL",
+   "baseCurrency": "OKLOX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ONDO_USDT_PERP",
+   "name": "ONDO USDT PERPETUAL",
+   "baseCurrency": "ONDO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ONDSX_USDT_PERP",
+   "name": "ONDSX USDT PERPETUAL",
+   "baseCurrency": "ONDSX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ONG_USDT_PERP",
+   "name": "ONG USDT PERPETUAL",
+   "baseCurrency": "ONG",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ONT_USDT_PERP",
+   "name": "ONT USDT PERPETUAL",
+   "baseCurrency": "ONT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ONX_USDT_PERP",
+   "name": "ONX USDT PERPETUAL",
+   "baseCurrency": "ONX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ON_USDT_PERP",
+   "name": "ON USDT PERPETUAL",
+   "baseCurrency": "ON",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "OPENAI_USDT_PERP",
+   "name": "OPENAI USDT PERPETUAL",
+   "baseCurrency": "OPENAI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "OPEN_USDT_PERP",
+   "name": "OPEN USDT PERPETUAL",
+   "baseCurrency": "OPEN",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "OPG_USDT_PERP",
+   "name": "OPG USDT PERPETUAL",
+   "baseCurrency": "OPG",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "OPN_USDT_PERP",
+   "name": "OPN USDT PERPETUAL",
+   "baseCurrency": "OPN",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "OP_USDT_PERP",
+   "name": "OP USDT PERPETUAL",
+   "baseCurrency": "OP",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ORCA_USDT_PERP",
+   "name": "ORCA USDT PERPETUAL",
+   "baseCurrency": "ORCA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ORCLX_USDT_PERP",
+   "name": "ORCLX USDT PERPETUAL",
+   "baseCurrency": "ORCLX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ORDER_USDT_PERP",
+   "name": "ORDER USDT PERPETUAL",
+   "baseCurrency": "ORDER",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ORDI_BTC_PERP",
+   "name": "ORDI BTC PERPETUAL",
+   "baseCurrency": "ORDI",
+   "quoteCurrency": "BTC",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ORDI_USDT_PERP",
+   "name": "ORDI USDT PERPETUAL",
+   "baseCurrency": "ORDI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "O_USDT_PERP",
+   "name": "O USDT PERPETUAL",
+   "baseCurrency": "O",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PANWX_USDT_PERP",
+   "name": "PANWX USDT PERPETUAL",
+   "baseCurrency": "PANWX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PARTI_USDT_PERP",
+   "name": "PARTI USDT PERPETUAL",
+   "baseCurrency": "PARTI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PAXG_BTC_PERP",
+   "name": "PAXG BTC PERPETUAL",
+   "baseCurrency": "PAXG",
+   "quoteCurrency": "BTC",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PAXG_USDT_PERP",
+   "name": "PAXG USDT PERPETUAL",
+   "baseCurrency": "PAXG",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PAYPX_USDT_PERP",
+   "name": "PAYPX USDT PERPETUAL",
+   "baseCurrency": "PAYPX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PENDLE_USDT_PERP",
+   "name": "PENDLE USDT PERPETUAL",
+   "baseCurrency": "PENDLE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PENGU_USDT_PERP",
+   "name": "PENGU USDT PERPETUAL",
+   "baseCurrency": "PENGU",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PEOPLE_USDT_PERP",
+   "name": "PEOPLE USDT PERPETUAL",
+   "baseCurrency": "PEOPLE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PEPE_USDT_PERP",
+   "name": "PEPE USDT PERPETUAL",
+   "baseCurrency": "PEPE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PHA_USDT_PERP",
+   "name": "PHA USDT PERPETUAL",
+   "baseCurrency": "PHA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PIEVERSE_USDT_PERP",
+   "name": "PIEVERSE USDT PERPETUAL",
+   "baseCurrency": "PIEVERSE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PIPPIN_USDT_PERP",
+   "name": "PIPPIN USDT PERPETUAL",
+   "baseCurrency": "PIPPIN",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PIXEL_USDT_PERP",
+   "name": "PIXEL USDT PERPETUAL",
+   "baseCurrency": "PIXEL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PI_USDT_PERP",
+   "name": "PI USDT PERPETUAL",
+   "baseCurrency": "PI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PLAY_USDT_PERP",
+   "name": "PLAY USDT PERPETUAL",
+   "baseCurrency": "PLAY",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PLTRX_USDT_PERP",
+   "name": "PLTRX USDT PERPETUAL",
+   "baseCurrency": "PLTRX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PLUME_USDT_PERP",
+   "name": "PLUME USDT PERPETUAL",
+   "baseCurrency": "PLUME",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PNUT_USDT_PERP",
+   "name": "PNUT USDT PERPETUAL",
+   "baseCurrency": "PNUT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "POLYX_USDT_PERP",
+   "name": "POLYX USDT PERPETUAL",
+   "baseCurrency": "POLYX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "POL_USDT_PERP",
+   "name": "POL USDT PERPETUAL",
+   "baseCurrency": "POL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PONS_USDT_PERP",
+   "name": "PONS USDT PERPETUAL",
+   "baseCurrency": "PONS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "POPCAT_USDT_PERP",
+   "name": "POPCAT USDT PERPETUAL",
+   "baseCurrency": "POPCAT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PORTAL_USDT_PERP",
+   "name": "PORTAL USDT PERPETUAL",
+   "baseCurrency": "PORTAL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "POWER_USDT_PERP",
+   "name": "POWER USDT PERPETUAL",
+   "baseCurrency": "POWER",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "POWR_USDT_PERP",
+   "name": "POWR USDT PERPETUAL",
+   "baseCurrency": "POWR",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PRL_USDT_PERP",
+   "name": "PRL USDT PERPETUAL",
+   "baseCurrency": "PRL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PROMPT_USDT_PERP",
+   "name": "PROMPT USDT PERPETUAL",
+   "baseCurrency": "PROMPT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PROS_USDT_PERP",
+   "name": "PROS USDT PERPETUAL",
+   "baseCurrency": "PROS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PROVE_USDT_PERP",
+   "name": "PROVE USDT PERPETUAL",
+   "baseCurrency": "PROVE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PTB_USDT_PERP",
+   "name": "PTB USDT PERPETUAL",
+   "baseCurrency": "PTB",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PUMP_USDT_PERP",
+   "name": "PUMP USDT PERPETUAL",
+   "baseCurrency": "PUMPFUN",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "PYTH_USDT_PERP",
+   "name": "PYTH USDT PERPETUAL",
+   "baseCurrency": "PYTH",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "QCOMX_USDT_PERP",
+   "name": "QCOMX USDT PERPETUAL",
+   "baseCurrency": "QCOMX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "QNTX_USDT_PERP",
+   "name": "QNTX USDT PERPETUAL",
+   "baseCurrency": "QNTX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "QNT_USDT_PERP",
+   "name": "QNT USDT PERPETUAL",
+   "baseCurrency": "QNT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "QQQX_USDT_PERP",
+   "name": "QQQX USDT PERPETUAL",
+   "baseCurrency": "QQQX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "QTUM_USDT_PERP",
+   "name": "QTUM USDT PERPETUAL",
+   "baseCurrency": "QTUM",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "Q_USDT_PERP",
+   "name": "Q USDT PERPETUAL",
+   "baseCurrency": "Q",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "RATS_USDT_PERP",
+   "name": "RATS USDT PERPETUAL",
+   "baseCurrency": "RATS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "RAVE_USDT_PERP",
+   "name": "RAVE USDT PERPETUAL",
+   "baseCurrency": "RAVE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "RAY_USDT_PERP",
+   "name": "RAY USDT PERPETUAL",
+   "baseCurrency": "RAY",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "RECALL_USDT_PERP",
+   "name": "RECALL USDT PERPETUAL",
+   "baseCurrency": "RECALL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "RENDER_USDT_PERP",
+   "name": "RENDER USDT PERPETUAL",
+   "baseCurrency": "RENDER",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "REZ_USDT_PERP",
+   "name": "REZ USDT PERPETUAL",
+   "baseCurrency": "REZ",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "RE_USDT_PERP",
+   "name": "RE USDT PERPETUAL",
+   "baseCurrency": "RE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "RGTIX_USDT_PERP",
+   "name": "RGTIX USDT PERPETUAL",
+   "baseCurrency": "RGTIX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "RIF_USDT_PERP",
+   "name": "RIF USDT PERPETUAL",
+   "baseCurrency": "RIF",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "RIVER_USDT_PERP",
+   "name": "RIVER USDT PERPETUAL",
+   "baseCurrency": "RIVER",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "RKLBX_USDT_PERP",
+   "name": "RKLBX USDT PERPETUAL",
+   "baseCurrency": "RKLBX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ROBO_USDT_PERP",
+   "name": "ROBO USDT PERPETUAL",
+   "baseCurrency": "ROBO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ROSE_USDT_PERP",
+   "name": "ROSE USDT PERPETUAL",
+   "baseCurrency": "ROSE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "RSR_USDT_PERP",
+   "name": "RSR USDT PERPETUAL",
+   "baseCurrency": "RSR",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "RTXX_USDT_PERP",
+   "name": "RTXX USDT PERPETUAL",
+   "baseCurrency": "RTXX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "RUNE_USDT_PERP",
+   "name": "RUNE USDT PERPETUAL",
+   "baseCurrency": "RUNE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SAGA_USDT_PERP",
+   "name": "SAGA USDT PERPETUAL",
+   "baseCurrency": "SAGA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SAHARA_USDT_PERP",
+   "name": "SAHARA USDT PERPETUAL",
+   "baseCurrency": "SAHARA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SAND_USDT_PERP",
+   "name": "SAND USDT PERPETUAL",
+   "baseCurrency": "SAND",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SAPIEN_USDT_PERP",
+   "name": "SAPIEN USDT PERPETUAL",
+   "baseCurrency": "SAPIEN",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SEI_USDT_PERP",
+   "name": "SEI USDT PERPETUAL",
+   "baseCurrency": "SEI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SENT_USDT_PERP",
+   "name": "SENT USDT PERPETUAL",
+   "baseCurrency": "SENT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SFP_USDT_PERP",
+   "name": "SFP USDT PERPETUAL",
+   "baseCurrency": "SFP",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SHAZX_USDT_PERP",
+   "name": "SHAZX USDT PERPETUAL",
+   "baseCurrency": "SHAZX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SHIB_USDT_PERP",
+   "name": "SHIB USDT PERPETUAL",
+   "baseCurrency": "SHIB",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SIREN_USDT_PERP",
+   "name": "SIREN USDT PERPETUAL",
+   "baseCurrency": "SIREN",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SITMX_USDT_PERP",
+   "name": "SITMX USDT PERPETUAL",
+   "baseCurrency": "SITMX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SKHX_USDT_PERP",
+   "name": "SKHX USDT PERPETUAL",
+   "baseCurrency": "SKHX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SKHY_USDT_PERP",
+   "name": "SKHY USDT PERPETUAL",
+   "baseCurrency": "SKHY",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SKL_USDT_PERP",
+   "name": "SKL USDT PERPETUAL",
+   "baseCurrency": "SKL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SKR_USDT_PERP",
+   "name": "SKR USDT PERPETUAL",
+   "baseCurrency": "SKR",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SKYAI_USDT_PERP",
+   "name": "SKYAI USDT PERPETUAL",
+   "baseCurrency": "SKYAI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SKY_USDT_PERP",
+   "name": "SKY USDT PERPETUAL",
+   "baseCurrency": "SKY",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SLP_USDT_PERP",
+   "name": "SLP USDT PERPETUAL",
+   "baseCurrency": "SLP",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SLVX_USDT_PERP",
+   "name": "SLVX USDT PERPETUAL",
+   "baseCurrency": "SLVX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SLX_USDT_PERP",
+   "name": "SLX USDT PERPETUAL",
+   "baseCurrency": "SLX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SMCIX_USDT_PERP",
+   "name": "SMCIX USDT PERPETUAL",
+   "baseCurrency": "SMCIX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SMHX_USDT_PERP",
+   "name": "SMHX USDT PERPETUAL",
+   "baseCurrency": "SMHX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SMSN_USDT_PERP",
+   "name": "SMSN USDT PERPETUAL",
+   "baseCurrency": "SMSN",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SNDKX_USDT_PERP",
+   "name": "SNDKX USDT PERPETUAL",
+   "baseCurrency": "SNDKX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SNXXX_USDT_PERP",
+   "name": "SNXXX USDT PERPETUAL",
+   "baseCurrency": "SNXXX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SNX_USDT_PERP",
+   "name": "SNX USDT PERPETUAL",
+   "baseCurrency": "SNX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SOLV_USDT_PERP",
+   "name": "SOLV USDT PERPETUAL",
+   "baseCurrency": "SOLV",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SOL_BTC_PERP",
+   "name": "SOL BTC PERPETUAL",
+   "baseCurrency": "SOL",
+   "quoteCurrency": "BTC",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SOL_ETH_PERP",
+   "name": "SOL ETH PERPETUAL",
+   "baseCurrency": "SOL",
+   "quoteCurrency": "ETH",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SOL_USDT_PERP",
+   "name": "SOL USDT PERPETUAL",
+   "baseCurrency": "SOL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SOMI_USDT_PERP",
+   "name": "SOMI USDT PERPETUAL",
+   "baseCurrency": "SOMI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SOON_USDT_PERP",
+   "name": "SOON USDT PERPETUAL",
+   "baseCurrency": "SOON",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SOXLX_USDT_PERP",
+   "name": "SOXLX USDT PERPETUAL",
+   "baseCurrency": "SOXLX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SOXSX_USDT_PERP",
+   "name": "SOXSX USDT PERPETUAL",
+   "baseCurrency": "SOXSX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SOXXX_USDT_PERP",
+   "name": "SOXXX USDT PERPETUAL",
+   "baseCurrency": "SOXXX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SPACE_USDT_PERP",
+   "name": "SPACE USDT PERPETUAL",
+   "baseCurrency": "SPACE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SPCX_USDT_PERP",
+   "name": "SPCX USDT PERPETUAL",
+   "baseCurrency": "SPCX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SPELL_USDT_PERP",
+   "name": "SPELL USDT PERPETUAL",
+   "baseCurrency": "SPELL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SPK_USDT_PERP",
+   "name": "SPK USDT PERPETUAL",
+   "baseCurrency": "SPK",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SPORTFUN_USDT_PERP",
+   "name": "SPORTFUN USDT PERPETUAL",
+   "baseCurrency": "SPORTFUN",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SPX_USDT_PERP",
+   "name": "SPX USDT PERPETUAL",
+   "baseCurrency": "SPX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SPYX_USDT_PERP",
+   "name": "SPYX USDT PERPETUAL",
+   "baseCurrency": "SPYX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SQD_USDT_PERP",
+   "name": "SQD USDT PERPETUAL",
+   "baseCurrency": "SQD",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SSV_USDT_PERP",
+   "name": "SSV USDT PERPETUAL",
+   "baseCurrency": "SSV",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "STABLE_USDT_PERP",
+   "name": "STABLE USDT PERPETUAL",
+   "baseCurrency": "STABLE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "STAR_USDT_PERP",
+   "name": "STAR USDT PERPETUAL",
+   "baseCurrency": "STAR",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "STBL_USDT_PERP",
+   "name": "STBL USDT PERPETUAL",
+   "baseCurrency": "STBL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "STRK_USDT_PERP",
+   "name": "STRK USDT PERPETUAL",
+   "baseCurrency": "STRK",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "STXX_USDT_PERP",
+   "name": "STXX USDT PERPETUAL",
+   "baseCurrency": "STXX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "STX_USDT_PERP",
+   "name": "STX USDT PERPETUAL",
+   "baseCurrency": "STX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SUI_BTC_PERP",
+   "name": "SUI BTC PERPETUAL",
+   "baseCurrency": "SUI",
+   "quoteCurrency": "BTC",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SUI_USDT_PERP",
+   "name": "SUI USDT PERPETUAL",
+   "baseCurrency": "SUI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SUN_USDT_PERP",
+   "name": "SUN USDT PERPETUAL",
+   "baseCurrency": "SUN",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SUPER_USDT_PERP",
+   "name": "SUPER USDT PERPETUAL",
+   "baseCurrency": "SUPER",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SUSHI_USDT_PERP",
+   "name": "SUSHI USDT PERPETUAL",
+   "baseCurrency": "SUSHI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SXT_USDT_PERP",
+   "name": "SXT USDT PERPETUAL",
+   "baseCurrency": "SXT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "SYRUP_USDT_PERP",
+   "name": "SYRUP USDT PERPETUAL",
+   "baseCurrency": "SYRUP",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "S_USDT_PERP",
+   "name": "S USDT PERPETUAL",
+   "baseCurrency": "S",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TAC_USDT_PERP",
+   "name": "TAC USDT PERPETUAL",
+   "baseCurrency": "TAC",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TAKE_USDT_PERP",
+   "name": "TAKE USDT PERPETUAL",
+   "baseCurrency": "TAKE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TAO_USDT_PERP",
+   "name": "TAO USDT PERPETUAL",
+   "baseCurrency": "TAO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TA_USDT_PERP",
+   "name": "TA USDT PERPETUAL",
+   "baseCurrency": "TA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "THETA_USDT_PERP",
+   "name": "THETA USDT PERPETUAL",
+   "baseCurrency": "THETA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "THE_USDT_PERP",
+   "name": "THE USDT PERPETUAL",
+   "baseCurrency": "THE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TIA_USDT_PERP",
+   "name": "TIA USDT PERPETUAL",
+   "baseCurrency": "TIA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TLM_USDT_PERP",
+   "name": "TLM USDT PERPETUAL",
+   "baseCurrency": "TLM",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TNSR_USDT_PERP",
+   "name": "TNSR USDT PERPETUAL",
+   "baseCurrency": "TNSR",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TOSHI_USDT_PERP",
+   "name": "TOSHI USDT PERPETUAL",
+   "baseCurrency": "TOSHI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TOWNS_USDT_PERP",
+   "name": "TOWNS USDT PERPETUAL",
+   "baseCurrency": "TOWNS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TQQQX_USDT_PERP",
+   "name": "TQQQX USDT PERPETUAL",
+   "baseCurrency": "TQQQX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TRADOOR_USDT_PERP",
+   "name": "TRADOOR USDT PERPETUAL",
+   "baseCurrency": "TRADOOR",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TRB_USDT_PERP",
+   "name": "TRB USDT PERPETUAL",
+   "baseCurrency": "TRB",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TREE_USDT_PERP",
+   "name": "TREE USDT PERPETUAL",
+   "baseCurrency": "TREE",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TRIA_USDT_PERP",
+   "name": "TRIA USDT PERPETUAL",
+   "baseCurrency": "TRIA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TRUMP_USDT_PERP",
+   "name": "TRUMP USDT PERPETUAL",
+   "baseCurrency": "TRUMP",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TRUST_USDT_PERP",
+   "name": "TRUST USDT PERPETUAL",
+   "baseCurrency": "TRUST",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TRUTH_USDT_PERP",
+   "name": "TRUTH USDT PERPETUAL",
+   "baseCurrency": "TRUTH",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TRX_USDT_PERP",
+   "name": "TRX USDT PERPETUAL",
+   "baseCurrency": "TRX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TSLAX_USDT_PERP",
+   "name": "TSLAX USDT PERPETUAL",
+   "baseCurrency": "TSLAX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TSMX_USDT_PERP",
+   "name": "TSMX USDT PERPETUAL",
+   "baseCurrency": "TSMX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TST_USDT_PERP",
+   "name": "TST USDT PERPETUAL",
+   "baseCurrency": "TST",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TTEX_USDT_PERP",
+   "name": "TTEX USDT PERPETUAL",
+   "baseCurrency": "TTEX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TURBO_USDT_PERP",
+   "name": "TURBO USDT PERPETUAL",
+   "baseCurrency": "TURBO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TUT_USDT_PERP",
+   "name": "TUT USDT PERPETUAL",
+   "baseCurrency": "TUT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TWT_USDT_PERP",
+   "name": "TWT USDT PERPETUAL",
+   "baseCurrency": "TWT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "TXNX_USDT_PERP",
+   "name": "TXNX USDT PERPETUAL",
+   "baseCurrency": "TXNX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "UAI_USDT_PERP",
+   "name": "UAI USDT PERPETUAL",
+   "baseCurrency": "UAI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "UB_USDT_PERP",
+   "name": "UB USDT PERPETUAL",
+   "baseCurrency": "UB",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "UNGX_USDT_PERP",
+   "name": "UNGX USDT PERPETUAL",
+   "baseCurrency": "UNGX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "UNHX_USDT_PERP",
+   "name": "UNHX USDT PERPETUAL",
+   "baseCurrency": "UNHX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "UNITREEX_USDT_PERP",
+   "name": "UNITREEX USDT PERPETUAL",
+   "baseCurrency": "UNITREEX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "UNI_ETH_PERP",
+   "name": "UNI ETH PERPETUAL",
+   "baseCurrency": "UNI",
+   "quoteCurrency": "ETH",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "UNI_USDT_PERP",
+   "name": "UNI USDT PERPETUAL",
+   "baseCurrency": "UNI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "UP_USDT_PERP",
+   "name": "UP USDT PERPETUAL",
+   "baseCurrency": "UP",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "URAX_USDT_PERP",
+   "name": "URAX USDT PERPETUAL",
+   "baseCurrency": "URAX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "URNMX_USDT_PERP",
+   "name": "URNMX USDT PERPETUAL",
+   "baseCurrency": "URNMX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USARX_USDT_PERP",
+   "name": "USARX USDT PERPETUAL",
+   "baseCurrency": "USARX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USDC_USDT_PERP",
+   "name": "USDC USDT PERPETUAL",
+   "baseCurrency": "USDC",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USDT_ADA_PERP",
+   "name": "USDT ADA PERPETUAL",
+   "baseCurrency": "USDT",
+   "quoteCurrency": "ADA",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USDT_ASTER_PERP",
+   "name": "USDT ASTER PERP",
+   "baseCurrency": "USDT",
+   "quoteCurrency": "ASTER",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USDT_AVAX_PERP",
+   "name": "USDT AVAX PERPETUAL",
+   "baseCurrency": "USDT",
+   "quoteCurrency": "AVAX",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USDT_BNB_PERP",
+   "name": "USDT BNB PERP",
+   "baseCurrency": "USDT",
+   "quoteCurrency": "BNB",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USDT_BTC_PERP",
+   "name": "USDT BTC PERPETUAL",
+   "baseCurrency": "USDT",
+   "quoteCurrency": "BTC",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USDT_DOGE_PERP",
+   "name": "USDT DOGE PERPETUAL",
+   "baseCurrency": "USDT",
+   "quoteCurrency": "DOGE",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USDT_DOT_PERP",
+   "name": "USDT DOT PERP",
+   "baseCurrency": "USDT",
+   "quoteCurrency": "DOT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USDT_ETH_PERP",
+   "name": "USDT ETH PERPETUAL",
+   "baseCurrency": "USDT",
+   "quoteCurrency": "ETH",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USDT_HBAR_PERP",
+   "name": "USDT HBAR PERPETUAL",
+   "baseCurrency": "USDT",
+   "quoteCurrency": "HBAR",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USDT_HYPE_PERP",
+   "name": "USDT HYPE PERPETUAL",
+   "baseCurrency": "USDT",
+   "quoteCurrency": "HYPE",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USDT_LINK_PERP",
+   "name": "USDT LINK PERPETUAL",
+   "baseCurrency": "USDT",
+   "quoteCurrency": "LINK",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USDT_PAXG_PERP",
+   "name": "USDT PAXG PERPETUAL",
+   "baseCurrency": "USDT",
+   "quoteCurrency": "PAXG",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USDT_PEPE_PERP",
+   "name": "USDT PEPE PERP",
+   "baseCurrency": "USDT",
+   "quoteCurrency": "PEPE",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USDT_QQQX_PERP",
+   "name": "USDT QQQX PERP",
+   "baseCurrency": "USDT",
+   "quoteCurrency": "QQQX",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USDT_SOL_PERP",
+   "name": "USDT SOL PERPETUAL",
+   "baseCurrency": "USDT",
+   "quoteCurrency": "SOL",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USDT_SPYX_PERP",
+   "name": "USDT SPYX PERP",
+   "baseCurrency": "USDT",
+   "quoteCurrency": "SPYX",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USDT_SUI_PERP",
+   "name": "USDT SUI PERP",
+   "baseCurrency": "USDT",
+   "quoteCurrency": "SUI",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USDT_TRX_PERP",
+   "name": "USDT TRX PERPETUAL",
+   "baseCurrency": "USDT",
+   "quoteCurrency": "TRX",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USDT_UNI_PERP",
+   "name": "USDT UNI PERPETUAL",
+   "baseCurrency": "USDT",
+   "quoteCurrency": "UNI",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USDT_WIF_PERP",
+   "name": "USDT WIF PERPETUAL",
+   "baseCurrency": "USDT",
+   "quoteCurrency": "WIF",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USDT_XLM_PERP",
+   "name": "USDT XLM PERPETUAL",
+   "baseCurrency": "USDT",
+   "quoteCurrency": "XLM",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USDT_XRP_PERP",
+   "name": "USDT XRP PERPETUAL",
+   "baseCurrency": "USDT",
+   "quoteCurrency": "XRP",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USD_USDT_PERP",
+   "name": "USD USDT PERPETUAL",
+   "baseCurrency": "USD",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USELESS_USDT_PERP",
+   "name": "USELESS USDT PERPETUAL",
+   "baseCurrency": "USELESS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USOX_USDT_PERP",
+   "name": "USOX USDT PERPETUAL",
+   "baseCurrency": "USOX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USTC_USDT_PERP",
+   "name": "USTC USDT PERPETUAL",
+   "baseCurrency": "USTC",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "USUAL_USDT_PERP",
+   "name": "USUAL USDT PERPETUAL",
+   "baseCurrency": "USUAL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "US_USDT_PERP",
+   "name": "US USDT PERPETUAL",
+   "baseCurrency": "US",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "VELODROME_USDT_PERP",
+   "name": "VELODROME USDT PERPETUAL",
+   "baseCurrency": "VELODROME",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "VET_USDT_PERP",
+   "name": "VET USDT PERPETUAL",
+   "baseCurrency": "VET",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "VGKX_USDT_PERP",
+   "name": "VGKX USDT PERPETUAL",
+   "baseCurrency": "VGKX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "VIRTUAL_USDT_PERP",
+   "name": "VIRTUAL USDT PERPETUAL",
+   "baseCurrency": "VIRTUAL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "VSHX_USDT_PERP",
+   "name": "VSHX USDT PERPETUAL",
+   "baseCurrency": "VSHX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "VVV_USDT_PERP",
+   "name": "VVV USDT PERPETUAL",
+   "baseCurrency": "VVV",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "WAL_USDT_PERP",
+   "name": "WAL USDT PERPETUAL",
+   "baseCurrency": "WAL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "WCT_USDT_PERP",
+   "name": "WCT USDT PERPETUAL",
+   "baseCurrency": "WCT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "WDCX_USDT_PERP",
+   "name": "WDCX USDT PERPETUAL",
+   "baseCurrency": "WDCX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "WIF_USDT_PERP",
+   "name": "WIF USDT PERPETUAL",
+   "baseCurrency": "WIF",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "WLD_USDT_PERP",
+   "name": "WLD USDT PERPETUAL",
+   "baseCurrency": "WLD",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "WLFI_USDT_PERP",
+   "name": "WLFI USDT PERPETUAL",
+   "baseCurrency": "WLFI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "WTI_USDT_PERP",
+   "name": "WTI USDT PERPETUAL",
+   "baseCurrency": "CL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "W_USDT_PERP",
+   "name": "W USDT PERPETUAL",
+   "baseCurrency": "W",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "XAG_USDT_PERP",
+   "name": "XAG USDT PERPETUAL",
+   "baseCurrency": "XAG",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "XAI_USDT_PERP",
+   "name": "XAI USDT PERPETUAL",
+   "baseCurrency": "XAI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "XAN_USDT_PERP",
+   "name": "XAN USDT PERPETUAL",
+   "baseCurrency": "XAN",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "XAUT_USDT_PERP",
+   "name": "XAUT USDT PERPETUAL",
+   "baseCurrency": "XAUT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "XAU_USDT_PERP",
+   "name": "XAU USDT PERPETUAL",
+   "baseCurrency": "XAU",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "XDP_USDT_PERP",
+   "name": "XDP USDT PERPETUAL",
+   "baseCurrency": "XDP",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "XEC_USDT_PERP",
+   "name": "XEC USDT PERPETUAL",
+   "baseCurrency": "XEC",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "XLM_USDT_PERP",
+   "name": "XLM USDT PERPETUAL",
+   "baseCurrency": "XLM",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "XLPX_USDT_PERP",
+   "name": "XLPX USDT PERPETUAL",
+   "baseCurrency": "XLPX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "XLVX_USDT_PERP",
+   "name": "XLVX USDT PERPETUAL",
+   "baseCurrency": "XLVX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "XMR_USDT_PERP",
+   "name": "XMR USDT PERPETUAL",
+   "baseCurrency": "XMR",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "XNY_USDT_PERP",
+   "name": "XNY USDT PERPETUAL",
+   "baseCurrency": "XNY",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "XPD_USDT_PERP",
+   "name": "XPD USDT PERPETUAL",
+   "baseCurrency": "XPD",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "XPIN_USDT_PERP",
+   "name": "XPIN USDT PERPETUAL",
+   "baseCurrency": "XPIN",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "XPL_USDT_PERP",
+   "name": "XPL USDT PERPETUAL",
+   "baseCurrency": "XPL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "XPT_USDT_PERP",
+   "name": "XPT USDT PERPETUAL",
+   "baseCurrency": "XPT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "XRP_BTC_PERP",
+   "name": "XRP BTC PERPETUAL",
+   "baseCurrency": "XRP",
+   "quoteCurrency": "BTC",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "XRP_USDT_PERP",
+   "name": "XRP USDT PERPETUAL",
+   "baseCurrency": "XRP",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "XTZ_USDT_PERP",
+   "name": "XTZ USDT PERPETUAL",
+   "baseCurrency": "XTZ",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "XVG_USDT_PERP",
+   "name": "XVG USDT PERPETUAL",
+   "baseCurrency": "XVG",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "XYZX_USDT_PERP",
+   "name": "XYZX USDT PERPETUAL",
+   "baseCurrency": "XYZ",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "YB_USDT_PERP",
+   "name": "YB USDT PERPETUAL",
+   "baseCurrency": "YB",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "YFI_USDT_PERP",
+   "name": "YFI USDT PERPETUAL",
+   "baseCurrency": "YFI",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "YGG_USDT_PERP",
+   "name": "YGG USDT PERPETUAL",
+   "baseCurrency": "YGG",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ZAMA_USDT_PERP",
+   "name": "ZAMA USDT PERPETUAL",
+   "baseCurrency": "ZAMA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ZBT_USDT_PERP",
+   "name": "ZBT USDT PERPETUAL",
+   "baseCurrency": "ZBT",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ZEC_USDT_PERP",
+   "name": "ZEC USDT PERPETUAL",
+   "baseCurrency": "ZEC",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ZEN_USDT_PERP",
+   "name": "ZEN USDT PERPETUAL",
+   "baseCurrency": "ZEN",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ZEREBRO_USDT_PERP",
+   "name": "ZEREBRO USDT PERPETUAL",
+   "baseCurrency": "ZEREBRO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ZEST_USDT_PERP",
+   "name": "ZEST USDT PERPETUAL",
+   "baseCurrency": "ZEST",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ZETA_USDT_PERP",
+   "name": "ZETA USDT PERPETUAL",
+   "baseCurrency": "ZETA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ZIL_USDT_PERP",
+   "name": "ZIL USDT PERPETUAL",
+   "baseCurrency": "ZIL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ZKC_USDT_PERP",
+   "name": "ZKC USDT PERPETUAL",
+   "baseCurrency": "ZKC",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ZKP_USDT_PERP",
+   "name": "ZKP USDT PERPETUAL",
+   "baseCurrency": "ZKP",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ZKSYNC_USDT_PERP",
+   "name": "ZKSYNC USDT PERPETUAL",
+   "baseCurrency": "ZKSYNC",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ZORA_USDT_PERP",
+   "name": "ZORA USDT PERPETUAL",
+   "baseCurrency": "ZORA",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ZRO_USDT_PERP",
+   "name": "ZRO USDT PERPETUAL",
+   "baseCurrency": "ZRO",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "ZRX_USDT_PERP",
+   "name": "ZRX USDT PERPETUAL",
+   "baseCurrency": "ZRX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "哈基米_USDT_PERP",
+   "name": "哈基米 USDT PERPETUAL",
+   "baseCurrency": "CNHJM",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "币安人生_USDT_PERP",
+   "name": "币安人生 USDT PERPETUAL",
+   "baseCurrency": "CNBARS",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "我踏马来了_USDT_PERP",
+   "name": "我踏马来了 USDT PERPETUAL",
+   "baseCurrency": "CNWTMLL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "牛来_USDT_PERP",
+   "name": "牛来 USDT PERPETUAL",
+   "baseCurrency": "CNNL",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  },
+  {
+   "symbol": "龙虾_USDT_PERP",
+   "name": "CNLX USDT PERPETUAL",
+   "baseCurrency": "CNLX",
+   "quoteCurrency": "USDT",
+   "status": "TRADING"
+  }
+ ]
+}

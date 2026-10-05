@@ -1469,6 +1469,154 @@ def test_ohlcv_compare_uses_the_same_parser_as_judgement():
     assert rr.ohlcv_checked == 1 and rr.ohlcv_mismatches == [], rr.ohlcv_mismatches
 
 
+# ============================== A6 AC-3：標的池過濾（TASK-023） ==============================
+# 這一段的替身（FakeMarket、feed_with_market、SMALL_SPECS）也給 tests/test_universe.py、tests/test_ops_alert.py 用。
+LOBSTER = "龙虾_USDT_PERP"
+SMALL_SPECS = [
+    {"symbol": "BTC_USDT_PERP", "baseCurrency": "BTC", "quoteCurrency": "USDT", "status": "TRADING"},
+    {"symbol": "ETH_USDT_PERP", "baseCurrency": "ETH", "quoteCurrency": "USDT", "status": "TRADING"},
+    {"symbol": "AAPLX_USDT_PERP", "baseCurrency": "AAPLX", "quoteCurrency": "USDT", "status": "TRADING"},
+    {"symbol": "VSHX_USDT_PERP", "baseCurrency": "VSHX", "quoteCurrency": "USDT", "status": "TRADING"},
+    {"symbol": "FRAX_USDT_PERP", "baseCurrency": "FRAX", "quoteCurrency": "USDT", "status": "TRADING"},
+    {"symbol": LOBSTER, "baseCurrency": "CNLX", "quoteCurrency": "USDT", "status": "TRADING"},
+    {"symbol": "ETH_BTC_PERP", "baseCurrency": "ETH", "quoteCurrency": "BTC", "status": "TRADING"},
+    {"symbol": "OLD_USDT_PERP", "baseCurrency": "OLD", "quoteCurrency": "USDT", "status": "HALT"},
+]
+SMALL_TRADABLE = ["BTC_USDT_PERP", "ETH_USDT_PERP", LOBSTER]
+SMALL_EXCLUDED = ["AAPLX_USDT_PERP", "FRAX_USDT_PERP", "VSHX_USDT_PERP"]
+
+
+class FakeMarket:
+    """假派網的 /common/symbols 與 /common/riskTable（specs 可以在刷新之間換掉）；klines 回空清單（補種子用），
+    其他 path 交給 inner（例如 FakeExchange.api_get）。calls 記每一個 path。"""
+
+    def __init__(self, specs, clock, inner=None):
+        self.specs = [dict(s) for s in specs]
+        self.clock = clock
+        self.inner = inner
+        self.calls = []
+
+    def api_get(self, path, params=None, retries=3, timeout=20):
+        from live import market_static
+        self.calls.append(path)
+        if path == market_static.SYMBOLS_PATH:
+            data = [dict(s) for s in self.specs]
+        elif path == market_static.RISK_TABLE_PATH:
+            data = [{"symbol": s["symbol"], "rows": [{"rowNum": 1, "notionalLimit": "10000", "maxLeverage": "20"}]}
+                    for s in self.specs]
+        elif self.inner is not None:
+            return self.inner(path, params, retries, timeout)
+        elif path == klines.KLINES_PATH:
+            return {"result": True, "data": {"klines": []}, "timestamp": self.clock.time_ms()}
+        else:
+            raise AssertionError("沒預期的 path %s" % path)
+        return {"result": True, "data": {"symbols": data}, "timestamp": self.clock.time_ms()}
+
+
+def fresh_market_static():
+    """重新載入 live.market_static（回到「從未 refresh」）。MarketUniverse 每次呼叫才 import 它，拿到同一個模組物件。"""
+    import importlib
+    from live import market_static
+    return importlib.reload(market_static)
+
+
+def feed_with_market(specs, *, listings=None, inner=None, clock=None, **kw):
+    """正式的標的池路徑：不給 universe_fn → SignalFeed 自己建 MarketUniverse(gate, listings=...)；閘門的取數是 FakeMarket。"""
+    fresh_market_static()
+    clock = clock or FakeClock(T0)
+    market = FakeMarket(specs, clock, inner=inner)
+    gate = RestGate(RestLimiter(config.A1_REST_RATE_PER_SECOND, config.REST_BAN_COOLDOWN_SECONDS, clock=clock),
+                    ServerClock(clock), clock=clock, api_get=market.api_get)
+    kw.setdefault("fg_executor", InlineExecutor())
+    kw.setdefault("bg_executor", InlineExecutor())
+    feed = signal_feed.SignalFeed(gate=gate, clock=clock, listings=listings, **kw)
+    feed.market = market
+    return feed
+
+
+def make_stale():
+    """讓 market_static 的快取逾時（下一次 MarketUniverse 呼叫會真的刷新）。"""
+    import time
+    from live import market_static
+    market_static.last_refresh_mono = time.monotonic() - market_static.STALE_SECONDS - 1
+
+
+def test_a6_ac3_market_universe_returns_only_tradable_sorted():
+    feed = feed_with_market(SMALL_SPECS)
+    with capture_logs():
+        assert feed.load_universe() == SMALL_TRADABLE
+    assert feed.universe() == SMALL_TRADABLE
+    from live import market_static
+    assert market_static.tradable_symbols(quote="USDT") == SMALL_TRADABLE
+    # trading_symbols() 不變：被排除的仍在裡面（不分類）
+    assert market_static.trading_symbols(quote="USDT") == sorted(SMALL_TRADABLE + SMALL_EXCLUDED)
+    assert feed.universe_summary() == {"total": 6, "included": 3, "excluded": 3,
+                                       "by_category": {"stock": 2, "pegged": 1}}
+    n = len(feed.market.calls)
+    with capture_logs():
+        for _ in range(3):
+            assert feed.refresh_universe() == SMALL_TRADABLE      # 沒逾時：不打 API，沿用上次的分類
+    assert len(feed.market.calls) == n
+
+
+def test_a6_ac3_load_universe_then_run_does_not_load_twice():
+    feed = feed_with_market(SMALL_SPECS)
+    with capture_logs():
+        feed.load_universe()
+        n = len(feed.market.calls)
+        feed.run(duration_s=0.001)
+    assert feed.market.calls[n:].count("/api/v1/common/symbols") == 0, feed.market.calls[n:]
+    assert feed.universe() == SMALL_TRADABLE
+    feed.close()
+
+
+def test_a6_ac3_s5_and_signal_feed_universe_exclude_the_excluded():
+    from live import a_channel
+
+    class Tracker:
+        def submit_signal(self, **kw):
+            raise AssertionError("不應該有訊號")
+    feed = feed_with_market(SMALL_SPECS)
+    with capture_logs():
+        feed.load_universe()
+    s5 = a_channel.default_s5_feed(feed, Tracker())
+    try:
+        got = list(s5._universe_fn())
+        assert got == SMALL_TRADABLE and not set(got) & set(SMALL_EXCLUDED), got
+    finally:
+        s5.close()
+
+
+def test_a6_ac3_judge_bar_and_reconcile_never_see_excluded_symbols():
+    """被排除的幣在 tickers 裡有價格、而且 ret2h 很高（會是候選），但 A1 的粗篩、候選、BarResult、背景對帳都看不到它。"""
+    from live.reconcile import Reconciler, record_from_result
+    first_open = T0 - 300 * BAR
+    tradable = ["BTC_USDT_PERP", "ETH_USDT_PERP"]
+    excluded = ["AAPLX_USDT_PERP", "VSHX_USDT_PERP"]
+    specs = [s for s in SMALL_SPECS if s["symbol"] in tradable + excluded]
+    frames = {s: make_frame(320, first_open, 11 + i, events={299: _min_ret() + 0.03} if s in excluded else None)
+              for i, s in enumerate(tradable + excluded)}
+    clock = FakeClock(T0 - 60_000)
+    ex = FakeExchange(clock, frames)                 # tickers 有全部四個幣（含被排除的）
+    feed = feed_with_market(specs, inner=ex.api_get, clock=clock, force_candidates=4)
+    recon = Reconciler(feed.gate, clock=clock)
+    with capture_logs():
+        feed.load_universe()
+        feed.start_seeding(feed.universe(), initial=True)
+        goto(clock, T0 + 200)
+        res = feed.judge_bar(T0)
+        recon.add_bar(res)
+    assert res.universe_size == 2, res.universe_size
+    seen = set(res.approx_ret2h) | {s for v in res.unscreened.values() for s in v} | \
+        {c.symbol for c in res.candidates} | set(res.judged) | {s.symbol for s in res.signals}
+    assert seen and seen <= set(tradable), seen
+    assert not seen & set(excluded), seen
+    rec = record_from_result(res)
+    assert rec.universe == frozenset(tradable) and not rec.universe & set(excluded), rec.universe
+    assert all(not r.universe & set(excluded) for r in recon.records())
+    assert not [c for c in ex.calls if c[3] in excluded], "被排除的幣打了 klines"
+
+
 def test_socket_cage_blocks_connections():
     before = len(_blocked_attempts)
     with socket_cage():

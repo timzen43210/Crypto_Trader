@@ -144,6 +144,7 @@ S5_MAX_BACKFILL_HOURS = 24                     # 策略5 首次最多往前回�
 | `pionex_strategy4.py` | 策略4 回測程式，同上 |
 | `pionex_strategy5.py` | 策略5 回測程式（小時K條件、盤中觸發，含校準用的變體開關、條件拆解與驗證頁）。參數與共用的訊號計算取自 `strategy/s5_signal.py`；dry run 經由它的 `S5` / `CONFIG` 取參數 |
 | `strategy/s5_signal.py` | 策略5 訊號核心與參數的唯一來源（`DEFAULT_PARAMS`、`EXIT_PARAMS`、小時脈絡、①②③、分支編碼與標籤、`evaluate()`），只 import numpy / pandas；回測、dry run、實盤共用。離線測試在 `tests/test_s5_signal.py` |
+| `strategy/universe.py` | 實盤標的池的分類規則與人工覆寫名單的唯一來源（排除股票／ETF／商品、強掛勾、槓桿代幣等），只用標準庫。dry run 目前仍用 `pionex_backtest.classify`，stage → main 合併時改用它。離線測試在 `tests/test_universe.py` |
 | `pionex_s5_compare.py` | 策略5 與群組訊號的逐筆比對工具，在自己電腦上跑，需要群組的 `signals.csv` |
 | `pionex_tpsl_sweep.py` | 策略4 的止盈/止損全組合掃描工具，用「首達根數」重放所有 TP/SL 組合，找參數用，不是 dry run 的一部分 |
 | `.github/workflows/dryrun.yml` | GitHub Actions 排程設定 |
@@ -289,11 +290,44 @@ WARNING 列出），樣本到了的那一分鐘起才追蹤。未粗篩的原因
 送出或補送）。執行參數 `S5_SCREEN_RISE_MARGIN`、`S5_KLINES_LIMIT`、`S5_FETCH_CONCURRENCY`、`S5_YIELD_MAX_SECONDS`、
 `S5_JOIN_TIMEOUT_SECONDS` 在 `live/config.py`（`python -m live` 會列出）。離線測試在 `tests/test_s5_feed.py`。
 
+**標的池（A6：排除股票／ETF／商品代幣）**：A1、A5、背景對帳共用的標的池取自 `market_static.tradable_symbols(quote="USDT")` ——
+`status=TRADING`、USDT 計價、而且 **`strategy/universe.py`** 判定可交易的合約（`live/signal_feed.py` 的 `MarketUniverse` 提供，
+各消費端不各自過濾；`market_static.trading_symbols()` 的行為不變，不分類）。派網沒有資產類型欄位、股票合約也是 24 小時交易，
+所以只能靠名稱規則 + 人工覆寫名單，**規則只有 `strategy/universe.py` 一份**（只用標準庫，從 dry run 的
+`pionex_backtest.classify` / `is_stock_token` 照搬，唯一的差別是 `CRYPTO_X_WHITELIST` 多了 `CNLX`：`龙虾_USDT_PERP` 的
+baseCurrency 是 CNLX，它是加密幣）。判定一律看 `baseCurrency`（沒有才退回 symbol 第一段），不看 symbol 名稱。
+
+- 類別：加密（可交易）、股票／ETF／商品（`NON_CRYPTO`、名稱 X 結尾且長度 ≥ 4 且不在 `CRYPTO_X_WHITELIST`、`STOCK_TICKERS`、
+  去掉 X / ON / B / STOCK 結尾後在 `STOCK_TICKERS`）、強掛勾／穩定幣／包裝幣（`PEGGED`、`STABLE_RE`）、槓桿代幣（`LEVERAGED_RE`）、
+  手動排除（`MANUAL_EXCLUDE`，預設空）、已停用（`enable` 是 false）。非 USDT 計價的不列出。
+- **判錯時改哪份名單**：加密幣被誤排除 → `CRYPTO_X_WHITELIST`；股票／ETF／商品沒被排除 → `STOCK_TICKERS`（個股、ETF 代號）或
+  `NON_CRYPTO`（商品、其他非加密）；其他 → `MANUAL_EXCLUDE`。名單不是執行期設定檔，**改完要 commit 並重新部署**才生效。
+- 日誌：啟動後第一次載入時一行 INFO（TRADING USDT 總數、納入數、各類別排除數與被排除的 symbol 清單）；之後只有納入 / 排除的
+  集合有變才記一行 INFO（只寫新增與移除）。
+- **新上架追蹤**（`live/universe_seen.py`）：看過的合約（TRADING、USDT 計價、過濾之前）記在 `runtime/db/universe_seen.sqlite3`
+  （`UNIVERSE_SEEN_DB_PATH`）。第一次啟動建檔、把當時的清單記成初始列、**不發通知**；之後每次標的池刷新成功（啟動一次、之後約每
+  `MARKET_STATIC_STALE_SECONDS` 一次，所以**偵測延遲約 1 小時以內**），不在表裡的就是新上架：寫入、記一行 INFO（每個新 symbol
+  與判定），`--push-tg` 時交給 A4 發 🆕（見下面 A4）。被排除的新合約也通知；已經在表裡的（含下架後重新上架的）不算新上架，
+  下架不通知。資料庫讀寫失敗只記 ERROR（A4 會告警）、標的池與 A1 照常；寫入失敗的那一批不通知，下一次刷新再偵測、再試，
+  已寫入的不會重複通知。不帶 `--push-tg` 照樣建檔、記日誌。
+- 啟動順序：`python -m live.a_channel` 在 A1 建好時就先載入標的池（A5 與 A4 的 🟢 之前，🟢 要寫啟動時的分類結果）；載入失敗記
+  ERROR、exit 1（A1 / A5 不啟動，A4 發 ⚪「啟動失敗：標的池」）。**載入期間收到 Ctrl+C**（VPS 上 `systemctl stop` 送的 SIGINT；
+  斷網時載入會重試 3 次、各等 10 秒，這段時間不短）：一樣不啟動 A1 / A5、已啟動的 A3 → R-A → T2 → A4 依序收掉，⚪「結束原因：
+  Ctrl+C」、exit 0（與執行中的 Ctrl+C 相同）；其他非預期的例外：依序收掉、⚪「未預期的例外 <類型>」、exit 1，再把例外往外拋。
+- 已經開著的名目部位不受標的池影響（A3 不讀標的池）：部署新版時某個股票類合約還有持倉，照常監控到出場、出場訊息照常發。
+- **dry run 目前仍用 `pionex_backtest.classify`**（不含 CNLX 的修正），stage → main 合併時改用 `strategy/universe.py`。
+  兩份規則除了 CNLX 之外結果一致，由 `tests/test_universe.py` 用真實清單（`tests/fixtures/pionex_perp_symbols_20261004.json`）
+  逐筆比對。
+- 執行參數：`UNIVERSE_SEEN_DB_PATH`、`UNIVERSE_SEEN_BUSY_TIMEOUT_SECONDS`、`OPS_HEARTBEAT_LISTING_HOURS`（`live/config.py`，
+  `python -m live` 會列出）。離線測試在 `tests/test_universe.py`（另有 `tests/test_market_static.py`、`tests/test_signal_feed.py`、
+  `tests/test_ops_alert.py` 的 A6 段落）。
+
 執行入口（**不在** `python -m live` 裡）：
 
     python -m live.a_channel --duration 3600 [--events-jsonl [DIR]] [--push-tg]
 
-它把 `logsetup.setup()`、共用閘門、A2 匯流排、A3、A1（標的池由 `market_static` 載入）、A5 接起來。A5 在 A1 建好之後、
+它把 `logsetup.setup()`、共用閘門、A2 匯流排、A3、A1（標的池由 `market_static` 載入，A1 建好時就先載入，見上面「標的池」）、
+A5 接起來。A5 在 A1 建好之後、
 A1 主迴圈開始之前啟動；A5 建立或啟動失敗就記 ERROR、exit 1（**不會只跑策略4**），執行中意外結束記 ERROR、不自動
 重啟，結束時 exit 1。結束時依序關 A5 → A1 → A3 →（`--push-tg` 時）R-A 報表 → T2 → A4 維運告警（訊號的產生者先停；
 A4 最後停，結束訊息才寫得出 T2 停下來之後的待送數）。匯流排一定會掛一個
@@ -424,10 +458,11 @@ handler 規則、接線，以及在「寫入 outbox 後」「交給發送器後�
   「啟動失敗：T2（A 頻道推播）」）。A4 在 `logsetup.setup()` 之後、其他元件之前啟動，之後各元件啟動時的 ERROR 都收得到；
   發送用另一個 `ChannelSender`（執行緒 `tg-ops-sender`、日誌文字「維運告警」），告警本身在執行緒 `ops-alert`。三個密鑰的值
   在發出前一律遮罩。
-- **七種訊息**（第一行「符號 + 標題 + 兩個空白 + 機器標籤」，標籤是 `OPS_ALERT_INSTANCE_LABEL`，沒設就是主機名稱；第二行
+- **八種訊息**（第一行「符號 + 標題 + 兩個空白 + 機器標籤」，標籤是 `OPS_ALERT_INSTANCE_LABEL`，沒設就是主機名稱；第二行
   台北時間，接著「標籤：值」各行與項目行）：🟢 A 頻道程式啟動、🟡 啟動期間的錯誤、🔴 告警、⏰ 仍未恢復、✅ 已恢復、💓 每日心跳、
-  ⚪ A 頻道程式結束。項目行是 `・[ERROR] <logger> L<行號> ×<次數>：<訊息>`（CRITICAL 寫 `[CRITICAL]`）、
-  `・[條件] <條件名稱>：<說明>`、`・[事件] 對帳 / 報表：<說明>`；每項截到 `OPS_ALERT_ITEM_MAX_CHARS` 字，一則最多 `OPS_ALERT_MAX_ITEMS`
+  🆕 新上架（A6）、⚪ A 頻道程式結束。項目行是 `・[ERROR] <logger> L<行號> ×<次數>：<訊息>`（CRITICAL 寫 `[CRITICAL]`）、
+  `・[條件] <條件名稱>：<說明>`、`・[事件] 對帳 / 報表：<說明>`、`・<symbol>：納入／排除（<理由>）`（🆕；baseCurrency 與 symbol
+  第一段不同時寫成 `龙虾_USDT_PERP（CNLX）`）；每項截到 `OPS_ALERT_ITEM_MAX_CHARS` 字，一則最多 `OPS_ALERT_MAX_ITEMS`
   項（其餘寫「…另有 N 項（見日誌）」），整則不超過 `TG_MAX_MESSAGE_CHARS`。同一輪同時有新告警、提醒、恢復時分成三則，
   依 🔴 → ⏰ → ✅。每則交出時記一行 INFO「已交出 <種類>（<中文名>）：N 項，鍵 …」（`live.ops_alert`，實機驗收靠它計數）；
   發送器拒收記 WARNING。
@@ -446,7 +481,14 @@ handler 規則、接線，以及在「寫入 outbox 後」「交給發送器後�
   沒增加才解除）。讀某個元件的 stats 出錯 → 那一輪略過它（不成立也不解除），同一種錯誤只記一次 WARNING。開始關閉之後不再輪詢。
 - **心跳**：每天台北 `OPS_HEARTBEAT_TIME_TPE`（預設 09:00）一則 💓，統計上一次心跳（或本次啟動）到現在：A1 處理 / degraded
   的 K 棒、A5 的分鐘、原始訊號、A3 進出場與資料庫失敗、A 頻道送達 / 延遲不發 / 永久失敗、報表、REST 請求與 429、日誌
-  ERROR / WARNING、發出的告警與仍未恢復的條件。不持久化：那一刻程式沒在跑就不發。
+  ERROR / WARNING、發出的告警與仍未恢復的條件，以及「新上架（過去 24 小時）」（唯讀開 `universe_seen.sqlite3`，第一次看到的時刻在
+  過去 `OPS_HEARTBEAT_LISTING_HOURS` 小時內、而且不是初始列的合約與判定；沒有寫「無」，讀不到寫「讀不到（例外類型）」；用固定
+  時間窗，程式中途重啟也不會漏）。不持久化：那一刻程式沒在跑就不發。
+- **新上架 🆕**（A6，**不算告警**：不進心跳「告警：發出 N 則」的計數、不參與提醒與恢復）：標的池刷新偵測到新合約時，A1 執行緒只呼叫
+  `note_listings()`（不做 I/O、不拋例外），ops-alert 執行緒把同一次刷新的新合約組成一則：欄位「合約：共 N 個（納入 a、排除 b）」，
+  每個新 symbol 一項、寫判定與理由；交出時記一行「已交出 listing（新上架）」。🟢 發出之後才發。開始關閉之後才收到的（或還沒發出的）
+  併進 ⚪ 的項目（`・[新上架] <symbol>：…`，⚪ 多一行「關閉前還沒發出的新上架」）。🟢 多一個欄位「標的池：納入 N、排除 M（各類別）」，
+  數字取啟動時的分類結果。
 - **結束**：⚪ 寫運作時間、結束原因（到達 `--duration`、Ctrl+C、`UniverseUnavailable`、未預期的例外、`啟動失敗：<哪一步>`）、
   exit code、outbox 待送數、仍未恢復的條件。啟動中途 exit 1 的路徑不發 🟢、只發 ⚪。A4 的告警執行緒執行中意外結束、或結束時
   停不下來 → 記 ERROR（其他元件照跑），結束時 exit 1。告警器的任何錯誤都不會往外拋到訊號路徑。
@@ -458,7 +500,7 @@ handler 規則、接線，以及在「寫入 outbox 後」「交給發送器後�
 - 執行參數：`OPS_ALERT_INSTANCE_LABEL`、`OPS_ALERT_POLL_SECONDS`、`OPS_ALERT_BATCH_SECONDS`、`OPS_ALERT_REMIND_SECONDS`、
   `OPS_ALERT_STARTUP_GRACE_SECONDS`、`OPS_ALERT_QUEUE_MAX`、`OPS_ALERT_ITEM_MAX_CHARS`、`OPS_ALERT_MAX_ITEMS`、
   `OPS_ALERT_STOP_TIMEOUT_SECONDS`、`OPS_HEARTBEAT_TIME_TPE`、`OPS_A1_STALL_SECONDS`、`OPS_A5_STALL_SECONDS`、
-  `OPS_OUTBOX_STUCK_SECONDS`、`OPS_COUNTER_RAISE_POLLS`、`OPS_COUNTER_CLEAR_POLLS`（`live/config.py`，`python -m live` 會列出；
+  `OPS_OUTBOX_STUCK_SECONDS`、`OPS_COUNTER_RAISE_POLLS`、`OPS_COUNTER_CLEAR_POLLS`、`OPS_HEARTBEAT_LISTING_HOURS`（`live/config.py`，`python -m live` 會列出；
   維運 chat id 是密鑰，只列「已設定 / 未設定」）。離線測試在 `tests/test_ops_alert.py`。
 
 **上線 checklist（A4）**：
@@ -467,6 +509,10 @@ handler 規則、接線，以及在「寫入 outbox 後」「交給發送器後�
    `CRYPTO_TRADER_TG_CHANNEL_ID`）；少了它 `--push-tg` 會直接 exit 1。
 2. 部署、啟動後，確認私人聊天收到 🟢「A 頻道程式啟動」（標籤是正式主機），日誌有一行「已交出 startup（啟動）」。
 3. 隔天台北 09:00 確認收到 💓「每日心跳」。
+
+**部署（A6 新上架追蹤）**：`runtime/db/universe_seen.sqlite3` **不需要事先存在**：第一次啟動時建檔、把當時的 TRADING USDT 清單記成
+初始列、不發新上架通知（日誌有一行「新上架追蹤：建檔 …」），🟢 有「標的池」欄位。從別台機器帶過去也沒有害處，只是那些合約不會再被
+當成新上架。之後有新合約上架時，維運聊天會在約 1 小時內收到 🆕。
 
 ## 方法 A：GitHub Actions（免費、免主機）
 

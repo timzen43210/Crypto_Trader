@@ -90,6 +90,21 @@ def test_execution_params_reports_actual_values():
     assert params["MARKET_STATIC_STALE_SECONDS"] == config.MARKET_STATIC_STALE_SECONDS
 
 
+def test_a6_universe_seen_params_are_runtime_paths_and_reported():
+    """A6：新上架追蹤檔與它的參數在 config、在 execution_params()；檔案一律在 runtime/db/（不在 state/ output/）。"""
+    from live import paths
+    params = config.execution_params()
+    for name in ("UNIVERSE_SEEN_DB_PATH", "UNIVERSE_SEEN_BUSY_TIMEOUT_SECONDS", "OPS_HEARTBEAT_LISTING_HOURS"):
+        assert params[name] == getattr(config, name), name
+    path = os.path.normcase(os.path.abspath(config.UNIVERSE_SEEN_DB_PATH))
+    assert path == os.path.normcase(os.path.join(paths.RUNTIME_DIR, "db", "universe_seen.sqlite3")), path
+    for forbidden in ("state", "output"):
+        assert not path.startswith(os.path.normcase(os.path.join(paths.REPO_ROOT, forbidden)) + os.sep), path
+    # 跟其他 runtime 資料庫放在同一層，比照 A_CHANNEL_OUTBOX_DB_PATH
+    assert os.path.dirname(config.UNIVERSE_SEEN_DB_PATH) == os.path.dirname(config.A_CHANNEL_OUTBOX_DB_PATH)
+    assert config.UNIVERSE_SEEN_BUSY_TIMEOUT_SECONDS > 0 and config.OPS_HEARTBEAT_LISTING_HOURS > 0
+
+
 # ============== 第三層：密鑰 ==============
 def test_import_config_survives_machine_without_any_secret():
     """完全沒設任何密鑰的機器上，import live.config 不可以失敗（A1 / A0 都不用 TG）。"""

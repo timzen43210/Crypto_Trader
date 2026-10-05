@@ -47,9 +47,10 @@ from test_tg_channel import (FAKE_CHAT, FAKE_TOKEN, OfflineCage, exception_texts
                              http_error, ok, stop_within, wait_until)
 from test_a_channel_push import capture, outbox_path_in, secret_reads_forbidden, tempdir  # noqa: E402
 
-from live import a_channel, config, paths, reconcile, rest_gate  # noqa: E402
+from live import a_channel, config, paths, reconcile, rest_gate, universe_seen  # noqa: E402
 from live import a_channel_outbox as OB  # noqa: E402
 from live import ops_alert as OA  # noqa: E402
+from strategy import universe as universe_rules  # noqa: E402
 from live.logsetup import TAIPEI  # noqa: E402
 from live.signal_feed import UniverseUnavailable  # noqa: E402
 from live.tg_channel import MASK, utf16_units  # noqa: E402
@@ -61,9 +62,11 @@ T0 = datetime(2026, 9, 22, 10, 0, tzinfo=TAIPEI).timestamp()
 
 GREEN, YELLOW, RED = chr(0x1F7E2), chr(0x1F7E1), chr(0x1F534)
 ALARM, CHECK, HEART, WHITE = chr(0x23F0), chr(0x2705), chr(0x1F493), chr(0x26AA)
+NEW = chr(0x1F195)
 TITLE = {"startup": GREEN + " A 頻道程式啟動", "grace": YELLOW + " 啟動期間的錯誤", "alert": RED + " 告警",
          "remind": ALARM + " 仍未恢復", "recovered": CHECK + " 已恢復", "heartbeat": HEART + " 每日心跳",
-         "shutdown": WHITE + " A 頻道程式結束"}
+         "listing": NEW + " 新上架", "shutdown": WHITE + " A 頻道程式結束"}
+LOBSTER = "龙虾_USDT_PERP"
 DEAD = "執行緒已經結束，不會自動重啟（要重啟程式才會恢復）"
 TEST_LOGGER = "live.test_a4"
 
@@ -143,9 +146,20 @@ class Taker:
 
 
 @contextlib.contextmanager
+def seen_path_in(tmp):
+    """A6：新上架追蹤檔（心跳唯讀開）也導到暫存目錄，不可以讀到 repo 的 runtime/ 裡的真實檔案。"""
+    saved = config.UNIVERSE_SEEN_DB_PATH
+    config.UNIVERSE_SEEN_DB_PATH = os.path.join(tmp, "db", "universe_seen.sqlite3")
+    try:
+        yield config.UNIVERSE_SEEN_DB_PATH
+    finally:
+        config.UNIVERSE_SEEN_DB_PATH = saved
+
+
+@contextlib.contextmanager
 def ops_env():
-    """暫存目錄的 outbox / 報表發送紀錄 + 三個假密鑰 + 離線籠子。"""
-    with tempdir() as tmp, outbox_path_in(tmp):
+    """暫存目錄的 outbox / 報表發送紀錄 / 新上架追蹤檔 + 三個假密鑰 + 離線籠子。"""
+    with tempdir() as tmp, outbox_path_in(tmp), seen_path_in(tmp):
         with tgt.env_vars({config.TG_BOT_TOKEN_ENV: FAKE_TOKEN, config.TG_CHANNEL_ID_ENV: FAKE_CHAT,
                            config.OPS_CHAT_ID_ENV: FAKE_OPS}):
             with OfflineCage() as cage:
@@ -304,6 +318,7 @@ def world(attach=True):
         with make_alerter(clock, sender) as a:
             tracker, s5, reporter, gate, reconciler = FTracker(), FS5(), FReporter(), FGate(), FReconciler()
             push = FPush(config.A_CHANNEL_OUTBOX_DB_PATH)
+            universe_seen.open_db(config.UNIVERSE_SEEN_DB_PATH).close()     # A6：空的追蹤檔 → 心跳「新上架：無」
             if attach:
                 a.attach(tracker=tracker, push=push, reporter=reporter)
                 a.attach(feed=FFeed(gate, reconciler), s5=s5)
@@ -924,6 +939,7 @@ def test_ac5_three_heartbeats_with_exact_deltas():
             "REST：請求 %d、429 %d 次" % (c["requests"], c["http_429"]),
             "日誌：ERROR %d、WARNING %d、佇列丟棄 0" % (c["errors"], c["warnings"]),
             "告警：" + alerts[wi],
+            "新上架（過去 24 小時）：無",                                  # A6（追蹤檔是空的）
         ])
         assert text == want, (wi, text, want)
     assert [acc[i]["warnings"] for i in range(3)] == [5, 5, 5]
@@ -957,21 +973,28 @@ def test_ac5_unreadable_component_is_skipped_once_and_recovers_next_time():
 
 
 # ============================== AC-6：訊息格式 ==============================
-def test_ac6_title_lines_of_all_seven_kinds():
-    assert OA.KINDS == ("startup", "grace", "alert", "remind", "recovered", "heartbeat", "shutdown")
+def test_ac6_title_lines_of_all_eight_kinds():
+    # A6 加了「新上架」（排在結束之前）
+    assert OA.KINDS == ("startup", "grace", "alert", "remind", "recovered", "heartbeat", "listing", "shutdown")
     for kind in OA.KINDS:
         text = OA.compose(kind, T0, LABEL)
         assert text.split("\n") == [TITLE[kind] + "  " + LABEL, "時間：2026-09-22 10:00:00"], text
 
 
+SAMPLE_X = "SAMPLEX_USDT_PERP"
+SAMPLE_X_WHY = "排除（股票／ETF／商品：名稱 X 結尾（長度 ≥ 4、不在 CRYPTO_X_WHITELIST））"
+SAMPLE_CNLX_WHY = "納入（加密：在 CRYPTO_X_WHITELIST（例外納入））"
+
+
 def test_ac6_sample_messages_full_text():
     msgs = OA.sample_messages(now_s=T0, label=LABEL)
-    assert [k for k, _ in msgs] == ["ops-sample-%d" % i for i in range(1, 8)]
+    assert [k for k, _ in msgs] == ["ops-sample-%d" % i for i in range(1, 9)]
     ev2 = "・[ERROR] live.notional_tracker L668 ×3："
     fake2 = "[假資料] A3 資料庫寫入失敗：disk I/O error"
     c2 = "・[條件] C2 A1 停擺："
     want = [
-        message("startup", 0, "參數：--push-tg、--duration 10800 秒", "outbox 待送：0 則", "報表待送：0 期"),
+        message("startup", 0, "參數：--push-tg、--duration 10800 秒", "outbox 待送：0 則", "報表待送：0 期",
+                "標的池：納入 436、排除 128（股票／ETF／商品 123、強掛勾／穩定幣／包裝幣 5）"),
         message("grace", 0, "・[ERROR] live.a_channel_push L512 ×1：[假資料] outbox 記不回結果：database is locked"
                             "（signal_id=s4-ACE_USDT_PERP-202609181535）"),
         message("alert", 0, ev2 + fake2, c2 + "已經 12 分沒有收到新的 K 棒結果（上限 11 分）"),
@@ -989,7 +1012,12 @@ def test_ac6_sample_messages_full_text():
                 "報表：送達 1、跳過 0",
                 "REST：請求 4321、429 0 次",
                 "日誌：ERROR 4、WARNING 12、佇列丟棄 0",
-                "告警：發出 3 則（%s 1、%s 0、%s 1、%s 1）；仍未恢復：無" % (RED, YELLOW, ALARM, CHECK)),
+                "告警：發出 3 則（%s 1、%s 0、%s 1、%s 1）；仍未恢復：無" % (RED, YELLOW, ALARM, CHECK),
+                "新上架（過去 24 小時）：共 2 個（納入 1、排除 1）：%s %s；%s（CNLX） %s"
+                % (SAMPLE_X, SAMPLE_X_WHY, LOBSTER, SAMPLE_CNLX_WHY)),
+        message("listing", 0, "合約：共 2 個（納入 1、排除 1）",
+                "・%s：%s" % (SAMPLE_X, SAMPLE_X_WHY),
+                "・%s（CNLX）：%s" % (LOBSTER, SAMPLE_CNLX_WHY)),
         message("shutdown", 0,
                 "運作時間：3 小時（自 2026-09-22 07:00:00 起）",
                 "結束原因：到達 --duration（10800 秒）",
@@ -999,12 +1027,13 @@ def test_ac6_sample_messages_full_text():
                 "日誌佇列丟棄：0 筆",
                 "關閉過程中的 ERROR：無"),
     ]
+    assert len(want) == len(msgs) == 8
     for (key, text), w in zip(msgs, want):
         assert text == "[測試] " + w, (key, text, w)
 
 
 def test_ac6_startup_fields_and_announce_started():
-    assert OA.startup_fields(None, "0 則", "0 期")[0] == ("參數", "--push-tg（不帶 --duration，跑到 Ctrl+C 為止）")
+    assert OA.startup_fields(None, "0 則", "0 期", "x")[0] == ("參數", "--push-tg（不帶 --duration，跑到 Ctrl+C 為止）")
     with ops_env():
         clock = EpochClock()
         sender = FakeSender()
@@ -1015,13 +1044,15 @@ def test_ac6_startup_fields_and_announce_started():
             a.attach(push=push, reporter=reporter)
             a.announce_started(None)
         assert sender.texts("startup") == [message("startup", 0, "參數：--push-tg（不帶 --duration，跑到 Ctrl+C 為止）",
-                                                   "outbox 待送：1 則", "報表待送：2 期")], sender.sent
+                                                   "outbox 待送：1 則", "報表待送：2 期",
+                                                   "標的池：—（未啟動）")], sender.sent
     with ops_env():
         sender = FakeSender()
         with make_alerter(EpochClock(), sender) as a:
             a.announce_started(60)
         text = sender.texts("startup")[0]
-        assert "\n參數：--push-tg、--duration 60 秒\n" in text and text.endswith("\n報表待送：—（未啟動）"), text
+        assert "\n參數：--push-tg、--duration 60 秒\n" in text and "\n報表待送：—（未啟動）\n" in text, text
+        assert text.endswith("\n標的池：—（未啟動）"), text
         assert "\noutbox 待送：—（outbox 還沒建立）\n" in text, text
 
 
@@ -1223,6 +1254,10 @@ class OFeed:
         if self.exc is not None:
             raise self.exc
 
+    def load_universe(self):            # A6：a_channel 的 default_feed 在 A5 之前先載入標的池
+        self.order.append("A1.load_universe")
+        return []
+
     def close(self):
         self.order.append("A1.close")
 
@@ -1286,6 +1321,7 @@ def test_ac8_without_the_flag_nothing_changes():
 def test_ac8_default_feed_wires_note_reconcile_only_with_the_flag():
     saved = a_channel.SignalFeed, reconcile.Reconciler, rest_gate.shared_gate
     seen = []
+    listings = []                        # A6：default_feed 一定會給 ListingTracker；只有 --push-tg 才接到 A4
 
     def fake_reconciler(gate, *, on_result=None, **kw):
         seen.append(on_result)
@@ -1296,15 +1332,21 @@ def test_ac8_default_feed_wires_note_reconcile_only_with_the_flag():
             with ac8_env() as (tmp, order, sender, a):
                 alerters.append(a)
                 feed = OFeed(order)
-                a_channel.SignalFeed = lambda gate, on_result, reconciler: feed
+                a_channel.SignalFeed = lambda gate, on_result, reconciler, **kw: listings.append(kw["listings"]) or feed
                 reconcile.Reconciler = fake_reconciler
                 rest_gate.shared_gate = FGate
                 kw = factories(a, order, tmp)
                 del kw["feed_factory"]
                 rc, _ = run_main(["--duration", "5"] + (["--push-tg"] if flag else []), **kw)
                 assert rc == 0, flag
+                # 標的池在 A5 與 🟢 之前就載入（A6），run() 照常在後面
+                assert order.index("A1.load_universe") < order.index("A5.start") < order.index("A1.run"), order
+                if flag:
+                    assert order.index("A1.load_universe") < order.index("ops.send:ops-startup"), order
         assert len(seen) == 2 and seen[0] is None, seen
         assert seen[1] == alerters[1].note_reconcile, seen
+        assert len(listings) == 2 and all(isinstance(x, universe_seen.ListingTracker) for x in listings), listings
+        assert listings[0].on_new is None and listings[1].on_new == alerters[1].note_listings, listings
     finally:
         a_channel.SignalFeed, reconcile.Reconciler, rest_gate.shared_gate = saved
 
@@ -1406,9 +1448,381 @@ def test_ac8_start_failures_send_only_the_shutdown_message():
             _no_a4_left()
 
 
+def test_a6_universe_load_failure_before_a5_sends_only_the_shutdown_message():
+    """A6：標的池在 A1 建好時就載入（A5 與 🟢 之前）；載入失敗 → A5 / A1.run 都不跑、已啟動的收掉、⚪「啟動失敗：標的池」。"""
+    saved = a_channel.SignalFeed, reconcile.Reconciler, rest_gate.shared_gate
+
+    class FailingFeed(OFeed):
+        def load_universe(self):
+            self.order.append("A1.load_universe")
+            raise UniverseUnavailable("market_static 載入失敗：假的")
+    try:
+        with ac8_env() as (tmp, order, sender, a):
+            feed = FailingFeed(order)
+            a_channel.SignalFeed = lambda gate, on_result, reconciler, **kw: feed
+            reconcile.Reconciler = lambda gate, *, on_result=None, **kw: FReconciler()
+            rest_gate.shared_gate = FGate
+            kw = factories(a, order, tmp)
+            del kw["feed_factory"]
+            rc, cap = run_main(["--push-tg", "--duration", "5"], **kw)
+            assert rc == 1
+            assert sender.kinds() == ["shutdown"], sender.kinds()
+            end = sender.texts("shutdown")[0]
+            assert "\n結束原因：啟動失敗：標的池\n" in end and "\nexit code：1\n" in end, end
+            assert "A5.start" not in order and "A1.run" not in order, order
+            assert order.index("A1.load_universe") < order.index("A1.close") < order.index("A3.stop") < \
+                order.index("RA.stop") < order.index("T2.shutdown") < order.index("ops.send:ops-shutdown"), order
+            assert any("無法取得標的池，不啟動 A1 / A5" in m for m in cap.messages(logging.ERROR))
+            _no_a4_left()
+    finally:
+        a_channel.SignalFeed, reconcile.Reconciler, rest_gate.shared_gate = saved
+
+
+class JTracker(OTracker):
+    """OTracker 加記 join（收尾順序要看得到 A3 有 stop 也有 join）。"""
+
+    def join(self, timeout=None):
+        self.order.append("A3.join")
+        return True
+
+
+SHUTDOWN_TAIL_PUSH = ["A3.stop", "A3.join", "RA.stop", "T2.shutdown", "ops.send:ops-shutdown", "ops.stop"]
+
+
+def run_main_no_escape(argv, **kw):
+    """run_main，但 KeyboardInterrupt 穿出 main() 時轉成 AssertionError：回歸時要報 FAIL，不可以把整個 runner 打斷。"""
+    try:
+        return run_main(argv, **kw)
+    except KeyboardInterrupt:
+        raise AssertionError("KeyboardInterrupt 穿出 main()：沒有收尾、沒有 ⚪") from None
+
+
+def test_a6_ctrl_c_while_loading_universe_shuts_down_in_order_through_the_real_default_feed():
+    """DQA M1 回歸：標的池改在 default_feed 裡載入（A5 與 🟢 之前），這段收到 Ctrl+C（systemctl stop 的 SIGINT）時
+    要跟 feed.run() 期間的 Ctrl+C 一樣：A1 / A5 不啟動、已啟動的 A3 → R-A → T2 → A4 依序收掉、⚪「結束原因：Ctrl+C」、
+    exit 0。走正式路徑：a_channel 的 default_feed → 真的 SignalFeed.load_universe() → MarketUniverse →
+    market_static.refresh()，Ctrl+C 落在第一個 symbols 請求上（閘門的取數拋 KeyboardInterrupt）。"""
+    import test_signal_feed as tsf
+    from live.rest_gate import RestGate, RestLimiter, ServerClock
+    saved = rest_gate.shared_gate
+    try:
+        for flag in (True, False):
+            tsf.fresh_market_static()
+            clock = tsf.FakeClock(tsf.T0)
+            requests = []
+
+            def interrupted(path, params=None, retries=3, timeout=20):
+                requests.append(path)
+                raise KeyboardInterrupt
+            gate = RestGate(RestLimiter(config.A1_REST_RATE_PER_SECOND, config.REST_BAN_COOLDOWN_SECONDS, clock=clock),
+                            ServerClock(clock), clock=clock, api_get=interrupted)
+            rest_gate.shared_gate = lambda: gate
+            with ac8_env() as (tmp, order, sender, a):
+                kw = factories(a, order, tmp, tracker=JTracker(order))
+                del kw["feed_factory"]                                  # 正式的 default_feed
+                rc, cap = run_main_no_escape(["--duration", "5"] + (["--push-tg"] if flag else []), **kw)
+                assert rc == 0, (flag, rc)
+                assert requests == ["/api/v1/common/symbols"], requests  # Ctrl+C 之後一個請求都不再送
+                assert "A5.start" not in order and "A1.run" not in order, order
+                assert any("啟動中（載入標的池時）收到 Ctrl+C" in m for m in cap.messages(logging.INFO)), cap.messages()
+                if flag:
+                    assert order[order.index("RA.start") + 1:] == SHUTDOWN_TAIL_PUSH, order
+                    assert sender.kinds() == ["shutdown"], sender.kinds()        # 沒有 🟢
+                    end = sender.texts("shutdown")[0]
+                    assert "\n結束原因：Ctrl+C\n" in end and "\nexit code：0\n" in end, end
+                    _no_a4_left()
+                else:
+                    assert order == ["A3.start", "A3.stop", "A3.join"], order
+                    assert sender.sent == [] and "ops.start" not in order
+    finally:
+        rest_gate.shared_gate = saved
+
+
+def test_a6_ctrl_c_or_unexpected_exception_from_load_universe_shut_down_then_return_or_raise():
+    """DQA M1 回歸：default_feed 的 load_universe() 拋 KeyboardInterrupt → 收尾後回傳 0；拋其他例外 → 收尾、⚪ 寫
+    「未預期的例外 <類型>」、exit code 1，然後同一個例外原樣往外拋。兩種都驗帶與不帶 --push-tg。"""
+    saved = a_channel.SignalFeed, reconcile.Reconciler, rest_gate.shared_gate
+    try:
+        for exc_type in (KeyboardInterrupt, RuntimeError):
+            for flag in (True, False):
+                with ac8_env() as (tmp, order, sender, a):
+                    boom = exc_type("假的：載入標的池時出事") if exc_type is RuntimeError else KeyboardInterrupt()
+
+                    class RaisingFeed(OFeed):
+                        def load_universe(self):
+                            self.order.append("A1.load_universe")
+                            raise boom
+                    feed = RaisingFeed(order)
+                    a_channel.SignalFeed = lambda gate, on_result, reconciler, **kw: feed
+                    reconcile.Reconciler = lambda gate, *, on_result=None, **kw: FReconciler()
+                    rest_gate.shared_gate = FGate
+                    kw = factories(a, order, tmp, tracker=JTracker(order))
+                    del kw["feed_factory"]
+                    argv = ["--duration", "5"] + (["--push-tg"] if flag else [])
+                    if exc_type is KeyboardInterrupt:
+                        rc, _ = run_main_no_escape(argv, **kw)
+                        assert rc == 0, (flag, rc)
+                    else:
+                        try:
+                            run_main_no_escape(argv, **kw)
+                        except RuntimeError as e:
+                            assert e is boom, e
+                        else:
+                            raise AssertionError("非預期的例外應該收尾之後原樣往外拋")
+                    case = (exc_type.__name__, flag)
+                    assert "A5.start" not in order and "A1.run" not in order, (case, order)
+                    i = order.index("A1.load_universe")
+                    if flag:
+                        assert order[i + 1:] == ["A1.close"] + SHUTDOWN_TAIL_PUSH, (case, order)
+                        assert sender.kinds() == ["shutdown"], (case, sender.kinds())
+                        end = sender.texts("shutdown")[0]
+                        if exc_type is KeyboardInterrupt:
+                            assert "\n結束原因：Ctrl+C\n" in end and "\nexit code：0\n" in end, (case, end)
+                        else:
+                            assert "\n結束原因：未預期的例外 RuntimeError\n" in end and "\nexit code：1\n" in end, \
+                                (case, end)
+                        _no_a4_left()
+                    else:
+                        assert order[i + 1:] == ["A1.close", "A3.stop", "A3.join"], (case, order)
+                        assert sender.sent == []
+    finally:
+        a_channel.SignalFeed, reconcile.Reconciler, rest_gate.shared_gate = saved
+
+
+# ============================== A6：🆕 新上架、🟢 標的池、💓 新上架 ==============================
+def _listing(symbol, base, tradable=True, reason=None, t=T0, initial=False):
+    """用 strategy.universe 真的判定組一個 Listing（reason 給了就覆寫，測遮罩 / 截斷用）。"""
+    c = universe_rules.classify({"symbol": symbol, "baseCurrency": base, "quoteCurrency": "USDT"})
+    return universe_seen.Listing(symbol=symbol, base=c.base, first_seen_ms=int(t * 1000), tradable=c.tradable,
+                                 category=c.category, reason=reason or c.reason, initial=initial)
+
+
+def test_a6_listing_message_format_masking_caps_and_log_line():
+    with ops_env(), capture("live.ops_alert") as cap:
+        clock = EpochClock()
+        sender = FakeSender()
+        with make_alerter(clock, sender) as a:
+            a.announce_started(None)
+            batch = [_listing(LOBSTER, "CNLX"), _listing("AAPLX_USDT_PERP", "AAPLX"),
+                     _listing("LEAK_USDT_PERP", "LEAK", reason="理由裡夾了密鑰 " + FAKE_TOKEN + " 結尾"),
+                     _listing("LONG_USDT_PERP", "LONG", reason="長" * 400)]
+            batch += [_listing("N%02d_USDT_PERP" % i, "N%02d" % i) for i in range(8)]       # 共 12 個
+            a.note_listings(batch)
+            a.run_once(T0 + 1)
+            texts = sender.texts("listing")
+            assert len(texts) == 1, sender.kinds()
+            lines = texts[0].split("\n")
+            assert lines[0] == TITLE["listing"] + "  " + LABEL and lines[1] == "時間：" + tpe(1), lines[:2]
+            assert lines[2] == "合約：共 12 個（納入 11、排除 1）", lines[2]
+            assert lines[3] == "・%s（CNLX）：納入（加密：在 CRYPTO_X_WHITELIST（例外納入））" % LOBSTER, lines[3]
+            assert lines[4] == "・AAPLX_USDT_PERP：排除（股票／ETF／商品：名稱 X 結尾（長度 ≥ 4、不在 CRYPTO_X_WHITELIST））"
+            assert MASK in lines[5] and not find_leaks([texts[0]], SECRETS), lines[5]
+            body = lines[6][len("・LONG_USDT_PERP："):]
+            assert len(body) == config.OPS_ALERT_ITEM_MAX_CHARS and body.endswith("…"), (len(body), body[-3:])
+            assert len([ln for ln in lines if ln.startswith("・")]) == config.OPS_ALERT_MAX_ITEMS
+            assert lines[-1] == "…另有 2 項（見日誌）", lines[-1]
+            assert "（CNLX）" not in lines[4] and "AAPLX_USDT_PERP（" not in lines[4]     # base 相同不加括號
+            infos = [m for m in cap.messages(logging.INFO) if m.startswith("已交出 listing（新上架）")]
+            assert infos == ["已交出 listing（新上架）：12 項，鍵 %s" % "、".join(x.symbol for x in batch)], infos
+            # 不算告警：心跳的「告警：發出 N 則」不含它（🟢 也不算）
+            tick(a, clock, 82800)
+            hb = sender.texts("heartbeat")[0]
+            assert "\n告警：發出 0 則（%s 0、%s 0、%s 0、%s 0）；仍未恢復：無\n" % (RED, YELLOW, ALARM, CHECK) in hb, hb
+            assert a._sent["listing"] == 1
+
+
+def test_a6_listings_wait_for_startup_and_each_refresh_is_one_message():
+    with ops_env():
+        clock = EpochClock()
+        sender = FakeSender()
+        with make_alerter(clock, sender) as a:
+            a.note_listings([_listing("AAA_USDT_PERP", "AAA")])          # 例如重啟時，啟動前的標的池載入就偵測到
+            a.run_once(T0 + 1)
+            assert sender.kinds() == [], sender.kinds()                  # 🟢 還沒發：先不發
+            a.announce_started(None)
+            a.note_listings([_listing("BBB_USDT_PERP", "BBB"), _listing("CCCX_USDT_PERP", "CCCX")])
+            a.note_listings([])                                          # 空的一批：什麼都不做
+            a.run_once(T0 + 2)
+            assert sender.kinds() == ["startup", "listing", "listing"], sender.kinds()
+            first, second = sender.texts("listing")
+            assert "\n合約：共 1 個（納入 1、排除 0）\n・AAA_USDT_PERP：" in first, first
+            assert "\n合約：共 2 個（納入 1、排除 1）\n・BBB_USDT_PERP：" in second and "\n・CCCX_USDT_PERP：排除（" in second
+            a.run_once(T0 + 3)
+            assert sender.kinds() == ["startup", "listing", "listing"], "同一批不可以再發一次"
+
+
+def test_a6_listings_after_begin_shutdown_go_into_the_shutdown_message():
+    """FR-5 第 2 點的二選一：選「併進 ⚪ 的項目」（那些合約已寫進追蹤檔，重啟後不會再當成新上架）。"""
+    with ops_env():
+        clock = EpochClock()
+        sender = FakeSender()
+        with make_alerter(clock, sender) as a:
+            a.announce_started(None)
+            a.begin_shutdown()
+            a.note_listings([_listing(LOBSTER, "CNLX"), _listing("ZZZX_USDT_PERP", "ZZZX")])
+            a.run_once(T0 + 1)
+            assert "listing" not in sender.kinds(), sender.kinds()
+            a.finish("Ctrl+C", 0)
+        assert sender.kinds() == ["startup", "shutdown"], sender.kinds()
+        end = sender.texts("shutdown")[0]
+        assert "\n關閉前還沒發出的新上架：2 個（一併列在下面）" in end, end
+        assert "\n・[新上架] %s（CNLX）：納入（加密：在 CRYPTO_X_WHITELIST（例外納入））" % LOBSTER in end, end
+        assert "\n・[新上架] ZZZX_USDT_PERP：排除（股票／ETF／商品：" in end, end
+        assert "關閉前還沒發出的告警" not in end, end
+
+
+def test_a6_startup_universe_field():
+    cases = ((lambda: {"total": 5, "included": 3, "excluded": 2,
+                       "by_category": {"stock": 1, "pegged": 1}},
+              "標的池：納入 3、排除 2（股票／ETF／商品 1、強掛勾／穩定幣／包裝幣 1）"),
+             (lambda: {"total": 3, "included": 3, "excluded": 0, "by_category": {}}, "標的池：納入 3、排除 0"),
+             (lambda: None, "標的池：—（還沒載入）"),
+             (lambda: 1 / 0, "標的池：讀不到（ZeroDivisionError）"))
+    for fn, want in cases:
+        with ops_env():
+            sender = FakeSender()
+            with make_alerter(EpochClock(), sender) as a:
+                feed = OFeed([])
+                feed.universe_summary = fn
+                a.attach(feed=feed)
+                a.announce_started(None)
+            text = sender.texts("startup")[0]
+            assert text.endswith("\n" + want), (want, text)
+
+
+def test_a6_startup_field_uses_the_real_feed_summary():
+    """真的 SignalFeed + MarketUniverse：🟢 的數字就是第一次載入時的分類結果（假交易所、離線）。"""
+    import test_signal_feed as tsf
+    with ops_env():
+        feed = tsf.feed_with_market(tsf.SMALL_SPECS)
+        with capture("live.signal_feed"):
+            feed.load_universe()
+        sender = FakeSender()
+        with make_alerter(EpochClock(), sender) as a:
+            a.attach(feed=feed)
+            a.announce_started(None)
+        want = universe_rules.summary_text(universe_rules.summarize(
+            c for c in (universe_rules.classify(s) for s in tsf.SMALL_SPECS if s["status"] == "TRADING")
+            if c is not None))
+        assert sender.texts("startup")[0].endswith("\n標的池：" + want), sender.texts("startup")[0]
+        assert want.startswith("納入 ") and "股票／ETF／商品" in want, want
+
+
+def test_a6_heartbeat_lists_only_non_initial_listings_within_24_hours():
+    with ops_env():
+        hb_now = T0 + 82800                                   # 隔天台北 09:00
+        day = config.OPS_HEARTBEAT_LISTING_HOURS * 3600
+        tclock = EpochClock(hb_now - 3 * day)
+        tracker = universe_seen.ListingTracker(clock=tclock)
+
+        def classes(*specs):
+            return {s[0]: universe_rules.classify({"symbol": s[0], "baseCurrency": s[1], "quoteCurrency": "USDT"})
+                    for s in specs}
+        base = [("BTC_USDT_PERP", "BTC"), ("AAPLX_USDT_PERP", "AAPLX")]
+        assert tracker.observe(classes(*base)) == []                                 # 建檔（初始列）
+        tclock.t = hb_now - day - 1
+        assert len(tracker.observe(classes(*base, ("OLD_USDT_PERP", "OLD")))) == 1   # 24 小時又 1 秒前
+        tclock.t = hb_now - day
+        assert len(tracker.observe(classes(*base, ("OLD_USDT_PERP", "OLD"), ("EDGEX_USDT_PERP", "EDGEX")))) == 1
+        tclock.t = hb_now - 3600
+        assert len(tracker.observe(classes(*base, ("OLD_USDT_PERP", "OLD"), ("EDGEX_USDT_PERP", "EDGEX"),
+                                           (LOBSTER, "CNLX")))) == 1
+        clock = EpochClock()
+        sender = FakeSender()
+        with make_alerter(clock, sender) as a:
+            tick(a, clock, 82800)
+        hb = sender.texts("heartbeat")[0]
+        line = hb.split("\n")[-1]
+        assert line == ("新上架（過去 24 小時）：共 2 個（納入 1、排除 1）："
+                        "EDGEX_USDT_PERP 排除（股票／ETF／商品：名稱 X 結尾（長度 ≥ 4、不在 CRYPTO_X_WHITELIST））；"
+                        "%s（CNLX） 納入（加密：在 CRYPTO_X_WHITELIST（例外納入））" % LOBSTER), line
+        assert "OLD_USDT_PERP" not in hb and "BTC_USDT_PERP" not in hb and "AAPLX" not in hb, hb
+
+
+def test_a6_heartbeat_does_not_list_initial_rows_even_inside_the_window():
+    """第一次部署：建檔在心跳前 1 小時（在 24 小時窗內），初始列一個都不列（否則隔天 09:00 會列出全部 500 多個）。"""
+    with ops_env():
+        hb_now = T0 + 82800
+        tracker = universe_seen.ListingTracker(clock=EpochClock(hb_now - 3600))
+        initial = {s: universe_rules.classify({"symbol": s}) for s in ("BTC_USDT_PERP", "AAPLX_USDT_PERP",
+                                                                      "ETH_USDT_PERP")}
+        assert tracker.observe(initial) == [] and tracker.stats["bootstrapped"] == 3
+        rows = universe_seen.read_all()
+        assert all(r.initial and r.first_seen_ms == int((hb_now - 3600) * 1000) for r in rows), rows
+        clock = EpochClock()
+        sender = FakeSender()
+        with make_alerter(clock, sender) as a:
+            tick(a, clock, 82800)
+        assert sender.texts("heartbeat")[0].split("\n")[-1] == "新上架（過去 24 小時）：無", sender.texts("heartbeat")
+
+
+def test_a6_heartbeat_listing_field_when_the_database_is_unreadable_or_has_many():
+    with ops_env() as tmp, capture("live.ops_alert") as cap:
+        clock = EpochClock()
+        sender = FakeSender()
+        with make_alerter(clock, sender) as a:                 # 追蹤檔不存在
+            tick(a, clock, 82800)
+            tick(a, clock, 82800 + 86400)
+        lines = [t.split("\n")[-1] for t in sender.texts("heartbeat")]
+        assert lines == ["新上架（過去 24 小時）：讀不到（UniverseSeenError）"] * 2, lines
+        warns = [m for m in cap.messages(logging.WARNING) if "讀不到新上架追蹤檔" in m]
+        assert len(warns) == 1, warns                           # 同一種錯誤只記一次
+        os.makedirs(os.path.dirname(config.UNIVERSE_SEEN_DB_PATH), exist_ok=True)
+        with open(config.UNIVERSE_SEEN_DB_PATH, "wb") as f:   # 不是 SQLite 檔
+            f.write(b"not a database" * 100)
+        sender2 = FakeSender()
+        with make_alerter(EpochClock(), sender2, ) as a:
+            tick(a, a._clock, 82800)
+        assert sender2.texts("heartbeat")[0].split("\n")[-1] == "新上架（過去 24 小時）：讀不到（DatabaseError）"
+        os.remove(config.UNIVERSE_SEEN_DB_PATH)
+        tracker = universe_seen.ListingTracker(clock=EpochClock(T0))
+        tracker.observe({"BTC_USDT_PERP": universe_rules.classify({"symbol": "BTC_USDT_PERP"})})
+        many = {"M%02d_USDT_PERP" % i: universe_rules.classify({"symbol": "M%02d_USDT_PERP" % i}) for i in range(13)}
+        tracker._clock = EpochClock(T0 + 3600)
+        assert len(tracker.observe(many)) == 13
+        sender3 = FakeSender()
+        with make_alerter(EpochClock(), sender3) as a:
+            tick(a, a._clock, 82800)
+        line = sender3.texts("heartbeat")[0].split("\n")[-1]
+        assert line.startswith("新上架（過去 24 小時）：共 13 個（納入 13、排除 0）：M00_USDT_PERP 納入（")
+        assert line.endswith("；…另有 3 個（見日誌）") and line.count("_USDT_PERP 納入（") == 10, line
+
+
+def test_a6_note_listings_does_no_io_and_never_raises():
+    """A1 執行緒呼叫的 note_listings：不開檔、不連資料庫、不連網、不 sleep、不拋例外（壞輸入也一樣）。"""
+    import builtins
+    import sqlite3
+
+    def forbidden(*a, **k):
+        raise AssertionError("note_listings 做了 I/O")
+    with ops_env():
+        sender = FakeSender()
+        with make_alerter(EpochClock(), sender) as a:
+            saved = builtins.open, sqlite3.connect, os.makedirs
+            builtins.open = sqlite3.connect = os.makedirs = forbidden
+            try:
+                class Boom:
+                    def __iter__(self):
+                        raise RuntimeError("壞的輸入")
+                done = []
+                t = threading.Thread(target=lambda: done.append(
+                    (a.note_listings([_listing("AAA_USDT_PERP", "AAA")]), a.note_listings(Boom()),
+                     a.note_listings(None))), name="a1-main-loop")
+                t.start()
+                t.join(5)
+                assert done == [(None, None, None)], done
+                a._lock = None                                      # 連鎖都壞了也不拋
+                a.note_listings([_listing("BBB_USDT_PERP", "BBB")])
+            finally:
+                builtins.open, sqlite3.connect, os.makedirs = saved
+                a._lock = threading.Lock()
+            assert [len(b) for b in a._listing_batches] == [1], a._listing_batches
+            assert sender.sent == []                                # 交出在 ops-alert 執行緒，不在呼叫端
+
+
 # ============================== --sample ==============================
-def test_sample_sends_seven_test_messages_to_the_ops_chat():
-    for plan, want_rc, want_text in (((), OA.EXIT_SENT, "已送達 7"),
+def test_sample_sends_eight_test_messages_to_the_ops_chat():
+    for plan, want_rc, want_text in (((), OA.EXIT_SENT, "已送達 8"),
                                      ((http_error(400, "Bad Request: chat not found"),), OA.EXIT_FAILED, "最後錯誤")):
         with harness() as h, tgt.env_vars({config.OPS_CHAT_ID_ENV: FAKE_OPS}):
             h.tg.plan(*plan)
@@ -1420,7 +1834,8 @@ def test_sample_sends_seven_test_messages_to_the_ops_chat():
                 rc = OA.sample(sender_factory=factory)
             assert rc == want_rc, (rc, out.getvalue())
             assert want_text in out.getvalue(), out.getvalue()
-            assert len(h.tg.calls) == 7
+            assert len(h.tg.calls) == 8
+            assert sum(1 for c in h.tg.calls if c.payload["text"].startswith("[測試] " + NEW + " 新上架")) == 1
             assert all(c.payload["text"].startswith("[測試]") for c in h.tg.calls)
             assert all(c.payload["chat_id"] == FAKE_OPS for c in h.tg.calls)
             assert not find_leaks([out.getvalue()] + h.logs.lines, SECRETS)
@@ -1451,7 +1866,8 @@ def test_main_without_sample_flag_is_a_usage_error():
 # ============================== AC-11：參數 ==============================
 def test_ac11_params_in_execution_params_and_python_m_live_and_env_listed_by_name_only():
     ops_names = sorted(n for n in dir(config) if n.startswith("OPS_") and n != "OPS_CHAT_ID_ENV")
-    assert len(ops_names) == 15, ops_names
+    assert len(ops_names) == 16, ops_names                          # A6 加了 OPS_HEARTBEAT_LISTING_HOURS
+    assert config.OPS_HEARTBEAT_LISTING_HOURS == 24
     names = ops_names + ["A3_STORE_RETRY_DELAYS_SECONDS", "TG_MAX_MESSAGE_CHARS"]
     params = config.execution_params()
     for n in names:
@@ -1491,8 +1907,11 @@ def test_module_name_and_dependencies():
             top.update(a.name.split(".")[0] for a in node.names)
         elif isinstance(node, ast.ImportFrom) and node.level == 0:
             top.add(node.module.split(".")[0])
-    extra = top - set(sys.stdlib_module_names) - {"live"}
+    # strategy 是本專案的套件（WBS §10 #1：live/ → strategy/ 是唯一允許的跨套件相依；A6 用 strategy.universe 組字）
+    extra = top - set(sys.stdlib_module_names) - {"live", "strategy"}
     assert not extra, "live/ops_alert.py 用了標準庫以外的套件：%s" % extra
+    assert "universe" in {a.name for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
+                          and node.module == "strategy" for a in node.names}
 
 
 if __name__ == "__main__":

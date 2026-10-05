@@ -11,6 +11,11 @@ live.market_static — 全市場交易對規格 + 槓桿上限的記憶體快取
 日後的下單端要 baseStep / quotePrecision / minNotional。這裡只負責「存下來、查得到」，
 不做取整、不做部位計算、不做跳層。我們的部位 notional 約 100 USDT，永遠落在 tier1。
 
+標的池（A6）：實盤標的池取自 tradable_symbols(quote="USDT") —— status=TRADING、USDT 計價、而且
+strategy.universe（唯一的分類規則）判定可交易的 symbol。被排除的連同分類結果由 excluded_symbols() 查，
+兩者合起來（classified_symbols()）就是 trading_symbols(quote="USDT") 的全部。A1、A5、背景對帳都從
+live.signal_feed.MarketUniverse 拿這一份，不在各消費端各自過濾。trading_symbols() 的行為不變（不分類）。
+
 真實回應結構（2026-09-22 在 laptop 實測，原文見 TASK-002 的 code attachment）：
     symbols   : data.symbols[]  每筆 {symbol, name, type, baseCurrency, quoteCurrency,
                 basePrecision, quotePrecision, minNotional, baseStep, quoteStep, minSizeLimit,
@@ -37,7 +42,9 @@ live.market_static — 全市場交易對規格 + 槓桿上限的記憶體快取
     ms.refresh()                              # 啟動時強制載入一次；回傳 True/False
     ms.refresh_if_stale()                     # 每根 K 棒呼叫一次；超過 1 小時才會真的打 API
     ms.refresh(fetch=my_fetch)                # 取數經過呼叫者給的函式（例如共用閘門）
-    ms.trading_symbols(quote="USDT")          # ['BTC_USDT_PERP', ...]
+    ms.trading_symbols(quote="USDT")          # ['BTC_USDT_PERP', ...]（不分類）
+    ms.tradable_symbols(quote="USDT")         # 標的池：上面那份裡 strategy.universe 判定可交易的
+    ms.excluded_symbols(quote="USDT")         # {'AAPLX_USDT_PERP': Classification(...), ...}
     ms.max_leverage("BTC_USDT_PERP")          # 100；查不到回 None
     ms.symbol_spec("BTC_USDT_PERP")["baseStep"]
     ms.status()                               # 各種時間戳與 last_error
@@ -49,6 +56,7 @@ import time
 
 from live import config
 from live.pionex_api import api_get
+from strategy import universe as universe_rules
 
 SYMBOLS_PATH = "/api/v1/common/symbols"
 SYMBOLS_PARAMS = {"type": "PERP", "status": "TRADING"}
@@ -77,6 +85,8 @@ last_attempt_at = None   # 最近一次嘗試刷新的時間（不論成敗）
 last_refresh_ok = None   # 最近一次嘗試的結果；None = 從未嘗試
 last_error = None        # 最近一次失敗的訊息（"ExceptionType: message"）；成功不會清掉它
 last_error_at = None     # 最近一次失敗的時間
+refresh_count = 0        # 成功刷新的次數（快取整包換掉的次數）。呼叫端比對它就知道「刷新過了沒」，
+                         # 不必比 last_refresh_mono（Windows 的 monotonic 解析度約 15 ms，兩次刷新可能同值）
 
 
 # ---------------- 取數與解析 ----------------
@@ -153,6 +163,7 @@ def refresh(fetch=None):
     """
     global _specs, _leverage, _loaded
     global last_refresh_at, last_refresh_mono, last_attempt_at, last_refresh_ok, last_error, last_error_at
+    global refresh_count
 
     last_attempt_at = time.time()
     try:
@@ -174,6 +185,7 @@ def refresh(fetch=None):
     last_refresh_at = time.time()
     last_refresh_mono = time.monotonic()
     last_refresh_ok = True
+    refresh_count += 1
     return True
 
 
@@ -212,6 +224,35 @@ def trading_symbols(quote=None):
     )
 
 
+def classified_symbols(quote=universe_rules.QUOTE):
+    """trading_symbols(quote) 的每一個 → strategy.universe 的分類結果（Classification），依 symbol 排序的 dict。
+
+    每次呼叫都用目前快取裡的規格現場分類（純函式、不打 API）；沒載入過拋 NotLoadedError。"""
+    _require_loaded()
+    specs = _specs          # 只讀一次模組全域：別的執行緒刷新時整包換掉 _specs，這裡仍走同一份（不會 KeyError）
+    out = {}
+    for sym in sorted(specs):
+        s = specs[sym]
+        if s.get("status") != "TRADING" or s.get("quoteCurrency") != quote:
+            continue
+        c = universe_rules.classify(s, quote=quote)
+        if c is not None:
+            out[sym] = c
+    return out
+
+
+def tradable_symbols(quote=universe_rules.QUOTE):
+    """標的池：status=TRADING、計價幣是 quote、而且 strategy.universe 判定可交易的 symbol 清單（排序過）。
+    從快取讀、絕不自己打 API；沒載入過拋 NotLoadedError。"""
+    return [sym for sym, c in classified_symbols(quote).items() if c.tradable]
+
+
+def excluded_symbols(quote=universe_rules.QUOTE):
+    """status=TRADING、計價幣是 quote，但 strategy.universe 判定不可交易的 symbol → Classification（依 symbol 排序）。
+    給日誌與 A4 用。從快取讀、絕不自己打 API；沒載入過拋 NotLoadedError。"""
+    return {sym: c for sym, c in classified_symbols(quote).items() if not c.tradable}
+
+
 def symbol_spec(symbol):
     """該 symbol 的交易對規格（symbols 端點的原始欄位，淺拷貝）。查不到回 None。"""
     _require_loaded()
@@ -236,6 +277,7 @@ def status():
         "last_refresh_ok": last_refresh_ok,
         "last_error": last_error,
         "last_error_at": last_error_at,
+        "refresh_count": refresh_count,
     }
 
 
@@ -320,6 +362,10 @@ def _probe():
 
     print(f"\ntrading_symbols()             : {len(trading_symbols())}")
     print(f"trading_symbols(quote='USDT') : {len(trading_symbols(quote='USDT'))}")
+    excluded = excluded_symbols()
+    print(f"tradable_symbols()（標的池）  : {len(tradable_symbols())}")
+    print(f"excluded_symbols()            : {len(excluded)} "
+          f"{universe_rules.summarize(classified_symbols().values())['by_category']}")
     print(f"查不到的 symbol -> max_leverage={max_leverage('NOPE_USDT_PERP')} "
           f"symbol_spec={symbol_spec('NOPE_USDT_PERP')}")
     return 0

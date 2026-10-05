@@ -5,7 +5,10 @@ live.a_channel — A 頻道的執行入口：A1 / A5（原始訊號）→ A3（�
 把下面這些元件接起來，跑到 --duration 秒或 Ctrl+C 為止：
 
     B3  live.logsetup.setup()            日誌與未攔截例外
-    B5  live.market_static               標的池（由 A1 的 MarketUniverse 載入與刷新）
+    B5  live.market_static               標的池（由 A1 的 MarketUniverse 載入與刷新；A6：只含 strategy.universe
+                                         判定可交易的 TRADING USDT 合約）
+    A6  live.universe_seen               新上架追蹤（runtime/db/universe_seen.sqlite3）：一定會掛在 A1 的標的池刷新上
+                                         （不帶 --push-tg 也建檔、記日誌）；--push-tg 時新上架交給 A4（note_listings）
         live.rest_gate.shared_gate()     整個行程共用的 REST 閘門（A1 與 A3 都走它）
     B4′ live.store                       A3 的工作執行緒自己開（一個 Store 只在建立它的執行緒用）
     A2  live.bus.SignalBus               訂閱者：EventLog（事件寫進 INFO 日誌，加 --events-jsonl 時另外寫 jsonl），
@@ -51,8 +54,13 @@ A4 的 ops-alert 執行緒執行中意外結束、或結束時停不下來 → �
 資料庫之後才啟動 A1（開不了資料庫就 exit 1）；A3 的重啟復原在自己的執行緒裡做，期間 A1 / A5 交來的訊號
 先排在佇列裡。
 
-A5 在 A1 建好之後建立（要用 A1 的 gate / buffer / universe），在 A1 的主迴圈開始之前啟動（A1 的 run() 會阻塞；
-標的池在 run() 裡才載入，A5 在那之前看到空的標的池只是不篩、不取數）。A5 建立或啟動失敗 → 記 ERROR、exit 1，
+A1 建好時就先載入標的池（A6：SignalFeed.load_universe()，在 A5 與 A4 的 🟢 之前；🟢 要寫啟動時的分類結果），
+載入失敗（UniverseUnavailable）→ 記 ERROR、A1 / A5 不啟動、已啟動的 A3 / R-A / T2 照 A5 啟動失敗的方式收掉、exit 1
+（A4 發 ⚪「啟動失敗：標的池」）。載入期間收到 Ctrl+C（systemctl stop 的 SIGINT；斷網時載入會重試 3 次、各等 10 秒）
+→ 一樣依序收掉、⚪「結束原因：Ctrl+C」、exit 0，與 feed.run() 期間的 Ctrl+C 相同；其他例外 → 依序收掉、⚪「未預期的例外
+<類型>」、exit 1，收完之後例外原樣往外拋。注入 feed_factory 的（測試）照舊由 run() 自己載入。
+A5 在 A1 建好之後建立（要用 A1 的 gate / buffer / universe），在 A1 的主迴圈開始之前啟動（A1 的 run() 會阻塞）。
+A5 建立或啟動失敗 → 記 ERROR、exit 1，
 **不會只跑策略4**。A5 的執行緒執行中意外結束 → 記 ERROR、不自動重啟（A1 / A3 照跑），結束時 exit 1。
 
 事件去重約定：A3 採 at-least-once 發布，**以 (signal_id, 事件種類) 去重**，詳見 live.signal_events 的模組說明。
@@ -274,8 +282,18 @@ def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=No
 
     def default_feed(on_result):
         from live.reconcile import Reconciler
+        from live.universe_seen import ListingTracker
         on_reconcile = None if alerter is None else alerter.note_reconcile
-        return SignalFeed(gate=gate(), on_result=on_result, reconciler=Reconciler(gate(), on_result=on_reconcile))
+        # A6 新上架追蹤：不帶 --push-tg 也建檔、記日誌；--push-tg 時交給 A4（不做 I/O、不拋例外）
+        listings = ListingTracker(on_new=None if alerter is None else alerter.note_listings)
+        feed = SignalFeed(gate=gate(), on_result=on_result, reconciler=Reconciler(gate(), on_result=on_reconcile),
+                          listings=listings)
+        try:
+            feed.load_universe()           # 失敗拋 UniverseUnavailable（由 main 收掉已啟動的元件）
+        except BaseException:
+            feed.close()
+            raise
+        return feed
 
     bus = SignalBus()
     event_log = EventLog(events_dir)
@@ -338,7 +356,37 @@ def main(argv=None, *, setup_logging=True, tracker_factory=None, feed_factory=No
     if alerter is not None:
         # 先交給 A3（原本的回呼），finally 再記給 A4（C2 與心跳）；A3 那邊的例外照樣往外拋
         on_result = alerter.wrap_on_result(on_result)
-    feed = (feed_factory or default_feed)(on_result)
+    try:
+        feed = (feed_factory or default_feed)(on_result)
+    except BaseException as e:
+        # A6：標的池在 A1 建好時就載入（default_feed 的 load_universe()），這一段已經不在下面 feed.run() 的
+        # try / finally 裡，所以這裡要自己收尾：A1 / A5 不啟動，已經啟動的 A3 → R-A → T2 → A4 依序收掉。
+        #   標的池載入失敗（UniverseUnavailable）→ ⚪「啟動失敗：標的池」、exit 1
+        #   Ctrl+C（systemctl stop 的 SIGINT）    → ⚪「Ctrl+C」、exit 0（與 feed.run() 期間的 Ctrl+C 相同）
+        #   其他例外                             → ⚪「未預期的例外 <類型>」、exit 1，收完之後原樣往外拋
+        if isinstance(e, UniverseUnavailable):
+            logger.error("無法取得標的池，不啟動 A1 / A5：%s", e)
+            reason, rc = "啟動失敗：標的池", 1
+        elif isinstance(e, KeyboardInterrupt):
+            logger.info("啟動中（載入標的池時）收到 Ctrl+C，結束（A1 / A5 不啟動）")
+            reason, rc = "Ctrl+C", 0
+        else:
+            reason, rc = "未預期的例外 %s" % type(e).__name__, 1
+        if alerter is not None:
+            alerter.begin_shutdown()
+        tracker.stop()
+        if not tracker.join(config.A3_JOIN_TIMEOUT_SECONDS):
+            logger.error("A3 工作執行緒 %s 秒內沒有結束", config.A3_JOIN_TIMEOUT_SECONDS)
+            rc = rc or 1
+        if reporter is not None and not stop_reporter(reporter):
+            rc = rc or 1
+        if push is not None:
+            push.shutdown()
+        event_log.close()
+        rc = finish(reason, rc)
+        if isinstance(e, (UniverseUnavailable, KeyboardInterrupt)):
+            return rc
+        raise
     s5 = None
     try:
         s5 = (s5_feed_factory or default_s5_feed)(feed, tracker)

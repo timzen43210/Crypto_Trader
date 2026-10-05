@@ -9,8 +9,8 @@ live.ops_alert — A4 最小營運告警：把 A 頻道程式的異常與每日�
 元件
     OpsAlerter        告警器本體：日誌 handler + 執行緒 ops-alert（分組、輪詢、心跳、組訊息、交給發送器）
     _AlertHandler     掛在 root logger 上的 logging.Handler（level WARNING）
-    compose()         組一則訊息（七種，格式見下面「訊息格式」）
-    python -m live.ops_alert --sample   寫死的假資料組出七種各一則，開頭加 [測試]，經維運發送器送出
+    compose()         組一則訊息（八種，格式見下面「訊息格式」）
+    python -m live.ops_alert --sample   寫死的假資料組出八種各一則，開頭加 [測試]，經維運發送器送出
 
 ──────────────────────────────────────────────────────────────────────
 事件告警（日誌 ERROR / CRITICAL；FR-3）
@@ -34,6 +34,22 @@ ops-alert 執行緒依分組鍵 (logger 名稱, 檔名, lineno) 處理：
   對帳 out_of_coverage  note_reconcile(result) 數窗口數（不加總 requests 等整輪共用的欄位），跟同一段時間的
                         其他新事件一起進下一則 🔴：「對帳：N 個小時窗口超出 klines 涵蓋，沒有對帳（多半是停頓過久）」
   R-A 跳過              reporter.stats()["skipped"] 比上一輪多 →「報表：N 期超過補發上限，跳過未發」
+
+──────────────────────────────────────────────────────────────────────
+新上架（A6 FR-5）：🆕，**不算告警**
+──────────────────────────────────────────────────────────────────────
+  note_listings(listings)  A1 的標的池刷新偵測到新合約、寫進 universe_seen.sqlite3 之後（live.universe_seen）呼叫：
+                           只把這一批放進待發區並喚醒 ops-alert 執行緒，不做 I/O、不拋例外（比照 note_reconcile）
+  同一次刷新的新合約合成一則 🆕：欄位「合約：共 N 個（納入 a、排除 b）」，每個新 symbol 一項
+  「・<symbol>：納入／排除（<理由>）」（baseCurrency 與 symbol 第一段不同時，symbol 後面括號標 baseCurrency）。
+  組字與交出在 ops-alert 執行緒，經 SecretMasker、項目數與長度上限沿用 compose()，交出時記一行「已交出 listing（新上架）」。
+  不進心跳「告警：發出 N 則」的計數，不參與提醒與恢復，不受啟動寬限。🟢 交出之後才發（啟動時偵測到的排在 🟢 後面）。
+  開始關閉（begin_shutdown()）之後才收到的、以及收到了但還沒發出的：**併進 ⚪ 的項目**（「[新上架] <symbol>」），
+  不另外發 🆕，⚪ 多一個欄位「關閉前還沒發出的新上架」。那些合約已寫進追蹤檔，重啟後不會再當成新上架，所以要在 ⚪ 讓
+  使用者看到；心跳的「新上架」欄位也列得出來。
+  🟢 多一個欄位「標的池：納入 N、排除 M（各類別）」，數字取 A1 啟動時的分類結果（feed.universe_summary()）。
+  💓 多一個欄位「新上架（過去 OPS_HEARTBEAT_LISTING_HOURS 小時）」：唯讀開 universe_seen.sqlite3，列出第一次看到的
+  時刻在這段時間內、而且不是初始列的合約與判定；沒有寫「無」，讀不到寫「讀不到（例外類型）」。
 
 ──────────────────────────────────────────────────────────────────────
 條件告警（每 OPS_ALERT_POLL_SECONDS 輪詢 stats；FR-5）：raised → 🔴、每 OPS_ALERT_REMIND_SECONDS ⏰、cleared → ✅
@@ -63,6 +79,7 @@ ops-alert 執行緒依分組鍵 (logger 名稱, 檔名, lineno) 處理：
     ・[ERROR] <logger 名稱> L<lineno> ×<次數>：<訊息>        （CRITICAL 寫 [CRITICAL]）
     ・[條件] <條件名稱>：<說明>
     ・[事件] 對帳 / 報表：<說明>                               （FR-4 的一次性事件）
+    ・<symbol（baseCurrency）>：納入／排除（<理由>）            （A6 的 🆕；併進 ⚪ 時標頭前加 [新上架]）
 每項的訊息先遮罩、空白與換行併成一個空白，再截到 OPS_ALERT_ITEM_MAX_CHARS 字（含結尾的「…」）；一則最多
 OPS_ALERT_MAX_ITEMS 項，其餘寫「…另有 N 項（見日誌）」；整則 ≤ TG_MAX_MESSAGE_CHARS（UTF-16 code units，
 超過就再少列幾項）。發出前整段經過 SecretMasker（SECRET_ENV_VARS 裡所有有設定的值）。
@@ -76,12 +93,13 @@ OPS_ALERT_MAX_ITEMS 項，其餘寫「…另有 N 項（見日誌）」；整則
   attach(...)          各元件建好 / 啟動之後交給告警器（tracker、push、reporter、s5、feed（取 gate 與 reconciler））
   wrap_on_result(fn)   A1 的 on_result 包一層：先呼叫原本的（A3），finally 再 note_bar()；原本的例外照樣往外拋
   note_reconcile(r)    給 Reconciler(on_result=...)
+  note_listings(ls)    給 live.universe_seen.ListingTracker(on_new=...)（A6）
   announce_started()   全部啟動成功、feed.run() 之前：🟢
   begin_shutdown()     開始關閉：之後的 ERROR 併進 ⚪，不再輪詢
   finish(reason, rc)   最後一步：停 ops-alert 執行緒 → 組並交出 ⚪ → 拆 handler → 維運發送器 stop()；回傳最終 exit code
                        （ops-alert 執行緒執行中意外結束、或停不下來 → exit 1）
-告警器的任何錯誤都不往外拋到訊號路徑：emit() / note_bar() / note_reconcile() 不拋例外，執行緒死掉只記 ERROR，
-其他元件照跑（WBS §10 #14）。
+告警器的任何錯誤都不往外拋到訊號路徑：emit() / note_bar() / note_reconcile() / note_listings() 不拋例外，
+執行緒死掉只記 ERROR，其他元件照跑（WBS §10 #14）。
 """
 
 import argparse
@@ -95,10 +113,11 @@ import threading
 import time
 from datetime import datetime, timedelta
 
-from live import a_channel_outbox, config
+from live import a_channel_outbox, config, universe_seen
 from live.a_channel_report import open_readonly
 from live.logsetup import TAIPEI
 from live.tg_channel import RESULT_DELIVERED, ChannelSender, SecretMasker, utf16_units
+from strategy import universe as universe_rules
 
 LOGGER_NAME = "live.ops_alert"
 logger = logging.getLogger(LOGGER_NAME)
@@ -112,17 +131,19 @@ EXCLUDED_THREAD_NAMES = (THREAD_NAME, SENDER_THREAD_NAME)
 EXIT_SENT, EXIT_FAILED, EXIT_NOT_TESTED = 0, 1, 3
 SAMPLE_PREFIX = "[測試] "
 
-# 七種訊息
+# 八種訊息（新上架是 A6 加的，不算告警）
 KIND_STARTUP = "startup"
 KIND_GRACE = "grace"
 KIND_ALERT = "alert"
 KIND_REMIND = "remind"
 KIND_RECOVERED = "recovered"
 KIND_HEARTBEAT = "heartbeat"
+KIND_LISTING = "listing"
 KIND_SHUTDOWN = "shutdown"
-KINDS = (KIND_STARTUP, KIND_GRACE, KIND_ALERT, KIND_REMIND, KIND_RECOVERED, KIND_HEARTBEAT, KIND_SHUTDOWN)
+KINDS = (KIND_STARTUP, KIND_GRACE, KIND_ALERT, KIND_REMIND, KIND_RECOVERED, KIND_HEARTBEAT, KIND_LISTING,
+         KIND_SHUTDOWN)
 KIND_NAMES = {KIND_STARTUP: "啟動", KIND_GRACE: "啟動期間的錯誤", KIND_ALERT: "告警", KIND_REMIND: "仍未恢復",
-              KIND_RECOVERED: "已恢復", KIND_HEARTBEAT: "每日心跳", KIND_SHUTDOWN: "結束"}
+              KIND_RECOVERED: "已恢復", KIND_HEARTBEAT: "每日心跳", KIND_LISTING: "新上架", KIND_SHUTDOWN: "結束"}
 # 程式用到的符號一律用 chr() 產生（docstring / 註解裡的符號只是說明）
 SYMBOLS = {KIND_STARTUP: chr(0x1F7E2),      # 綠色圓
            KIND_GRACE: chr(0x1F7E1),        # 黃色圓
@@ -130,6 +151,7 @@ SYMBOLS = {KIND_STARTUP: chr(0x1F7E2),      # 綠色圓
            KIND_REMIND: chr(0x23F0),        # 鬧鐘
            KIND_RECOVERED: chr(0x2705),     # 白色勾（綠底）
            KIND_HEARTBEAT: chr(0x1F493),    # 跳動的心
+           KIND_LISTING: chr(0x1F195),      # NEW 方塊
            KIND_SHUTDOWN: chr(0x26AA)}      # 白色圓
 TITLES = {KIND_STARTUP: SYMBOLS[KIND_STARTUP] + " A 頻道程式啟動",
           KIND_GRACE: SYMBOLS[KIND_GRACE] + " 啟動期間的錯誤",
@@ -137,6 +159,7 @@ TITLES = {KIND_STARTUP: SYMBOLS[KIND_STARTUP] + " A 頻道程式啟動",
           KIND_REMIND: SYMBOLS[KIND_REMIND] + " 仍未恢復",
           KIND_RECOVERED: SYMBOLS[KIND_RECOVERED] + " 已恢復",
           KIND_HEARTBEAT: SYMBOLS[KIND_HEARTBEAT] + " 每日心跳",
+          KIND_LISTING: SYMBOLS[KIND_LISTING] + " 新上架",
           KIND_SHUTDOWN: SYMBOLS[KIND_SHUTDOWN] + " A 頻道程式結束"}
 TITLE_SEPARATOR = "  "
 FIELD_SEPARATOR = "："
@@ -249,16 +272,22 @@ def compose(kind, now_s, label, fields=(), items=(), masker=None):
 
 
 # ============================== 各種訊息的欄位（純函式，--sample 也用） ==============================
-def startup_fields(duration_s, outbox_pending, report_pending):
+def universe_text(summary):
+    """🟢 的「標的池」欄位：strategy.universe.summarize() 的結果 →「納入 N、排除 M（股票／ETF／商品 a、…）」。"""
+    return universe_rules.summary_text(summary)
+
+
+def startup_fields(duration_s, outbox_pending, report_pending, universe):
+    """universe：「標的池」欄位的文字（universe_text() 的結果，或「—（未啟動）」之類的說明）。"""
     if duration_s is None:
         params = "--push-tg（不帶 --duration，跑到 Ctrl+C 為止）"
     else:
         params = "--push-tg、--duration %s 秒" % format(duration_s, "g")
-    return [("參數", params), ("outbox 待送", outbox_pending), ("報表待送", report_pending)]
+    return [("參數", params), ("outbox 待送", outbox_pending), ("報表待送", report_pending), ("標的池", universe)]
 
 
 def shutdown_fields(now_s, started_s, reason, rc, outbox_pending, raised_names, dropped, closing_errors,
-                    unsent_items, thread_note=None):
+                    unsent_items, thread_note=None, unsent_listings=0):
     fields = [("運作時間", "%s（自 %s 起）" % (fmt_duration(now_s - started_s), fmt_time(started_s))),
               ("結束原因", reason or "不明"),
               ("exit code", rc),
@@ -268,13 +297,51 @@ def shutdown_fields(now_s, started_s, reason, rc, outbox_pending, raised_names, 
               ("關閉過程中的 ERROR", "%d 筆" % closing_errors if closing_errors else "無")]
     if unsent_items:
         fields.append(("關閉前還沒發出的告警", "%d 項（一併列在下面）" % unsent_items))
+    if unsent_listings:
+        fields.append(("關閉前還沒發出的新上架", "%d 個（一併列在下面）" % unsent_listings))
     if thread_note:
         fields.append(("告警執行緒", thread_note))
     return fields
 
 
+def _listing_counts(listings):
+    n = len(listings)
+    included = sum(1 for x in listings if x.tradable)
+    return "共 %d 個（納入 %d、排除 %d）" % (n, included, n - included)
+
+
+def listing_fields(listings):
+    """🆕 的欄位。listings：live.universe_seen.Listing（或有 symbol / display_symbol / judgement / tradable 的物件）。"""
+    return [("合約", _listing_counts(listings))]
+
+
+def listing_items(listings, head_prefix=""):
+    """🆕（或 ⚪ 併進去的）項目：(鍵 = symbol, 項目標頭 = symbol（baseCurrency）, 訊息 = 納入／排除（理由）)。"""
+    return [(x.symbol, head_prefix + x.display_symbol, x.judgement) for x in listings]
+
+
+def listing_window_label():
+    """💓 的欄位名稱：「新上架（過去 N 小時）」。"""
+    return "新上架（過去 %d 小時）" % config.OPS_HEARTBEAT_LISTING_HOURS
+
+
+def recent_listings_text(listings):
+    """💓「新上架」欄位的值：沒有 →「無」；有 →「共 N 個（納入 a、排除 b）：X 排除（理由）；Y 納入（理由）」。
+    最多列 OPS_ALERT_MAX_ITEMS 個（每個截到 OPS_ALERT_ITEM_MAX_CHARS 字），其餘寫「…另有 N 個（見日誌）」。"""
+    listings = list(listings)
+    if not listings:
+        return "無"
+    shown = listings[:config.OPS_ALERT_MAX_ITEMS]
+    parts = [_clip("%s %s" % (x.display_symbol, x.judgement)) for x in shown]
+    hidden = len(listings) - len(shown)
+    if hidden:
+        parts.append(ELLIPSIS + "另有 %d 個（見日誌）" % hidden)
+    return "%s：%s" % (_listing_counts(listings), "；".join(parts))
+
+
 def heartbeat_fields(now_s, started_s, since_s, first, d):
-    """d：統計區間內的差值。每一段是 dict，或是顯示用的字串（未啟動 / 讀不到）。"""
+    """d：統計區間內的差值。每一段是 dict，或是顯示用的字串（未啟動 / 讀不到）。
+    d["listings"]：「新上架」欄位的文字（recent_listings_text() 的結果，或「讀不到（…）」）。"""
     hours = (now_s - since_s) / 3600.0
     span = ("本次啟動以來" if first else "上一次心跳以來") + " %.1f 小時（自 %s 起）" % (hours, fmt_time(since_s))
     s4, s5 = config.STRATEGY_LABELS[_A1_STRATEGY], config.STRATEGY_LABELS[_A5_STRATEGY]
@@ -312,6 +379,7 @@ def heartbeat_fields(now_s, started_s, since_s, first, d):
          % (sum(alerts.get(k, 0) for k in ALERT_KINDS),
             "、".join("%s %d" % (SYMBOLS[k], alerts.get(k, 0)) for k in ALERT_KINDS),
             "、".join(raised) if raised else "無")),
+        (listing_window_label(), d.get("listings", _UNREADABLE)),
     ]
 
 
@@ -423,13 +491,15 @@ class OpsAlerter:
     clock   回傳 epoch 秒，預設 time.time；佇列的時刻、寬限、批次、提醒、心跳、條件都用它
     label   機器標籤，省略時用 instance_label()
     outbox_path  省略時用 attach 進來的 T2 pusher 的 path，再沒有就讀 config.A_CHANNEL_OUTBOX_DB_PATH（呼叫當下的值）
+    seen_path    新上架追蹤檔（心跳唯讀開）；省略時讀 config.UNIVERSE_SEEN_DB_PATH（呼叫當下的值）
     """
 
-    def __init__(self, *, sender=None, clock=None, label=None, outbox_path=None):
+    def __init__(self, *, sender=None, clock=None, label=None, outbox_path=None, seen_path=None):
         self._sender = sender if sender is not None else new_sender()
         self._clock = clock or time.time
         self._label = label
         self._outbox_path = outbox_path
+        self._seen_path = seen_path
         self._masker = SecretMasker(())
         self._handler = None
         self._thread = None
@@ -454,6 +524,8 @@ class OpsAlerter:
         self._a1_signals = 0
         self._uncovered = 0
         self._sent = collections.Counter()
+        self._listing_batches = []      # note_listings 交來、還沒發出的新上架（每次刷新一批）
+        self._announced = False         # 🟢 交出過了（新上架排在 🟢 後面才發）
 
         # 元件（attach 之後才有）
         self._tracker = None
@@ -462,6 +534,7 @@ class OpsAlerter:
         self._s5 = None
         self._gate = None
         self._reconciler = None
+        self._universe_summary = None   # feed.universe_summary（🟢 的「標的池」）
         self._s5_minutes = None
         self._s5_changed_at = None
 
@@ -533,7 +606,7 @@ class OpsAlerter:
                     config.OPS_HEARTBEAT_TIME_TPE)
 
     def attach(self, *, tracker=None, push=None, reporter=None, s5=None, feed=None):
-        """元件建好（已啟動）之後交給告警器。feed 只取它的 gate 與 reconciler。"""
+        """元件建好（已啟動）之後交給告警器。feed 只取它的 gate、reconciler 與 universe_summary（A6）。"""
         if tracker is not None:
             self._tracker = tracker
         if push is not None:
@@ -543,6 +616,7 @@ class OpsAlerter:
         if feed is not None:
             self._gate = getattr(feed, "gate", None)
             self._reconciler = getattr(feed, "reconciler", None)
+            self._universe_summary = getattr(feed, "universe_summary", None)
         if s5 is not None:
             try:
                 minutes = s5.stats()["minutes"]
@@ -631,6 +705,19 @@ class OpsAlerter:
         except Exception:  # noqa: BLE001
             pass
 
+    def note_listings(self, listings):
+        """給 live.universe_seen.ListingTracker(on_new=...)（A1 執行緒，A6）：一次標的池刷新偵測到的新上架。
+        只把這一批放進待發區、喚醒 ops-alert 執行緒；不做 I/O、不拋例外。組字與交出在 ops-alert 執行緒。"""
+        try:
+            batch = tuple(listings or ())
+            if not batch:
+                return
+            with self._lock:
+                self._listing_batches.append(batch)
+            self._wake.set()
+        except Exception:  # noqa: BLE001
+            pass
+
     def announce_started(self, duration_s):
         """全部啟動成功、feed.run() 之前：🟢。失敗只記 ERROR（live.ops_alert，不會變成告警），不影響其他元件。"""
         try:
@@ -641,9 +728,26 @@ class OpsAlerter:
                     report = "%s 期" % self._reporter.stats()["pending"]
                 except Exception as e:  # noqa: BLE001
                     report = "讀不到（%s）" % type(e).__name__
-            self._deliver(KIND_STARTUP, now, startup_fields(duration_s, self._outbox_pending_text(), report), [])
+            self._deliver(KIND_STARTUP, now, startup_fields(duration_s, self._outbox_pending_text(), report,
+                                                            self._universe_text()), [])
         except Exception:  # noqa: BLE001
             logger.exception("維運告警：組或交出啟動訊息失敗")
+        finally:
+            self._announced = True       # 之後才發新上架（啟動時偵測到的排在 🟢 後面）
+            self._wake.set()
+
+    def _universe_text(self):
+        """🟢 的「標的池」：A1 啟動時的分類結果。沒 attach feed →「—（未啟動）」、還沒載入 →「—（還沒載入）」。"""
+        fn = self._universe_summary
+        if fn is None:
+            return _UNSTARTED
+        try:
+            summary = fn()
+        except Exception as e:  # noqa: BLE001
+            return "讀不到（%s）" % type(e).__name__
+        if not summary:
+            return "—（還沒載入）"
+        return universe_text(summary)
 
     # ---------------------------------------------------------------- handler（任何執行緒）
     def _on_record(self, record):
@@ -760,9 +864,18 @@ class OpsAlerter:
             if items:
                 self._deliver(kind, now, [], items)
 
+        if self._announced:                   # A6：🟢 之後才發；同一次刷新的新上架一則
+            for batch in self._take_listings():
+                self._deliver(KIND_LISTING, now, listing_fields(batch), listing_items(batch))
+
         if now >= self._next_heartbeat:
             self._heartbeat(now)
             self._next_heartbeat = next_heartbeat_after(now)
+
+    def _take_listings(self):
+        with self._lock:
+            batches, self._listing_batches = self._listing_batches, []
+        return batches
 
     def _activate(self, key, ev, now):
         ev.window = 0
@@ -1025,11 +1138,25 @@ class OpsAlerter:
                            for k, x in v.items()}
         delta["outbox"] = self._outbox_finalized(self._hb_since, now)
         delta["raised"] = [CONDITION_NAMES[k] for k in self._raised]
+        delta["listings"] = self._recent_listings(now)
         fields = heartbeat_fields(now, self._started_at, self._hb_since, self._hb_first, delta)
         self._deliver(KIND_HEARTBEAT, now, fields, [])
         self._hb_prev = cur
         self._hb_since = now
         self._hb_first = False
+
+    def _recent_listings(self, now):
+        """💓「新上架」欄位：唯讀開 universe_seen.sqlite3，過去 OPS_HEARTBEAT_LISTING_HOURS 小時內的非初始列。
+        固定時間窗、不用「本次啟動以來」：程式中途重啟也不會漏。讀不到 →「讀不到（例外類型）」，同一種錯誤只記一次。"""
+        since_ms = int(round((now - config.OPS_HEARTBEAT_LISTING_HOURS * 3600) * 1000))
+        path = self._seen_path if self._seen_path is not None else config.UNIVERSE_SEEN_DB_PATH
+        try:
+            rows = universe_seen.read_recent(since_ms, path)
+        except Exception as e:  # noqa: BLE001
+            self._warn_once(("universe_seen", type(e).__name__),
+                            "維運告警讀不到新上架追蹤檔（%s: %s）；同一種錯誤只記這一次", type(e).__name__, e)
+            return "讀不到（%s）" % type(e).__name__
+        return recent_listings_text(rows)
 
     # ---------------------------------------------------------------- 結束訊息
     def _shutdown_message(self, now, reason, rc, thread_note):
@@ -1047,11 +1174,13 @@ class OpsAlerter:
                     merged[key] = ev
         oneshots = self._oneshot_items()
         unsent += len(oneshots)
-        items = [ev.item() for ev in merged.values()] + oneshots
+        # A6：開始關閉之後才收到的、或收到了但還沒發出的新上架，併進 ⚪（它們已寫進追蹤檔，重啟後不會再當成新上架）
+        listings = [x for batch in self._take_listings() for x in batch]
+        items = [ev.item() for ev in merged.values()] + oneshots + listing_items(listings, "[新上架] ")
         dropped = self.counters()[2]
         raised = [CONDITION_NAMES[k] for k in self._raised]
         fields = shutdown_fields(now, self._started_at, reason, rc, self._outbox_pending_text(), raised, dropped,
-                                 closing_errors, unsent, thread_note)
+                                 closing_errors, unsent, thread_note, unsent_listings=len(listings))
         return fields, items
 
     # ---------------------------------------------------------------- 交出
@@ -1075,8 +1204,23 @@ class OpsAlerter:
 
 
 # ============================== --sample ==============================
+def _sample_listings(now_s):
+    """--sample 的假新上架：一個 X 結尾的股票類（排除）、一個 baseCurrency 與 symbol 不同的加密（納入，龙虾 的寫法）。
+    判定照樣經過 strategy.universe（不寫死理由文字）。symbol 用 chr() 組，跟 SYMBOLS 同一個規矩。"""
+    lobster = chr(0x9F99) + chr(0x867E) + "_USDT_PERP"       # 龙虾_USDT_PERP
+    specs = ({"symbol": "SAMPLEX_USDT_PERP", "baseCurrency": "SAMPLEX", "quoteCurrency": "USDT"},
+             {"symbol": lobster, "baseCurrency": "CNLX", "quoteCurrency": "USDT"})
+    first_seen_ms = int(round(now_s * 1000))
+    out = []
+    for spec in specs:
+        c = universe_rules.classify(spec)
+        out.append(universe_seen.Listing(symbol=c.symbol, base=c.base, first_seen_ms=first_seen_ms,
+                                         tradable=c.tradable, category=c.category, reason=c.reason))
+    return out
+
+
 def sample_messages(now_s=None, label=None):
-    """七種訊息各一則，**寫死的假資料**，開頭加 [測試]：[(key, 文字)]。不碰 outbox、派網、日誌佇列。"""
+    """八種訊息各一則，**寫死的假資料**，開頭加 [測試]：[(key, 文字)]。不碰 outbox、派網、日誌佇列、追蹤檔。"""
     now_s = time.time() if now_s is None else now_s
     label = instance_label() if label is None else label
     started = now_s - 3 * 3600
@@ -1099,8 +1243,12 @@ def sample_messages(now_s=None, label=None):
           "log": {"errors": 4, "warnings": 12, "dropped": 0},
           "alerts": {KIND_ALERT: 1, KIND_REMIND: 1, KIND_RECOVERED: 1},
           "raised": []}
+    listings = _sample_listings(now_s)
+    hb["listings"] = recent_listings_text(listings)
+    fake_universe = {"total": 564, "included": 436, "excluded": 128,
+                     "by_category": {universe_rules.CATEGORY_STOCK: 123, universe_rules.CATEGORY_PEGGED: 5}}
     messages = [
-        (KIND_STARTUP, startup_fields(10800, "0 則", "0 期"), []),
+        (KIND_STARTUP, startup_fields(10800, "0 則", "0 期", universe_text(fake_universe)), []),
         (KIND_GRACE, [], [ev.item()]),
         (KIND_ALERT, [], [ev2.item(), c2]),
         (KIND_REMIND, [], [ev2.item("過去 %s又發生 2 次；最近一次：%s" % (remind_span, ev2.msg)),
@@ -1108,6 +1256,7 @@ def sample_messages(now_s=None, label=None):
         (KIND_RECOVERED, [], [ev2.item("過去 %s沒有再發生（共 3 次）；%s" % (remind_span, ev2.msg)),
                               (c2[0], c2[1], "已恢復，持續了 1 小時 12 分")]),
         (KIND_HEARTBEAT, heartbeat_fields(now_s, started, started, True, hb), []),
+        (KIND_LISTING, listing_fields(listings), listing_items(listings)),
         (KIND_SHUTDOWN, shutdown_fields(now_s, started, "到達 --duration（10800 秒）", 0, "0 則", [], 0, 0, 0), []),
     ]
     out = []
@@ -1117,7 +1266,7 @@ def sample_messages(now_s=None, label=None):
 
 
 def sample(stop_timeout=180, sender_factory=None):
-    """把七則 [測試] 訊息經維運發送器送到維運聊天並等送完。回傳 exit code。缺密鑰時不碰網路、不建日誌檔。
+    """把八則 [測試] 訊息經維運發送器送到維運聊天並等送完。回傳 exit code。缺密鑰時不碰網路、不建日誌檔。
 
     只需要 bot token 與維運 chat id；不碰 A 頻道、不打派網。sender_factory 給測試注入。
     """
@@ -1163,7 +1312,7 @@ def main(argv=None):
         prog="python -m live.ops_alert",
         description="A4 維運告警的樣本訊息。必須明確帶 --sample 才會送出訊息。")
     parser.add_argument("--sample", action="store_true", required=True,
-                        help="用寫死的假資料組出七種訊息各一則（開頭加 [測試]），送到維運聊天"
+                        help="用寫死的假資料組出八種訊息各一則（開頭加 [測試]），送到維運聊天"
                              "（需要 %s 與 %s；不碰 A 頻道、outbox、派網）" % (config.TG_BOT_TOKEN_ENV,
                                                                           config.OPS_CHAT_ID_ENV))
     parser.parse_args(argv)
